@@ -2,20 +2,24 @@
 use strict;
 use warnings;
 
+use lib 'scripts/lib';
+
 use Encode qw(decode FB_CROAK);
 use File::Find qw(find);
 use JSON qw(decode_json);
+use Wattpilot::RepositoryCheck qw(contains_mojibake);
 
 my @required = qw(
     72_Wattpilot.pm AGENTS.md ARCHITECTURE.md CHANGELOG.md TESTING.md
     REVIEW-CHECKLIST.md .gitignore .github/pull_request_template.md
     .github/workflows/ci.yml t/72_Wattpilot.t t/lib/DevIo.pm
-    t/lib/FHEM/Meta.pm
+    t/lib/FHEM/Meta.pm t/repository_text_check.t
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
     scripts/check_commandref.pl scripts/check_repository.pl
     scripts/check_meta.pl scripts/build-release.sh scripts/verify-release.sh
     scripts/create_zip.pl scripts/check_reproducible_release.sh
+    scripts/lib/Wattpilot/RepositoryCheck.pm
     docs/PROTOCOL-SOURCES.md
 );
 
@@ -46,7 +50,7 @@ for my $path (@maintained_text) {
     my $text = eval { decode('UTF-8', $bytes, FB_CROAK) };
     die "Invalid UTF-8 in $path: $@" if $@;
     die "Mojibake or Unicode replacement character in $path\n"
-        if $text =~ /(?:\x{00C3}\x{0192}|\x{00C3}\x{201A}|\x{00C3}\x{00A2}\x{00E2}\x{201A}\x{00AC}|\x{00EF}\x{00BF}\x{00BD}|\x{FFFD}|\x{00C3}[\x{0080}-\x{00BF}]|\x{00C2}[\x{0080}-\x{00BF}]|\x{00E2}[\x{0080}-\x{0082}])/;
+        if contains_mojibake($text);
 }
 
 my @fixtures;
