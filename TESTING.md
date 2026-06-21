@@ -1,5 +1,7 @@
 # Testing
 
+Development and release checks require Perl, `Archive::Zip`, `CPAN::Meta`, `JSON`, `Crypt::PBKDF2`, and `Crypt::Bcrypt`, plus the standard `prove`, `sha256sum`, `zip`/`unzip`, and POSIX shell tools. On Debian or Ubuntu, install `libarchive-zip-perl` in addition to the module dependencies.
+
 Run the complete local check suite from the repository root:
 
 ```sh
@@ -15,5 +17,13 @@ scripts/build-release.sh
 ```
 
 The build runs the full CI suite and `scripts/verify-release.sh`. It checks the manifest, internal and archive SHA-256 sums, ZIP integrity, version consistency, and byte equality of every packaged module copy. Generated files remain below ignored `dist/`.
+
+Verify deterministic output with two builds from the same commit and the same `SOURCE_DATE_EPOCH`:
+
+```sh
+scripts/check_reproducible_release.sh
+```
+
+The check fails unless both generated ZIP archives have the same SHA-256 digest.
 
 These automated tests use stubs. They do not connect to a real FHEM installation or Wattpilot and do not exercise a real WebSocket connection, authentication exchange, device command, or live reading update.

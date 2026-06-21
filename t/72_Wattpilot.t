@@ -18,6 +18,9 @@ ok(defined &main::Wattpilot_Initialize, 'module loads with test stubs');
 my %registration;
 main::Wattpilot_Initialize(\%registration);
 
+is(scalar @FHEM::Meta::INIT_MOD_CALLS, 1, 'embedded META is initialized once');
+is($FHEM::Meta::INIT_MOD_CALLS[0][1], \%registration, 'META initialization receives the module hash');
+
 for my $slot (qw(DefFn UndefFn SetFn GetFn AttrFn ReadFn ReadyFn)) {
     ok(ref($registration{$slot}) eq 'CODE', "$slot registers an existing callback");
 }

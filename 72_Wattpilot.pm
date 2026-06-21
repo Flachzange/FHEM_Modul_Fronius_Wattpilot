@@ -26,6 +26,7 @@ package main;
 use strict;
 use warnings;
 use DevIo;
+use FHEM::Meta;
 use JSON;
 use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
@@ -57,6 +58,8 @@ sub Wattpilot_Initialize($) {
     # defaultAmp: Standard-Stromstärke (kann als Slider dargestellt werden, z.B. 6-32A)
     $hash->{AttrList} = "debug:1,0 interval:slider,0,5,300 update_while_idle:0,1 defaultAmp:slider,6,1,32 disable:0,1 authHash:auto,pbkdf2,bcrypt " .
 	$readingFnAttributes;
+
+    return FHEM::Meta::InitMod(__FILE__, $hash);
 }
 
 sub Wattpilot_Define($$) {
@@ -933,13 +936,13 @@ sub Wattpilot_DeleteStoredSecrets {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "1.2.0",
+  "version": "v1.2.0",
   "release_status": "testing",
   "author": [
-    "Dennis Gramespacher"
+    "Dennis Gramespacher <>"
   ],
   "license": [
-    "GPL-2.0-or-later"
+    "gpl_2"
   ],
   "dynamic_config": 0,
   "generated_by": "FHEM Wattpilot release tooling",
@@ -948,6 +951,7 @@ sub Wattpilot_DeleteStoredSecrets {
       "requires": {
         "perl": "5.010",
         "FHEM": "0",
+        "FHEM::Meta": "0",
         "DevIo": "0",
         "JSON": "0",
         "Digest::SHA": "0",
@@ -979,6 +983,7 @@ sub Wattpilot_DeleteStoredSecrets {
   "x_fhem_maintainer_github": [
     "Flachzange"
   ],
+  "x_support_status": "experimental",
   "x_spdx_license": "GPL-2.0-or-later"
 }
 =end :application/json;q=META.json

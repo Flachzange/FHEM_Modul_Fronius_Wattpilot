@@ -10,7 +10,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 - Zentrale Modulversion und validierte FHEM-META-Daten mit getrennter Autor- und Maintainer-Zuordnung.
 - Dokumentation der Protokollquellen und ihrer Vertrauensklassen.
-- Reproduzierbare Release-Erzeugung mit Manifest-, SHA-256-, ZIP- und BytegleichheitsprÃ¼fungen.
+- Reproduzierbare Release-Erzeugung mit Manifest-, SHA-256-, ZIP- und Bytegleichheitsprüfungen.
 
 ## [v1.2.0] - 2026-04-24
 

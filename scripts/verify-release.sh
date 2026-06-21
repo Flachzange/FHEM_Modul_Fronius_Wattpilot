@@ -45,7 +45,7 @@ unzip -p "$archive" "$package/72_Wattpilot.pm" > "$zip_module"
 cmp 72_Wattpilot.pm "$zip_module"
 
 grep -F "## [v$version]" CHANGELOG.md >/dev/null
-grep -F '"version": "'"$version"'"' 72_Wattpilot.pm >/dev/null
+grep -F '"version": "v'"$version"'"' 72_Wattpilot.pm >/dev/null
 grep -F "version=$version" "$package_dir/validation-build.txt" >/dev/null
 
 echo "Release verification passed for $package"

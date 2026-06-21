@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **1.2.0**. Dennis Gramespacher bleibt ursprÃ¼nglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert.
+Aktuelle Modulversion: **1.2.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert.
 
 ## 1. Voraussetzungen (System & Perl Module)
 
