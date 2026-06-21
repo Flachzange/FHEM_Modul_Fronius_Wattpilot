@@ -7,7 +7,7 @@ our $FHEM_SOURCE_REVISION = '5354e001b55c323f457bd907434e46f284d9582c';
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
 our ($OPEN_ERROR, $OPEN_MODE);
-our (@LOGS, @WRITES, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES);
+our (@LOGS, @WRITES, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES);
 
 sub reset_test_state {
     %KEY_VALUES = ();
@@ -26,6 +26,7 @@ sub reset_test_state {
     @TRIGGERS = ();
     @CLOSES = ();
     @TIMERS = ();
+    @ACTIVE_TIMERS = ();
     @REMOVED_TIMERS = ();
     @KEY_OPERATIONS = ();
     @READING_UPDATES = ();
@@ -53,8 +54,8 @@ sub import {
     *{"${caller}::attr"} = \%main::attr;
 }
 
-sub DevIo_CloseDev { push @CLOSES, $_[0]; return }
-sub DevIo_IsOpen { return 0 }
+sub DevIo_CloseDev { push @CLOSES, $_[0]; $_[0]{TEST_OPEN} = 0; return }
+sub DevIo_IsOpen { return $_[0]{TEST_OPEN} ? 1 : 0 }
 sub DevIo_OpenDev {
     my ($hash, $reopen, $initfn, $callback) = @_;
     push @OPENS, [@_];
@@ -106,6 +107,7 @@ sub DevIo_OpenDev {
     }
 
     Log3($name, $hash->{devioLoglevel} || 1, "$dev reappeared ($name)") if $reopen;
+    $hash->{TEST_OPEN} = 1;
     push @TRIGGERS, 'CONNECTED';
     push @OPEN_CALLBACKS, [$reopen, undef];
     $callback->($hash, undef) if $callback;
@@ -132,10 +134,28 @@ sub AttrVal {
     return $ATTR_VALUES{"$name|$attribute"} if exists $ATTR_VALUES{"$name|$attribute"};
     return $default;
 }
-sub InternalTimer { push @TIMERS, [@_]; return }
-sub RemoveInternalTimer { push @REMOVED_TIMERS, $_[0]; return }
+sub InternalTimer {
+    my $timer = [@_];
+    push @TIMERS, $timer;
+    push @ACTIVE_TIMERS, $timer;
+    return;
+}
+sub RemoveInternalTimer {
+    my ($argument) = @_;
+    push @REMOVED_TIMERS, $argument;
+    @ACTIVE_TIMERS = grep { $_->[2] != $argument } @ACTIVE_TIMERS;
+    return;
+}
 sub gettimeofday { return time }
-sub readingsSingleUpdate { push @READING_UPDATES, [@_]; return }
+sub readingsSingleUpdate {
+    push @READING_UPDATES, [@_];
+    my ($hash, $reading, $value) = @_;
+    if ($reading eq 'state') {
+        $hash->{STATE} = $value;
+        $hash->{READINGS}{state}{VAL} = $value;
+    }
+    return;
+}
 sub readingsBeginUpdate { return }
 sub readingsBulkUpdate { return }
 sub readingsEndUpdate { return }
