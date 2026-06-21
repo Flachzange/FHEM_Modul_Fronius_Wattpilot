@@ -2,6 +2,8 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
+Current module version: **1.2.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+
 ## 1. Prerequisites (System & Perl Modules)
 
 For the module to work, some additional Perl modules must be installed on the server (Raspberry Pi, PC, etc.) running FHEM. The module uses modern encryption (PBKDF2), which is not always installed by default.

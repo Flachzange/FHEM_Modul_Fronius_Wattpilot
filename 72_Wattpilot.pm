@@ -31,6 +31,8 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Data::Dumper;
 
+my $WATTPILOT_VERSION = '1.2.0';
+
 eval {
     require Crypt::Bcrypt;
     Crypt::Bcrypt->import(qw(bcrypt));
@@ -921,6 +923,65 @@ sub Wattpilot_DeleteStoredSecrets {
 </ul>
 
 =end html_DE
+
+=for :application/json;q=META.json 72_Wattpilot.pm
+{
+  "meta-spec": {
+    "version": "2",
+    "url": "https://metacpan.org/pod/CPAN::Meta::Spec"
+  },
+  "name": "FHEM-Wattpilot",
+  "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
+  "description": "FHEM module for the local Wattpilot WebSocket API V2.",
+  "version": "1.2.0",
+  "release_status": "testing",
+  "author": [
+    "Dennis Gramespacher"
+  ],
+  "license": [
+    "GPL-2.0-or-later"
+  ],
+  "dynamic_config": 0,
+  "generated_by": "FHEM Wattpilot release tooling",
+  "prereqs": {
+    "runtime": {
+      "requires": {
+        "perl": "5.010",
+        "FHEM": "0",
+        "DevIo": "0",
+        "JSON": "0",
+        "Digest::SHA": "0",
+        "Crypt::PBKDF2": "0",
+        "Data::Dumper": "0"
+      },
+      "recommends": {
+        "Crypt::Bcrypt": "0"
+      }
+    }
+  },
+  "resources": {
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/Flachzange/FHEM_Modul_Fronius_Wattpilot.git",
+      "web": "https://github.com/Flachzange/FHEM_Modul_Fronius_Wattpilot",
+      "x_branch": "main",
+      "x_filepath": "",
+      "x_raw": "https://raw.githubusercontent.com/Flachzange/FHEM_Modul_Fronius_Wattpilot/main/72_Wattpilot.pm"
+    },
+    "bugtracker": {
+      "web": "https://github.com/Flachzange/FHEM_Modul_Fronius_Wattpilot/issues"
+    }
+  },
+  "x_fhem_module_name": "Wattpilot",
+  "x_fhem_maintainer": [
+    "Flachzange"
+  ],
+  "x_fhem_maintainer_github": [
+    "Flachzange"
+  ],
+  "x_spdx_license": "GPL-2.0-or-later"
+}
+=end :application/json;q=META.json
 
 # Ende der Commandref
 =cut

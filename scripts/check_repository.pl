@@ -12,6 +12,9 @@ my @required = qw(
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
     scripts/check_commandref.pl scripts/check_repository.pl
+    scripts/check_meta.pl scripts/build-release.sh scripts/verify-release.sh
+    scripts/create_zip.pl
+    docs/PROTOCOL-SOURCES.md
 );
 
 my @missing = grep { !-f $_ } @required;
@@ -52,7 +55,13 @@ for my $path (@fixtures) {
     inspect_value($data, $path);
 }
 
-die "Generated dist directory must not be committed\n" if -d 'dist';
+my @tracked_dist = `git ls-files -- dist 2>/dev/null`;
+die "Generated dist files must not be committed: @tracked_dist\n" if @tracked_dist;
+
+open my $ignore_fh, '<', '.gitignore' or die "Cannot read .gitignore: $!\n";
+local $/;
+my $ignore = <$ignore_fh>;
+close $ignore_fh;
+die "dist/ must remain ignored\n" unless $ignore =~ m{^/dist/\s*$}m;
 
 print "Repository checks passed\n";
-
