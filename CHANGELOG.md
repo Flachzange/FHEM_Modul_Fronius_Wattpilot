@@ -18,7 +18,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Timer und DevIo-Verbindungen werden bei Undefine, Delete und Disable bereinigt.
 - DevIo-eigene Level-5-Payload-Logs werden durch den zentralen Wattpilot-Schreibpfad unterdrückt; Raw JSON bleibt ausschließlich explizit verfügbar. Transitive HttpUtils-Endpoint-Logs sind über die aktuelle öffentliche DevIo-Schnittstelle nicht vollständig unterdrückbar und werden als technische Grenze dokumentiert.
 - Credential-Löschfehler verhindern über einen `DeleteFn`-Fehlertext das endgültige Löschen, Auth-Hash-Speicherfehler stoppen den Login, und Passwortänderungen invalidieren alte Hashes transaktional mit Rollback.
-- Fehlgeschlagene Rename-Migrationen bleiben über getrennte, nicht-sensitive und FUUID-bezogene Pending-Metadaten für Passwort und Passwort-Hash auch nach Reload oder Neustart retryfähig. Credential-Löschungen verwenden vollständige Snapshots und stellen bei Teilfehlern Werte sowie den nach `UndefFn` abgebauten Runtime-Zustand wieder her.
+- Rename-Migrationen hängen nicht von der durch FHEM verworfenen `RenameFn`-Rückgabe ab. Getrennte FUUID-Pending-Metadaten und persistente Owner-Marker schützen Legacy-Ressourcen auch bei Wiederverwendung früherer Gerätenamen; fremde oder nicht verifizierbare Ressourcen werden erhalten. Credential-Lesefehler bleiben bis zu Define, Enable, Authentifizierung, gesicherten Befehlen und Delete-Wiederherstellung als `credential error` unterscheidbar. Credential-Löschungen verwenden vollständige Snapshots und stellen bei Teilfehlern Werte sowie den nach `UndefFn` abgebauten Runtime-Zustand wieder her.
 
 ### Hinzugefügt
 

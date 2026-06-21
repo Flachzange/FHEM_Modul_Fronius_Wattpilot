@@ -7,7 +7,7 @@ our $FHEM_SOURCE_REVISION = '5354e001b55c323f457bd907434e46f284d9582c';
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
 our ($OPEN_ERROR, $OPEN_MODE);
-our (@LOGS, @WRITES, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES);
+our (@LOGS, @WRITES, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @RENAMES, @IGNORED_RENAME_REPLIES);
 
 sub reset_test_state {
     %KEY_VALUES = ();
@@ -30,6 +30,25 @@ sub reset_test_state {
     @REMOVED_TIMERS = ();
     @KEY_OPERATIONS = ();
     @READING_UPDATES = ();
+    @RENAMES = ();
+    @IGNORED_RENAME_REPLIES = ();
+}
+
+# Models fhem.pl CommandRename at the pinned revision: framework-owned hashes
+# and attributes move before RenameFn, and the callback reply is discarded.
+sub command_rename {
+    my ($old, $new) = @_;
+    return "Please define $old first" if !defined $main::defs{$old};
+    return "$new already defined" if defined $main::defs{$new};
+    $main::defs{$new} = $main::defs{$old};
+    $main::defs{$new}{NAME} = $new;
+    delete $main::defs{$old};
+    $main::attr{$new} = $main::attr{$old} if defined $main::attr{$old};
+    delete $main::attr{$old};
+    push @RENAMES, [$old, $new];
+    my $reply = main::Wattpilot_Rename($new, $old);
+    push @IGNORED_RENAME_REPLIES, $reply;
+    return undef;
 }
 
 sub import {
