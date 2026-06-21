@@ -1,0 +1,9 @@
+{
+  "type": "fullStatus",
+  "status": {
+    "amp": 16,
+    "car": 2,
+    "lmo": 3
+  }
+}
+

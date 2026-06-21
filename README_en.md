@@ -56,7 +56,7 @@ define <Name> Wattpilot <IP-Address> [Serial]
 ```
 
 * **<Name>**: A name for the device in FHEM (e.g., `wallbox` or `myWattpilot`).
-* **<IP-Address>**: The local IP address of the Wattpilot on the network (e.g., `192.168.178.185`).
+* **<IP-Address>**: The local IP address of the Wattpilot on the network (e.g., `192.0.2.10`, reserved for documentation).
 * **[Serial]** (Optional): The serial number of the box. If omitted, the module attempts to read it automatically.
 
 **Note:** The password is no longer specified in the definition, but set separately using the `set Password` command.
@@ -66,8 +66,8 @@ define <Name> Wattpilot <IP-Address> [Serial]
 Enter this into the FHEM command line:
 
 ```text
-define wallbox Wattpilot 192.168.178.185
-set wallbox Password mySecretPassword
+define testWallbox Wattpilot 192.0.2.10 10000001
+set testWallbox Password documentation-value-only
 ```
 
 ## 4. Functions & Commands (Control)
