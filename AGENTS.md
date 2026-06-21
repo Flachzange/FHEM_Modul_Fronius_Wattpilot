@@ -59,6 +59,34 @@ For every relevant external function:
 
 A safety or correctness statement must cover the complete runtime call chain. A module-level test is insufficient when a called framework function can independently log data, alter state, retry operations, suppress errors, or schedule work.
 
+## Framework callback sequences and state lifetime
+
+Do not validate FHEM callbacks only as isolated functions. Inspect and test the actual framework-level invocation sequence, including what happens when a later callback fails after an earlier callback has already changed runtime state.
+
+For lifecycle changes, reproduce the relevant command-level sequences from current FHEM source, including where applicable:
+
+- define and modify;
+- rename;
+- `rereadcfg` and module reload;
+- disable and enable;
+- disconnect and reconnect;
+- `UndefFn` followed by `DeleteFn`;
+- failure of `DeleteFn` after successful `UndefFn`;
+- shutdown and restart.
+
+If FHEM retains a device after a callback error, the module must leave or restore that device to a coherent and usable runtime state. Tests that invoke only the final callback are insufficient.
+
+For every new internal state value, explicitly classify its required lifetime:
+
+- local operation only;
+- current device-hash lifetime;
+- current FHEM-process lifetime;
+- persistent across `rereadcfg`, reload, rename, and restart.
+
+Do not store information only in `$hash->{helper}` when correctness, retry, cleanup, rollback, or ownership depends on that information surviving recreation of the device hash or the FHEM process.
+
+A retry promise must be tested across the longest lifetime claimed by the implementation and documentation. Where persistence is required, test recreation with a new device hash and the same FUUID rather than reusing the original hash.
+
 ## Connection and authentication lifecycle
 
 For every change involving networking, authentication, credentials, timers, reconnects, enable/disable behavior, rename, delete, reload, or shutdown, review the complete lifecycle together:
@@ -112,6 +140,17 @@ At minimum:
 7. State remaining assumptions, uncertainty, and unperformed integration tests explicitly.
 
 Implementation and adversarial review are separate activities. Tests that merely mirror the implementation are not a substitute for attempting to falsify it.
+
+## Requirement closure and external limitations
+
+Separate module-controlled behavior from behavior owned by FHEM core or another dependency.
+
+- Do not claim a requirement is fully satisfied when a relevant transitive framework path remains outside the module's control.
+- Qualify statements precisely, for example “Wattpilot-generated logs are redacted” instead of “logs contain no private endpoints” when FHEM core may still expose them.
+- Record unresolved external limitations in a dedicated issue when they affect a stated requirement.
+- Do not use `Closes #<issue>` unless every acceptance criterion is satisfied or the issue has been explicitly narrowed by the maintainer.
+- Changelog, README, commandref, tests, and PR text must describe the same limitation consistently.
+- An adversarial review must search for contradictions between broad user-facing claims and narrower implementation guarantees.
 
 ## Change completeness
 
