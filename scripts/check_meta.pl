@@ -31,28 +31,31 @@ for my $field (qw(name abstract description version release_status author licens
 die "Unexpected META module name\n"
     unless $meta->{name} eq 'FHEM-Wattpilot'
         && ($meta->{x_fhem_module_name} // '') eq 'Wattpilot';
-die "META version '$meta->{version}' differs from source version '$version'\n"
-    unless $meta->{version} eq $version;
+die "META version '$meta->{version}' differs from source version 'v$version'\n"
+    unless $meta->{version} eq "v$version";
 die "META release status must be testing\n"
     unless $meta->{release_status} eq 'testing';
-die "META license must be GPL-2.0-or-later\n"
+die "META license must be gpl_2 with SPDX extension GPL-2.0-or-later\n"
     unless ref($meta->{license}) eq 'ARRAY'
         && @{$meta->{license}} == 1
-        && $meta->{license}[0] eq 'GPL-2.0-or-later'
+        && $meta->{license}[0] eq 'gpl_2'
         && ($meta->{x_spdx_license} // '') eq 'GPL-2.0-or-later';
-die "Original author Dennis Gramespacher is missing\n"
+die "Original author must be exactly Dennis Gramespacher <>\n"
     unless ref($meta->{author}) eq 'ARRAY'
-        && grep { $_ eq 'Dennis Gramespacher' } @{$meta->{author}};
+        && @{$meta->{author}} == 1
+        && $meta->{author}[0] eq 'Dennis Gramespacher <>';
 die "Maintainer Flachzange is missing\n"
     unless ref($meta->{x_fhem_maintainer}) eq 'ARRAY'
         && grep { $_ eq 'Flachzange' } @{$meta->{x_fhem_maintainer}};
 die "GitHub maintainer Flachzange is missing\n"
     unless ref($meta->{x_fhem_maintainer_github}) eq 'ARRAY'
         && grep { $_ eq 'Flachzange' } @{$meta->{x_fhem_maintainer_github}};
+die "FHEM support status must be experimental\n"
+    unless ($meta->{x_support_status} // '') eq 'experimental';
 
 my $requires = $meta->{prereqs}{runtime}{requires};
 die "META runtime prerequisites are missing\n" unless ref($requires) eq 'HASH';
-for my $module_name (qw(FHEM DevIo JSON Digest::SHA Crypt::PBKDF2 Data::Dumper)) {
+for my $module_name (qw(FHEM FHEM::Meta DevIo JSON Digest::SHA Crypt::PBKDF2 Data::Dumper)) {
     die "META prerequisite '$module_name' is missing\n" unless exists $requires->{$module_name};
 }
 die "Optional Crypt::Bcrypt prerequisite is missing\n"
@@ -63,10 +66,7 @@ die "META repository resource is invalid\n"
     unless ref($repository) eq 'HASH'
         && ($repository->{url} // '') eq 'https://github.com/Flachzange/FHEM_Modul_Fronius_Wattpilot.git';
 
-# CPAN::Meta does not currently accept SPDX identifiers in its closed license
-# enumeration. Lazy validation still exercises CPAN::Meta parsing; the SPDX
-# value and all project-specific FHEM fields are validated strictly above.
-my $cpan_meta = eval { CPAN::Meta->new($meta, { lazy_validation => 1 }) };
-die "CPAN::Meta could not parse embedded metadata: $@" if $@ || !$cpan_meta;
+my $cpan_meta = eval { CPAN::Meta->new($meta, { lazy_validation => 0 }) };
+die "Strict CPAN::Meta validation failed: $@" if $@ || !$cpan_meta;
 
-print "META checks passed (version $version)\n";
+print "META checks passed with strict CPAN::Meta validation (source $version, META v$version)\n";

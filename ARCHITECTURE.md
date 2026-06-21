@@ -11,4 +11,6 @@ The development infrastructure is deliberately separate:
 - Embedded META data and the central version in `72_Wattpilot.pm` are validated by `scripts/check_meta.pl`.
 - Release tooling creates reproducible, verified artifacts only below ignored `dist/`.
 
+The embedded META block is registered at runtime through `FHEM::Meta::InitMod`. This follows the FHEM reference implementation and modules at `fhem/fhem-mirror` commit `5354e001b55c323f457bd907434e46f284d9582c`; the test suite supplies only a minimal `FHEM::Meta` stub and verifies the initialization call.
+
 The stubs are not an FHEM simulator. They exist only to compile and load the module and to inspect its registered callbacks. No test in this repository establishes real FHEM, network, WebSocket, authentication, or Wattpilot compatibility.
