@@ -677,7 +677,7 @@ sub Wattpilot_DeleteStoredSecrets {
     <code>define &lt;name&gt; Wattpilot &lt;IP-Address&gt; [&lt;Serial&gt;]</code>
     <br><br>
     Defines a Wattpilot device.<br>
-    <b>&lt;IP-Address&gt;</b>: The local IP address of the Wattpilot (for example 192.168.1.50).<br>
+    <b>&lt;IP-Address&gt;</b>: The local IP address of the Wattpilot (for example 192.0.2.10).<br>
     <b>&lt;Serial&gt;</b>: (Optional) The serial number of the device. If not provided, it will be taken from the <code>hello</code> message during connection setup.<br>
     <br>
     The password is no longer part of the device definition and must be set separately via <code>set &lt;name&gt; Password &lt;secret&gt;</code>.
@@ -807,7 +807,7 @@ sub Wattpilot_DeleteStoredSecrets {
     <code>define &lt;name&gt; Wattpilot &lt;IP-Addresse&gt; [&lt;Seriennummer&gt;]</code>
     <br><br>
     Definiert ein Wattpilot-Device.<br>
-    <b>&lt;IP-Addresse&gt;</b>: Die lokale IP-Adresse des Wattpiloten (z.B. 192.168.1.50).<br>
+    <b>&lt;IP-Addresse&gt;</b>: Die lokale IP-Adresse des Wattpiloten (z.B. 192.0.2.10).<br>
     <b>&lt;Seriennummer&gt;</b>: (Optional) Die Seriennummer des Geräts. Wenn sie nicht angegeben wird, wird sie beim Verbindungsaufbau aus der <code>hello</code>-Nachricht übernommen.<br>
     <br>
     Das Passwort ist nicht mehr Teil des <code>define</code>-Befehls und muss separat mit <code>set &lt;name&gt; Password &lt;secret&gt;</code> gesetzt werden.
