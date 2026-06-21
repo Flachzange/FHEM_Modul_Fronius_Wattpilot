@@ -86,9 +86,9 @@ set wallbox Password <YourPassword>
 
 After that, the module connects automatically. Once the status is `connected`, you can control it.
 
-The password and its derived authentication value are stored under a stable FUUID-based key. Existing name-based keys are removed only after the new value has been stored successfully during load or rename. `rereadcfg`, reload, disable, and normal undefine do not delete credentials; only actually deleting the FHEM device removes them.
+The password and its derived authentication value are stored under a stable FUUID-based key. Existing name-based keys are removed only after the new value has been stored successfully during load or rename. If rename migration fails, former names remain known as non-sensitive pending metadata; getters keep using the legacy value and retry migration later. `rereadcfg`, reload, disable, and normal undefine do not delete credentials; only actually deleting the FHEM device removes them.
 
-When changing the password, the module first invalidates every known stable and name-based password hash. It then stores the new stable password and removes remaining legacy passwords. If any step fails, completed changes are rolled back from values read beforehand and FHEM receives an error. If a credential cannot be removed while deleting the device, `DeleteFn` also returns an error so FHEM does not finalize deletion.
+When changing the password, the module first invalidates every known stable and name-based password hash. It then stores the new stable password and removes remaining legacy passwords. If any step fails, completed changes are rolled back from values read beforehand and FHEM receives an error. Before changing anything, `DeleteFn` snapshots every stable and known legacy value. Read or delete failures abort the operation and restore values already deleted; an incomplete rollback is reported explicitly so FHEM does not finalize deletion.
 
 ### Start / Stop Charging
 
@@ -171,7 +171,7 @@ The default is `0`. Complete inbound and outbound JSON messages are logged only 
 
 The module uses a central write path for outbound JSON. It suppresses DevIo's own level-5 payload log only for the synchronous write call without changing the FHEM `verbose` attribute globally or persistently. Messages remain WebSocket text frames; complete clear-text output is produced only by the explicit raw mode described above.
 
-In the current DevIo implementation checked for this change, FHEM's `privacy=1` masks only the initial opening line, not every asynchronous error and reconnect path. Wattpilot therefore uses DevIo's endpoint-free reopen path, suppresses DevIo's own connection logs above the supported verbose range, and emits structured redacted module diagnostics instead. Private WebSocket endpoints consequently stay out of normal logs by default.
+Technical limit: in inspected FHEM revision `5354e001b55c323f457bd907434e46f284d9582c`, DevIo `privacy=1` masks only the initial opening line. For WebSockets, `DevIo_OpenDev` creates an internal HttpUtils hash without `hideurl` and without inheriting `devioLoglevel`; HttpUtils can log URLs, DNS/IP results, timeouts, and connection errors at levels 4 or 5. Wattpilot preserves correct DevIo semantics for initial connection (`reopen=0`) and reconnect (`reopen=1`) and redacts its own messages, but cannot reliably suppress those transitive core logs through the public DevIo interface. Reliable full suppression requires an upstream FHEM change that passes privacy to HttpUtils as `hideurl` and provides suitable log/error redaction. Until then, high-verbose logs must not be treated as endpoint-free and must be protected and sanitized before sharing.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 

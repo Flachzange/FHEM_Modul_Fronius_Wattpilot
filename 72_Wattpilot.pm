@@ -79,9 +79,8 @@ sub Wattpilot_Define($$) {
     # DevIo WebSocket URL Format: ws:host:port/path
     $hash->{DeviceName} = "ws:$ip:80/ws";
     $hash->{SERIAL} = $serial;
-    # DevIo privacy masks only its initial opening line, not all connection
-    # errors. Wattpilot therefore suppresses DevIo endpoint logs and emits
-    # its own structured, endpoint-free connection diagnostics.
+    # DevIo privacy masks only its initial opening line. devioLoglevel reduces
+    # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
     
 	my $password = Wattpilot_GetPassword($hash);
@@ -141,7 +140,7 @@ sub Wattpilot_Connect($) {
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
     
     # WebSocket in DevIo benötigt einen Callback für den asynchronen Verbindungsaufbau
-    Wattpilot_OpenDev($hash, sub {
+    Wattpilot_OpenDev($hash, 0, sub {
         my ($hash, $error) = @_;
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
@@ -151,15 +150,15 @@ sub Wattpilot_Connect($) {
     });
 }
 
-sub Wattpilot_OpenDev($$) {
-    my ($hash, $callback) = @_;
+sub Wattpilot_OpenDev($$$) {
+    my ($hash, $reopen, $callback) = @_;
 
-    # Current DevIo privacy handling redacts the initial opening message only;
-    # async error and reconnect messages can still contain DeviceName. Using
-    # reopen semantics suppresses those endpoint-bearing paths. Level 6 keeps
-    # DevIo's reconnect message outside FHEM's supported verbose range.
+    # Preserve DevIo's lifecycle semantics: 0 for an initial connection and 1
+    # only for ReadyFn reconnects. Current DevIo does not expose hideurl or an
+    # HttpUtils loglevel for its internal WebSocket HttpUtils_Connect hash, so
+    # transitive URL/DNS logs cannot be reliably suppressed by this module.
     $hash->{devioLoglevel} = 6;
-    return DevIo_OpenDev($hash, 1, undef, $callback);
+    return DevIo_OpenDev($hash, $reopen, undef, $callback);
 }
 
 sub Wattpilot_DoInit($) {
@@ -575,7 +574,7 @@ sub Wattpilot_Get($@) {
 sub Wattpilot_Ready($) {
     my ($hash) = @_;
     if($hash->{STATE} eq "disconnected") {
-        return Wattpilot_OpenDev($hash, sub {
+        return Wattpilot_OpenDev($hash, 1, sub {
              my ($hash, $error) = @_;
              return if($error);
              Wattpilot_DoInit($hash);
@@ -670,21 +669,43 @@ sub Wattpilot_DeleteStoredSecrets {
     my $name = $hash->{NAME};
 
     my %legacy_names = ($name => 1, %{ $hash->{helper}{credentialLegacyNames} // {} });
-    my @failures;
-    my %seen;
+    my (%snapshot, %seen);
+    my @keys;
     for my $suffix (qw(password passwordhash)) {
-        my @keys = (Wattpilot_SecretKey($hash, $suffix));
-        push @keys, map { Wattpilot_LegacySecretKey($_, $suffix) } keys %legacy_names;
-        for my $key (grep { !$seen{$_}++ } @keys) {
-            my $err = setKeyValue($key, undef);
-            if (defined $err) {
-                push @failures, $suffix;
-                Log3 $name, 1, "Wattpilot ($name) - failed to delete stored $suffix";
-            }
-        }
+        my @suffix_keys = (Wattpilot_SecretKey($hash, $suffix));
+        push @suffix_keys, map { Wattpilot_LegacySecretKey($_, $suffix) } sort keys %legacy_names;
+        push @keys, grep { !$seen{$_}++ } @suffix_keys;
     }
-    return undef if !@failures;
-    return "Wattpilot credential deletion failed for " . scalar(@failures) . " stored key(s)";
+
+    for my $key (@keys) {
+        my ($err, $value) = getKeyValue($key);
+        if (defined $err) {
+            Log3 $name, 1, "Wattpilot ($name) - failed to snapshot credentials before deletion";
+            return "Wattpilot credential deletion failed before changes were made";
+        }
+        $snapshot{$key} = $value;
+    }
+
+    my @deleted;
+    for my $key (@keys) {
+        next if !defined $snapshot{$key};
+        my $err = setKeyValue($key, undef);
+        if (defined $err) {
+            my @rollback_failures;
+            for my $deleted_key (reverse @deleted) {
+                my $rollback_err = setKeyValue($deleted_key, $snapshot{$deleted_key});
+                push @rollback_failures, $deleted_key if defined $rollback_err;
+            }
+            Log3 $name, 1, "Wattpilot ($name) - credential deletion failed; rollback " .
+                (@rollback_failures ? "incomplete" : "completed");
+            return "Wattpilot credential deletion failed" .
+                (@rollback_failures
+                    ? "; rollback incomplete for " . scalar(@rollback_failures) . " key(s)"
+                    : "; prior values restored");
+        }
+        push @deleted, $key;
+    }
+    return undef;
 }
 
 sub Wattpilot_StoreNewPassword($$) {
@@ -779,9 +800,29 @@ sub Wattpilot_GetStoredSecret($$) {
         Log3 $name, 1, "Wattpilot ($name) - could not read stored $suffix";
         return undef;
     }
-    return $value if defined $value;
+    my %legacy_names = ($name => 1, %{ $hash->{helper}{credentialLegacyNames} // {} });
+    if (defined $value) {
+        for my $legacy_name (sort keys %legacy_names) {
+            my $legacy_key = Wattpilot_LegacySecretKey($legacy_name, $suffix);
+            my ($legacy_err, $legacy_value) = getKeyValue($legacy_key);
+            if (defined $legacy_err) {
+                Log3 $name, 1, "Wattpilot ($name) - could not inspect legacy $suffix during cleanup";
+                next;
+            }
+            next if !defined $legacy_value;
+            $hash->{helper}{credentialLegacyNames}{$legacy_name} = 1;
+            my $delete_err = setKeyValue($legacy_key, undef);
+            Log3 $name, 1, "Wattpilot ($name) - stable $suffix exists but legacy cleanup is pending"
+              if defined $delete_err;
+        }
+        return $value;
+    }
 
-    return Wattpilot_MigrateLegacySecret($hash, $name, $suffix);
+    for my $legacy_name (sort keys %legacy_names) {
+        my $legacy_value = Wattpilot_MigrateLegacySecret($hash, $legacy_name, $suffix);
+        return $legacy_value if defined $legacy_value;
+    }
+    return undef;
 }
 
 sub Wattpilot_MigrateLegacySecret($$$) {
@@ -810,13 +851,13 @@ sub Wattpilot_MigrateLegacySecret($$$) {
     my $delete_err = setKeyValue($legacy_key, undef);
     Log3 $name, 1, "Wattpilot ($name) - credential migration stored $suffix but could not remove legacy key"
       if defined $delete_err;
-    delete $hash->{helper}{credentialLegacyNames}{$legacy_name} if !defined $delete_err;
     Log3 $name, 3, "Wattpilot ($name) - migrated legacy $suffix to stable credential storage";
     return $legacy_value;
 }
 
 sub Wattpilot_MigrateLegacySecrets($$) {
     my ($hash, $legacy_name) = @_;
+    $hash->{helper}{credentialLegacyNames}{$legacy_name} = 1;
     for my $suffix (qw(password passwordhash)) {
         my $key = eval { Wattpilot_SecretKey($hash, $suffix) };
         next if $@;
@@ -833,6 +874,7 @@ sub Wattpilot_MigrateLegacySecrets($$) {
             if (defined $legacy_err) {
                 Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - could not inspect legacy $suffix during rename";
             } elsif (defined $legacy_value) {
+                $hash->{helper}{credentialLegacyNames}{$legacy_name} = 1;
                 my $delete_err = setKeyValue($legacy_key, undef);
                 Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - stable $suffix exists but legacy key could not be removed"
                   if defined $delete_err;
@@ -897,7 +939,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Set</b>
   <ul>
     <li><code>set &lt;name&gt; Password &lt;secret&gt;</code><br>
-        Stores the password persistently under a stable FUUID-based key and starts a reconnect. Before a password change, all known stable and name-based derived hashes are invalidated; failures roll completed changes back. Existing name-based credentials are removed only after stable storage succeeds. Undefine, rename, reload, <code>rereadcfg</code>, and disable preserve credentials. Deleting the device removes them, and a storage deletion failure prevents FHEM from finalizing the delete.</li>
+        Stores the password persistently under a stable FUUID-based key and starts a reconnect. Before a password change, all known stable and name-based derived hashes are invalidated; failures roll completed changes back. Failed rename migrations remain usable through pending former names and are retried by later reads. Undefine, rename, reload, <code>rereadcfg</code>, and disable preserve credentials. Delete snapshots all affected values first and restores already deleted values after a partial failure; any snapshot, delete, or rollback error prevents FHEM from finalizing the delete.</li>
 
     <li><code>set &lt;name&gt; Laden_starten &lt;Start|Stop&gt;</code><br>
         Manually starts or stops charging (corresponds to parameter <code>frc</code>).</li>
@@ -942,7 +984,7 @@ sub Wattpilot_WriteJson($$) {
         Disables the module completely. If set to <code>1</code>, the connection is closed.</li>
 
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
-        Default: <code>0</code>. Exact inbound and outbound JSON is logged only when this attribute is <code>1</code> and <code>verbose</code> is also <code>5</code>. This includes authentication and <code>securedMsg</code> frames. A central write path suppresses DevIo's own level-5 payload logging without persistently changing <code>verbose</code>. Wattpilot also suppresses endpoint-bearing DevIo connection logs because DevIo <code>privacy</code> does not cover every error path. Enabling raw logging emits a warning because logs can contain sensitive authentication, network, device, and operational data. Never share this output without sanitizing it.</li>
+        Default: <code>0</code>. Exact inbound and outbound JSON is logged only when this attribute is <code>1</code> and <code>verbose</code> is also <code>5</code>. This includes authentication and <code>securedMsg</code> frames. A central write path suppresses DevIo's own level-5 payload logging without persistently changing <code>verbose</code>. Technical limit: DevIo's internal HttpUtils connection hash does not inherit <code>privacy</code> as <code>hideurl</code> or inherit <code>devioLoglevel</code>, so FHEM core may still log endpoint URLs, DNS/IP results, timeouts, and connection errors at levels 4 or 5. Enabling raw logging emits a warning because logs can contain sensitive authentication, network, device, and operational data. Never share this output without sanitizing it.</li>
 
     <li><code>authHash &lt;auto|pbkdf2|bcrypt&gt;</code><br>
         Selects the password hashing method for authentication.<br>
@@ -1030,7 +1072,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Set</b>
   <ul>
     <li><code>set &lt;name&gt; Password &lt;secret&gt;</code><br>
-        Speichert das Passwort persistent unter einem stabilen FUUID-basierten Schlüssel und startet einen Reconnect. Vor einer Passwortänderung werden alle bekannten stabilen und namensbasierten abgeleiteten Hashes invalidiert; Fehler rollen bereits vorgenommene Änderungen zurück. Bestehende namensbasierte Zugangsdaten werden erst nach erfolgreicher stabiler Speicherung entfernt. Undefine, Rename, Reload, <code>rereadcfg</code> und Disable erhalten die Zugangsdaten. Beim Löschen entfernt <code>DeleteFn</code> sie; ein Speicherfehler verhindert das endgültige Löschen durch FHEM.</li>
+        Speichert das Passwort persistent unter einem stabilen FUUID-basierten Schlüssel und startet einen Reconnect. Vor einer Passwortänderung werden alle bekannten stabilen und namensbasierten abgeleiteten Hashes invalidiert; Fehler rollen bereits vorgenommene Änderungen zurück. Fehlgeschlagene Rename-Migrationen bleiben über ausstehende frühere Namen nutzbar und werden bei späteren Lesezugriffen erneut versucht. Undefine, Rename, Reload, <code>rereadcfg</code> und Disable erhalten die Zugangsdaten. Delete liest zuerst Snapshots aller betroffenen Werte und stellt bei einem Teilfehler bereits gelöschte Werte wieder her; jeder Snapshot-, Lösch- oder Rollbackfehler verhindert das endgültige Löschen durch FHEM.</li>
 
     <li><code>set &lt;name&gt; Laden_starten &lt;Start|Stop&gt;</code><br>
         Startet oder stoppt die Ladung manuell (entspricht dem Parameter <code>frc</code>).</li>
@@ -1075,7 +1117,7 @@ sub Wattpilot_WriteJson($$) {
         Deaktiviert das Modul vollständig. Bei <code>1</code> wird die Verbindung getrennt.</li>
 
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
-        Standard: <code>0</code>. Exakte ein- und ausgehende JSON-Nachrichten werden nur protokolliert, wenn dieses Attribut <code>1</code> und gleichzeitig <code>verbose</code> auf <code>5</code> gesetzt ist. Dies umfasst Authentifizierungs- und <code>securedMsg</code>-Frames. Ein zentraler Schreibpfad unterdrückt DevIos eigenes Level-5-Payload-Logging, ohne <code>verbose</code> dauerhaft zu ändern. Wattpilot unterdrückt außerdem endpointhaltige DevIo-Verbindungslogs, weil DevIo <code>privacy</code> nicht alle Fehlerpfade abdeckt. Beim Aktivieren erscheint eine Warnung, da Logs sensible Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten können. Diese Ausgabe niemals unbereinigt weitergeben.</li>
+        Standard: <code>0</code>. Exakte ein- und ausgehende JSON-Nachrichten werden nur protokolliert, wenn dieses Attribut <code>1</code> und gleichzeitig <code>verbose</code> auf <code>5</code> gesetzt ist. Dies umfasst Authentifizierungs- und <code>securedMsg</code>-Frames. Ein zentraler Schreibpfad unterdrückt DevIos eigenes Level-5-Payload-Logging, ohne <code>verbose</code> dauerhaft zu ändern. Technische Grenze: Der interne HttpUtils-Verbindungshash von DevIo übernimmt weder <code>privacy</code> als <code>hideurl</code> noch <code>devioLoglevel</code>; FHEM-Core kann deshalb Endpoint-URLs, DNS/IP-Ergebnisse, Timeouts und Verbindungsfehler auf Level 4 oder 5 protokollieren. Beim Aktivieren erscheint eine Warnung, da Logs sensible Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten können. Diese Ausgabe niemals unbereinigt weitergeben.</li>
 
     <li><code>authHash &lt;auto|pbkdf2|bcrypt&gt;</code><br>
         Wählt das Verfahren zur Passwort-Hash-Bildung für die Authentifizierung.<br>

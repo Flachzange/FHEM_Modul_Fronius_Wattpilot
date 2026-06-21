@@ -16,8 +16,9 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - `UndefFn`, Rename, `rereadcfg`, Reload und Disable erhalten Zugangsdaten. Nur `DeleteFn` entfernt sie bei einem echten Löschen des Geräts.
 - Normale Logs der Level 1–4 enthalten keine vollständigen JSON-Payloads, Tokens, HMACs, Passwort-Hashes, Seriennummern oder privaten Endpunkte mehr.
 - Timer und DevIo-Verbindungen werden bei Undefine, Delete und Disable bereinigt.
-- DevIo-eigene Level-5-Payload- und endpointhaltige Verbindungslogs werden durch zentrale Wattpilot-Schreib- und Öffnungspfade unterdrückt; Raw JSON bleibt ausschließlich explizit verfügbar.
+- DevIo-eigene Level-5-Payload-Logs werden durch den zentralen Wattpilot-Schreibpfad unterdrückt; Raw JSON bleibt ausschließlich explizit verfügbar. Transitive HttpUtils-Endpoint-Logs sind über die aktuelle öffentliche DevIo-Schnittstelle nicht vollständig unterdrückbar und werden als technische Grenze dokumentiert.
 - Credential-Löschfehler verhindern über einen `DeleteFn`-Fehlertext das endgültige Löschen, Auth-Hash-Speicherfehler stoppen den Login, und Passwortänderungen invalidieren alte Hashes transaktional mit Rollback.
+- Fehlgeschlagene Rename-Migrationen bleiben über frühere Gerätenamen retryfähig; Credential-Löschungen verwenden vollständige Snapshots und stellen bei Teilfehlern bereits gelöschte Werte wieder her.
 
 ### Hinzugefügt
 

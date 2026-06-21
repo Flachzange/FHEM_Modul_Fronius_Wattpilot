@@ -8,7 +8,9 @@ Run the complete local check suite from the repository root:
 scripts/ci.sh
 ```
 
-It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, validates callback registration and global subroutine structure, verifies credential migration, transactional password changes, DeleteFn error propagation, and Undef/Delete/Rename/Disable cleanup, reproduces DevIo level-5 payload and endpoint logging, exercises redacted and explicitly enabled raw JSON logging, parses and validates embedded META data, inspects both command-reference languages and anchors, validates synthetic JSON fixtures, and checks the required repository structure.
+It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, validates callback registration and global subroutine structure, verifies retryable rename migration, transactional password changes and deletion, and Undef/Delete/Rename/Disable cleanup, reproduces DevIo level-5 payload logging and the transitive HttpUtils URL, DNS/IP, synchronous/asynchronous error, timeout, callback, initial-connect, and reconnect effects, exercises redacted and explicitly enabled raw JSON logging, parses and validates embedded META data, inspects both command-reference languages and anchors, validates synthetic JSON fixtures, and checks the required repository structure.
+
+Framework-derived stub behavior is based on FHEM mirror revision `5354e001b55c323f457bd907434e46f284d9582c`, specifically `DevIo_OpenDev`, `DevIo_SimpleWrite`, `DevIo_Disconnected`, `HttpUtils_Connect`, `HttpUtils_gethostbyname`, and `HttpUtils_TimeoutErr`. The endpoint tests include a negative control demonstrating that DevIo `privacy=1` does not suppress the internal HttpUtils URL and DNS/IP logs.
 
 Build and verify the release artifacts with:
 
