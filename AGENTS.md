@@ -76,6 +76,15 @@ For lifecycle changes, reproduce the relevant command-level sequences from curre
 
 If FHEM retains a device after a callback error, the module must leave or restore that device to a coherent and usable runtime state. Tests that invoke only the final callback are insufficient.
 
+### Callback return-value semantics
+
+A callback return value is not error handling unless the real framework caller consumes and propagates that value.
+
+- Inspect the command-level caller to determine whether the callback result is returned, transformed, logged, or discarded.
+- Account for framework mutations that occur before the callback is invoked and remain in effect when its return value is ignored.
+- A direct unit test that calls the callback and asserts its return value is insufficient when the real framework caller ignores or changes that result.
+- If the framework does not propagate a callback failure, correctness must be achieved through coherent module state, durable retry information, rollback where possible, or a design that does not depend on the ignored return value.
+
 For every new internal state value, explicitly classify its required lifetime:
 
 - local operation only;
@@ -86,6 +95,18 @@ For every new internal state value, explicitly classify its required lifetime:
 Do not store information only in `$hash->{helper}` when correctness, retry, cleanup, rollback, or ownership depends on that information surviving recreation of the device hash or the FHEM process.
 
 A retry promise must be tested across the longest lifetime claimed by the implementation and documentation. Where persistence is required, test recreation with a new device hash and the same FUUID rather than reusing the original hash.
+
+### Stable ownership of persistent resources
+
+Mutable identifiers such as device names are locators, not durable proof of ownership.
+
+- Persistent migration, cleanup, rollback, overwrite, or deletion must use or verify a stable owner identity such as the FUUID.
+- Remembering a former device name alone is not sufficient authorization to read, migrate, overwrite, or delete data found under that name.
+- When ownership cannot be proven, do not modify the resource; preserve it and surface an explicit error or unresolved state.
+- Ownership metadata must survive every lifecycle boundary for which later cleanup or retry is promised.
+- Tests must cover reuse of the old identifier by a different object with a different stable identity.
+- Test both recreation orders: the original object first and the replacement object first.
+- Prove that getters, migration, credential updates, rollback, and deletion cannot adopt or destroy resources owned by the replacement object.
 
 ## Connection and authentication lifecycle
 
@@ -109,6 +130,10 @@ Requirements:
 - Undefine and shutdown-related paths must remove timers and close DevIo connections where applicable.
 - Authentication failures must not leave the device falsely marked as connected.
 - Persistence failures must not silently leave partially updated or conflicting state.
+- External reads must distinguish success with a value, success without a value, and failure.
+- Do not collapse an I/O, persistence, parsing, integrity, or permission error into an absent configuration value.
+- Preserve the read-error distinction through caller return values, readings, logs, retry decisions, and control flow. A storage failure must not be reported as a missing password or other missing configuration.
+- Add failure-injection tests at every relevant caller, not only at the low-level storage helper.
 - Normal operation, tests, fixtures, issues, documentation, and releases must not expose sensitive credentials, authentication data, device identifiers, private endpoints, or unsanitized captures.
 - The sole runtime exception is the explicitly enabled diagnostic mode requiring both device attributes `rawJsonLog=1` and `verbose=5`. It may log exact inbound and outbound JSON, including authentication and `securedMsg` frames, must warn when activated, must never activate automatically, and its output must be sanitized before reuse anywhere else.
 - Tests and fixtures must use minimal synthetic values and documentation address ranges.
