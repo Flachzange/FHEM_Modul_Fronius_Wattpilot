@@ -37,7 +37,7 @@ my @tracked = split /\0/, $tracked_raw;
 my @maintained_text;
 for my $path (@tracked) {
     push @maintained_text, $path
-        if $path =~ /(?:\.md|\.pm|\.pl|\.sh|\.yml|\.yaml|\.json)\z/
+        if $path =~ /(?:\.md|\.pm|\.pl|\.t|\.sh|\.yml|\.yaml|\.json)\z/
             || $path =~ /(?:^|\/)(?:LICENSE|\.gitignore)\z/;
 }
 
