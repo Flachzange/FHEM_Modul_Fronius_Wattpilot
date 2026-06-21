@@ -88,6 +88,8 @@ Danach verbindet sich das Modul automatisch. Sobald der Status `connected` ist, 
 
 Das Passwort und der daraus abgeleitete Authentifizierungswert werden unter einem stabilen, auf der FUUID basierenden Schlüssel gespeichert. Vorhandene namensbasierte Schlüssel werden beim Laden oder Umbenennen erst nach erfolgreicher Speicherung des neuen Werts entfernt. `rereadcfg`, Reload, Disable und normales Undefine löschen keine Zugangsdaten; nur das tatsächliche Löschen des FHEM-Geräts entfernt sie.
 
+Beim Ändern des Passworts invalidiert das Modul zuerst alle bekannten stabilen und namensbasierten Passwort-Hashes. Danach speichert es das neue stabile Passwort und entfernt verbliebene Legacy-Passwörter. Schlägt ein Schritt fehl, werden bereits vorgenommene Änderungen aus zuvor gelesenen Werten zurückgerollt und FHEM erhält einen Fehlertext. Kann ein Credential beim Löschen des Geräts nicht entfernt werden, meldet `DeleteFn` ebenfalls einen Fehler, damit FHEM das Gerät nicht endgültig löscht.
+
 ### Ladung Starten / Stoppen
 
 Startet oder stoppt den Ladevorgang manuell.
@@ -166,6 +168,10 @@ Steuert die Ausführlichkeit der Log-Einträge im FHEM Logfile.
 ### `rawJsonLog` (0 oder 1)
 
 Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden ausschließlich protokolliert, wenn gleichzeitig `rawJsonLog=1` und `verbose=5` gesetzt sind. Das umfasst Authentifizierungs- und `securedMsg`-Frames. Beim Aktivieren wird eine Sicherheitswarnung ausgegeben: Diese Rohdaten können Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten. Nur kurzzeitig zur gezielten Diagnose aktivieren und Rohdaten niemals unbereinigt weitergeben.
+
+Das Modul verwendet für ausgehende JSON-Nachrichten einen zentralen Schreibpfad. Dieser unterdrückt den DevIo-eigenen Level-5-Payload-Logeintrag nur während des synchronen Schreibaufrufs, ohne das FHEM-Attribut `verbose` dauerhaft oder global zu verändern. Die Nachricht bleibt ein WebSocket-Textframe; ein vollständiger Klartext-Logeintrag entsteht ausschließlich über den oben beschriebenen Raw-Modus.
+
+FHEMs DevIo-Attribut `privacy=1` maskiert in der geprüften aktuellen DevIo-Implementierung nur die initiale Öffnungszeile, nicht alle asynchronen Fehler- und Reconnect-Pfade. Wattpilot verwendet deshalb für DevIo den endpointfreien Reopen-Pfad, unterdrückt dessen eigene Verbindungslogs oberhalb des unterstützten Verbose-Bereichs und erzeugt stattdessen strukturierte, redigierte Modulmeldungen. Private WebSocket-Endpunkte erscheinen dadurch standardmäßig nicht im normalen Log.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 

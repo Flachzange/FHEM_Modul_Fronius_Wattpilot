@@ -88,6 +88,8 @@ After that, the module connects automatically. Once the status is `connected`, y
 
 The password and its derived authentication value are stored under a stable FUUID-based key. Existing name-based keys are removed only after the new value has been stored successfully during load or rename. `rereadcfg`, reload, disable, and normal undefine do not delete credentials; only actually deleting the FHEM device removes them.
 
+When changing the password, the module first invalidates every known stable and name-based password hash. It then stores the new stable password and removes remaining legacy passwords. If any step fails, completed changes are rolled back from values read beforehand and FHEM receives an error. If a credential cannot be removed while deleting the device, `DeleteFn` also returns an error so FHEM does not finalize deletion.
+
 ### Start / Stop Charging
 
 Manually starts or stops the charging process.
@@ -166,6 +168,10 @@ Controls the verbosity of log entries in the FHEM log file.
 ### `rawJsonLog` (0 or 1)
 
 The default is `0`. Complete inbound and outbound JSON messages are logged only when both `rawJsonLog=1` and `verbose=5` are set. This includes authentication and `securedMsg` frames. Enabling the attribute emits a security warning: raw data can contain authentication, network, device, and operational data. Enable it only briefly for targeted diagnostics and never share raw output without sanitizing it first.
+
+The module uses a central write path for outbound JSON. It suppresses DevIo's own level-5 payload log only for the synchronous write call without changing the FHEM `verbose` attribute globally or persistently. Messages remain WebSocket text frames; complete clear-text output is produced only by the explicit raw mode described above.
+
+In the current DevIo implementation checked for this change, FHEM's `privacy=1` masks only the initial opening line, not every asynchronous error and reconnect path. Wattpilot therefore uses DevIo's endpoint-free reopen path, suppresses DevIo's own connection logs above the supported verbose range, and emits structured redacted module diagnostics instead. Private WebSocket endpoints consequently stay out of normal logs by default.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 

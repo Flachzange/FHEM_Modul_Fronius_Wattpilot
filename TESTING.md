@@ -8,7 +8,7 @@ Run the complete local check suite from the repository root:
 scripts/ci.sh
 ```
 
-It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, validates callback registration and global subroutine structure, verifies credential migration and Undef/Delete/Rename/Disable cleanup, exercises redacted and explicitly enabled raw JSON logging, parses and validates embedded META data, inspects both command-reference languages and anchors, validates synthetic JSON fixtures, and checks the required repository structure.
+It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, validates callback registration and global subroutine structure, verifies credential migration, transactional password changes, DeleteFn error propagation, and Undef/Delete/Rename/Disable cleanup, reproduces DevIo level-5 payload and endpoint logging, exercises redacted and explicitly enabled raw JSON logging, parses and validates embedded META data, inspects both command-reference languages and anchors, validates synthetic JSON fixtures, and checks the required repository structure.
 
 Build and verify the release artifacts with:
 

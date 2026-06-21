@@ -44,6 +44,11 @@ sub log_text {
     return join "\n", map { $_->[2] // '' } @DevIo::LOGS;
 }
 
+sub payload_log_count {
+    my ($payload) = @_;
+    return scalar grep { index(($_->[2] // ''), $payload) >= 0 } @DevIo::LOGS;
+}
+
 my $hash = fresh_device();
 my $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
 my $stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
@@ -61,12 +66,29 @@ $stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
 $DevIo::KEY_VALUES{$stable_password} = 'synthetic-password';
 $DevIo::KEY_VALUES{$stable_hash} = 'synthetic-derived-value';
 $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'} = 'legacy-password';
-main::Wattpilot_Delete($hash);
+$DevIo::KEY_VALUES{'Wattpilot_legacyName_passwordhash'} = 'legacy-derived-value';
+$hash->{helper}{credentialLegacyNames}{legacyName} = 1;
+is(main::Wattpilot_Delete($hash, $hash->{NAME}), undef, 'DeleteFn reports successful credential deletion');
 ok(!exists $DevIo::KEY_VALUES{$stable_password}, 'DeleteFn deletes stable password');
 ok(!exists $DevIo::KEY_VALUES{$stable_hash}, 'DeleteFn deletes stable password hash');
 ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'}, 'DeleteFn deletes current legacy password');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_legacyName_passwordhash'}, 'DeleteFn deletes known legacy hash');
 is(scalar @DevIo::REMOVED_TIMERS, 1, 'DeleteFn removes timers');
 is(scalar @DevIo::CLOSES, 1, 'DeleteFn closes DevIo');
+
+$hash = fresh_device();
+$stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
+$DevIo::KEY_VALUES{$stable_password} = 'synthetic-password';
+$DevIo::SET_KEY_ERRORS{$stable_password} = 'synthetic delete failure';
+like(main::Wattpilot_Delete($hash, $hash->{NAME}), qr/credential deletion failed/, 'DeleteFn returns an error for a stable-key deletion failure');
+is($DevIo::KEY_VALUES{$stable_password}, 'synthetic-password', 'failed stable-key deletion retains the credential');
+
+$hash = fresh_device();
+my $legacy_password = 'Wattpilot_testWallbox_password';
+$DevIo::KEY_VALUES{$legacy_password} = 'legacy-password';
+$DevIo::SET_KEY_ERRORS{$legacy_password} = 'synthetic delete failure';
+like(main::Wattpilot_Delete($hash, $hash->{NAME}), qr/credential deletion failed/, 'DeleteFn returns an error for a legacy-key deletion failure');
+is($DevIo::KEY_VALUES{$legacy_password}, 'legacy-password', 'failed legacy-key deletion retains the credential');
 
 $hash = fresh_device();
 $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'} = 'legacy-password';
@@ -107,6 +129,19 @@ main::Wattpilot_SendSecure($hash, 'amp', 16);
 my $normal_outgoing = $DevIo::WRITES[0][1];
 unlike(log_text(), qr/\Q$normal_outgoing\E|synthetic-command-key|"hmac"/, 'normal logs redact outbound secured payload, key, and HMAC');
 
+$hash = fresh_device();
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
+main::Wattpilot_Connect($hash);
+unlike(log_text(), qr/192\.0\.2\.10|ws:192\.0\.2\.10/, 'initial DevIo open path does not log the private endpoint');
+is(scalar @DevIo::OPENS, 1, 'initial connection uses the centralized DevIo open path');
+
+$hash = fresh_device();
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
+$DevIo::OPEN_ERROR = 'synthetic connection failure';
+main::Wattpilot_Connect($hash);
+unlike(log_text(), qr/192\.0\.2\.10|ws:192\.0\.2\.10/, 'DevIo error path does not log the private endpoint');
+like(log_text(), qr/WebSocket connection failed/, 'connection error remains visible as a redacted diagnostic');
+
 DevIo::reset_test_state();
 my $invalid = '{"token":"TOKEN-IN-INVALID-JSON"';
 main::Wattpilot_Parse($hash, $invalid);
@@ -125,21 +160,117 @@ main::Wattpilot_Parse($hash, $incoming);
 like(log_text(), qr/\Q$incoming\E/, 'rawJsonLog with verbose 5 logs exact inbound payload');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 0;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 my $secured_outgoing = $DevIo::WRITES[0][1];
-like(log_text(), qr/\Q$secured_outgoing\E/, 'raw mode logs the exact outbound securedMsg frame');
+my $secured_hex = unpack('H*', $secured_outgoing);
+is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged in clear text when rawJsonLog is disabled at verbose 5');
+unlike(log_text(), qr/\Q$secured_hex\E/, 'securedMsg is not logged in hex when rawJsonLog is disabled at verbose 5');
 
 DevIo::reset_test_state();
 $DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 4;
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
+main::Wattpilot_SendSecure($hash, 'amp', 16);
+$secured_outgoing = $DevIo::WRITES[0][1];
+is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged when rawJsonLog is enabled below verbose 5');
+
+DevIo::reset_test_state();
+$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
+main::Wattpilot_SendSecure($hash, 'amp', 16);
+$secured_outgoing = $DevIo::WRITES[0][1];
+is(payload_log_count($secured_outgoing), 1, 'securedMsg has exactly one intentional raw log entry');
+like(log_text(), qr/RAW JSON OUT: \Q$secured_outgoing\E/, 'securedMsg raw log entry is clearly marked');
+is($DevIo::WRITES[0][2], 2, 'securedMsg is sent through DevIo as a WebSocket text message');
+ok(!exists $main::attr{testWallbox}{verbose}, 'JSON write restores the prior absence of a device verbose attribute');
+
+DevIo::reset_test_state();
+$main::attr{testWallbox}{verbose} = 5;
+main::Wattpilot_WriteJson($hash, '{"type":"syntheticTextFrame"}');
+is($main::attr{testWallbox}{verbose}, 5, 'JSON write restores an existing device verbose attribute exactly');
+
+DevIo::reset_test_state();
+$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 0;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 $hash->{SERIAL} = '0000000000000001';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
 my $auth_outgoing = $DevIo::WRITES[0][1];
-like(log_text(), qr/\Q$auth_outgoing\E/, 'raw mode logs the exact outbound authentication frame');
+my $auth_hex = unpack('H*', $auth_outgoing);
+is(payload_log_count($auth_outgoing), 0, 'authentication frame is not logged in clear text when rawJsonLog is disabled at verbose 5');
+unlike(log_text(), qr/\Q$auth_hex\E/, 'authentication frame is not logged in hex when rawJsonLog is disabled at verbose 5');
+
+DevIo::reset_test_state();
+$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 4;
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
+main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
+$auth_outgoing = $DevIo::WRITES[0][1];
+is(payload_log_count($auth_outgoing), 0, 'authentication frame is not logged when rawJsonLog is enabled below verbose 5');
+
+DevIo::reset_test_state();
+$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
+main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
+$auth_outgoing = $DevIo::WRITES[0][1];
+is(payload_log_count($auth_outgoing), 1, 'authentication frame has exactly one intentional raw log entry');
+like(log_text(), qr/RAW JSON OUT: \Q$auth_outgoing\E/, 'authentication raw log entry is clearly marked');
+is($DevIo::WRITES[0][2], 2, 'authentication frame is sent through DevIo as a WebSocket text message');
+
+DevIo::reset_test_state();
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
+$DevIo::SET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic hash storage failure';
+main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
+is(scalar @DevIo::WRITES, 0, 'authentication is not sent when password-hash persistence fails');
+is($DevIo::READING_UPDATES[-1][2], 'auth_hash_store_failed', 'hash persistence failure sets an explicit authentication status');
+unlike(log_text(), qr/TOKEN-ONE|TOKEN-TWO|synthetic-password/, 'hash persistence failure logs no sensitive authentication values');
+
+$hash = fresh_device();
+$stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
+$stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
+$DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'} = 'legacy-password';
+$DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'} = 'legacy-derived-value';
+is(main::Wattpilot_GetPassword($hash), 'legacy-password', 'upgrade migrates the legacy password before authentication');
+is(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), undef, 'password can be changed before first successful authentication');
+is($DevIo::KEY_VALUES{$stable_password}, 'new-synthetic-password', 'password change stores the new stable password');
+ok(!exists $DevIo::KEY_VALUES{$stable_hash}, 'password change leaves no stable derived hash');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'}, 'password change removes the legacy derived hash');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'}, 'password change removes the legacy password after stable storage succeeds');
+ok(!defined main::Wattpilot_GetPasswordHash($hash), 'obsolete legacy hash cannot be migrated after password change');
+
+$hash = fresh_device();
+$stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
+$stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
+$DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
+$DevIo::KEY_VALUES{$stable_hash} = 'old-stable-hash';
+$DevIo::SET_KEY_ERRORS{$stable_hash} = 'synthetic stable hash delete failure';
+like(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), qr/failed to invalidate/, 'stable hash deletion failure rejects password change');
+is($DevIo::KEY_VALUES{$stable_password}, 'old-stable-password', 'stable hash deletion failure keeps old password');
+is($DevIo::KEY_VALUES{$stable_hash}, 'old-stable-hash', 'stable hash deletion failure keeps old hash');
+
+$hash = fresh_device();
+$stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
+$DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'old-stable-hash';
+$DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'} = 'old-legacy-hash';
+$DevIo::SET_KEY_ERRORS{'Wattpilot_testWallbox_passwordhash'} = 'synthetic legacy hash delete failure';
+like(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), qr/failed to invalidate/, 'legacy hash deletion failure rejects password change');
+is($DevIo::KEY_VALUES{$stable_password}, 'old-stable-password', 'legacy hash deletion failure keeps old stable password');
+is($DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'}, 'old-stable-hash', 'legacy hash deletion failure rolls back an already invalidated stable hash');
+is($DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'}, 'old-legacy-hash', 'legacy hash deletion failure keeps old legacy hash');
+
+$hash = fresh_device();
+$stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
+$DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
+$DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'} = 'old-legacy-password';
+is(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), undef, 'stable and legacy password values are cleaned up transactionally');
+is($DevIo::KEY_VALUES{$stable_password}, 'new-synthetic-password', 'controlled cleanup keeps the new stable value');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'}, 'controlled cleanup removes the remaining legacy value');
 
 DevIo::reset_test_state();
 main::Wattpilot_Attr('set', 'testWallbox', 'rawJsonLog', '1');
