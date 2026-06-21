@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **1.2.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **1.3.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## 1. Prerequisites (System & Perl Modules)
 
@@ -86,6 +86,8 @@ set wallbox Password <YourPassword>
 
 After that, the module connects automatically. Once the status is `connected`, you can control it.
 
+The password and its derived authentication value are stored under a stable FUUID-based key. Existing name-based keys are removed only after the new value has been stored successfully during load or rename. `rereadcfg`, reload, disable, and normal undefine do not delete credentials; only actually deleting the FHEM device removes them.
+
 ### Start / Stop Charging
 
 Manually starts or stops the charging process.
@@ -159,7 +161,11 @@ Controls the verbosity of log entries in the FHEM log file.
 * `2`: Important events (e.g., login successful).
 * `3`: Logs sent commands.
 * `4`: Logs received data from Wattpilot.
-* `5`: Debugging (lots of text).
+* `5`: Debugging. Complete JSON messages remain suppressed unless `rawJsonLog=1` is also set.
+
+### `rawJsonLog` (0 or 1)
+
+The default is `0`. Complete inbound and outbound JSON messages are logged only when both `rawJsonLog=1` and `verbose=5` are set. This includes authentication and `securedMsg` frames. Enabling the attribute emits a security warning: raw data can contain authentication, network, device, and operational data. Enable it only briefly for targeted diagnostics and never share raw output without sanitizing it first.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 

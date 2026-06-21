@@ -55,7 +55,7 @@ die "FHEM support status must be experimental\n"
 
 my $requires = $meta->{prereqs}{runtime}{requires};
 die "META runtime prerequisites are missing\n" unless ref($requires) eq 'HASH';
-for my $module_name (qw(FHEM FHEM::Meta DevIo JSON Digest::SHA Crypt::PBKDF2 Data::Dumper)) {
+for my $module_name (qw(FHEM FHEM::Meta DevIo JSON Digest::SHA Crypt::PBKDF2)) {
     die "META prerequisite '$module_name' is missing\n" unless exists $requires->{$module_name};
 }
 die "Optional Crypt::Bcrypt prerequisite is missing\n"

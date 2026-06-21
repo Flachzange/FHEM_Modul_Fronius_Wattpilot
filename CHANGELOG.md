@@ -4,6 +4,19 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
+## [v1.3.0] - 2026-06-21
+
+### Hinzugefügt
+
+- Expliziter Raw-JSON-Debugmodus, der vollständige ein- und ausgehende Frames nur bei gleichzeitigem `rawJsonLog=1` und `verbose=5` protokolliert und beim Aktivieren deutlich warnt.
+
+### Geändert
+
+- Zugangsdaten werden stabil FUUID-basiert gespeichert; bestehende namensbasierte Schlüssel werden verlustsicher migriert und erst nach erfolgreicher Neuspeicherung entfernt.
+- `UndefFn`, Rename, `rereadcfg`, Reload und Disable erhalten Zugangsdaten. Nur `DeleteFn` entfernt sie bei einem echten Löschen des Geräts.
+- Normale Logs der Level 1–4 enthalten keine vollständigen JSON-Payloads, Tokens, HMACs, Passwort-Hashes, Seriennummern oder privaten Endpunkte mehr.
+- Timer und DevIo-Verbindungen werden bei Undefine, Delete und Disable bereinigt.
+
 ### Hinzugefügt
 
 - Reproduzierbare Entwicklungs-, Strukturtest- und CI-Grundlage ohne Änderung des Modulverhaltens.

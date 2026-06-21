@@ -64,7 +64,8 @@ Requirements:
 - Disabled or undefined devices must not continue reconnecting or processing delayed callbacks.
 - Undefine and shutdown-related paths must remove timers and close DevIo connections where applicable.
 - Authentication failures must not leave the device falsely marked as connected.
-- Never log or commit passwords, password hashes, authentication material, serial numbers, MAC addresses, private IP addresses, signed URLs, or unsanitized device captures.
+- Never log or commit passwords, password hashes, authentication material, serial numbers, MAC addresses, private IP addresses, signed URLs, or unsanitized device captures in normal operation, tests, fixtures, issues, documentation, or releases.
+- The sole runtime exception is the explicitly enabled diagnostic mode requiring both device attributes `rawJsonLog=1` and `verbose=5`. It may log exact inbound and outbound JSON, including authentication and `securedMsg` frames, must warn when activated, must never activate automatically, and its output must be sanitized before reuse anywhere else.
 - Tests and fixtures must use minimal synthetic values and documentation address ranges.
 
 ## Change completeness

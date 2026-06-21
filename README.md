@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **1.2.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert.
+Aktuelle Modulversion: **1.3.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert.
 
 ## 1. Voraussetzungen (System & Perl Module)
 
@@ -86,6 +86,8 @@ set wallbox Password <DeinPasswort>
 
 Danach verbindet sich das Modul automatisch. Sobald der Status `connected` ist, können Sie es steuern.
 
+Das Passwort und der daraus abgeleitete Authentifizierungswert werden unter einem stabilen, auf der FUUID basierenden Schlüssel gespeichert. Vorhandene namensbasierte Schlüssel werden beim Laden oder Umbenennen erst nach erfolgreicher Speicherung des neuen Werts entfernt. `rereadcfg`, Reload, Disable und normales Undefine löschen keine Zugangsdaten; nur das tatsächliche Löschen des FHEM-Geräts entfernt sie.
+
 ### Ladung Starten / Stoppen
 
 Startet oder stoppt den Ladevorgang manuell.
@@ -159,7 +161,11 @@ Steuert die Ausführlichkeit der Log-Einträge im FHEM Logfile.
 * `2`: Wichtige Ereignisse (z.B. Login erfolgreich).
 * `3`: Protokolliert gesendete Befehle.
 * `4`: Protokolliert empfangene Daten vom Wattpilot.
-* `5`: Debugging (sehr viel Text).
+* `5`: Debugging. Vollständige JSON-Nachrichten bleiben ohne `rawJsonLog=1` unterdrückt.
+
+### `rawJsonLog` (0 oder 1)
+
+Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden ausschließlich protokolliert, wenn gleichzeitig `rawJsonLog=1` und `verbose=5` gesetzt sind. Das umfasst Authentifizierungs- und `securedMsg`-Frames. Beim Aktivieren wird eine Sicherheitswarnung ausgegeben: Diese Rohdaten können Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten. Nur kurzzeitig zur gezielten Diagnose aktivieren und Rohdaten niemals unbereinigt weitergeben.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 

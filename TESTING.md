@@ -8,7 +8,7 @@ Run the complete local check suite from the repository root:
 scripts/ci.sh
 ```
 
-It checks Perl syntax, loads the module with minimal stubs, validates callback registration and global subroutine structure, parses and validates embedded META data, inspects both command-reference languages and anchors, validates synthetic JSON fixtures, and checks the required repository structure.
+It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, validates callback registration and global subroutine structure, verifies credential migration and Undef/Delete/Rename/Disable cleanup, exercises redacted and explicitly enabled raw JSON logging, parses and validates embedded META data, inspects both command-reference languages and anchors, validates synthetic JSON fixtures, and checks the required repository structure.
 
 Build and verify the release artifacts with:
 
@@ -26,4 +26,4 @@ scripts/check_reproducible_release.sh
 
 The check fails unless both generated ZIP archives have the same SHA-256 digest.
 
-These automated tests use stubs. They do not connect to a real FHEM installation or Wattpilot and do not exercise a real WebSocket connection, authentication exchange, device command, or live reading update.
+These automated tests use stubs. They do not exercise real FHEM, Wattpilot, rename, `rereadcfg`, network, WebSocket, authentication, reconnect, command-response, or live-reading integration.
