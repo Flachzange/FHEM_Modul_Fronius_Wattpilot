@@ -7,5 +7,6 @@ cd "$script_dir/.."
 
 perl -I t/lib -c 72_Wattpilot.pm
 PERL5LIB=t/lib prove -v t/72_Wattpilot.t
+perl scripts/check_meta.pl
 perl scripts/check_commandref.pl
 perl scripts/check_repository.pl

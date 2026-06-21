@@ -5,6 +5,11 @@ Describe the focused change and its motivation.
 ## Validation
 
 - [ ] `scripts/ci.sh`
+- [ ] `scripts/build-release.sh`
+- Automated test count:
+- Generated artifacts:
+- Module SHA-256:
+- ZIP SHA-256:
 - [ ] No real FHEM/Wattpilot integration was implied unless it was actually performed.
 
 ## Privacy and scope
@@ -12,4 +17,3 @@ Describe the focused change and its motivation.
 - [ ] Fixtures and examples are minimal, synthetic, and anonymized.
 - [ ] No generated release artifacts are included.
 - [ ] No unrelated runtime changes are included.
-

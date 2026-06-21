@@ -8,6 +8,10 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 - Reproduzierbare Entwicklungs-, Strukturtest- und CI-Grundlage ohne Änderung des Modulverhaltens.
 
+- Zentrale Modulversion und validierte FHEM-META-Daten mit getrennter Autor- und Maintainer-Zuordnung.
+- Dokumentation der Protokollquellen und ihrer Vertrauensklassen.
+- Reproduzierbare Release-Erzeugung mit Manifest-, SHA-256-, ZIP- und BytegleichheitsprÃ¼fungen.
+
 ## [v1.2.0] - 2026-04-24
 
 ### Hinzugefügt

@@ -8,4 +8,5 @@
 - Use synthetic documentation values for addresses and identifiers.
 - Name branches `codex/<short-description>` and open draft pull requests by default.
 - Do not commit generated release artifacts, including anything below `dist/`.
-
+- Keep the central module version and embedded META version identical.
+- Release archives are built with `scripts/build-release.sh` and verified with `scripts/verify-release.sh`.
