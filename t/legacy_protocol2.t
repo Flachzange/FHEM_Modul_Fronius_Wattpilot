@@ -10,7 +10,8 @@ use Test::More;
 our ($readingFnAttributes, %modules, %defs, %attr);
 
 my $root = File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..'));
-require File::Spec->catfile($root, '72_Wattpilot.pm');
+my $module = File::Spec->catfile($root, '72_Wattpilot.pm');
+require $module;
 
 sub load_fixture {
     my $path = File::Spec->catfile($root, 't', 'fixtures', 'legacy-protocol2-session.json');
@@ -30,6 +31,7 @@ sub fresh_device {
         NAME => 'legacyWallbox', TYPE => 'Wattpilot',
         FUUID => '00000000-0000-0000-0000-000000000027',
         DeviceName => 'ws:192.0.2.27:80/ws', STATE => 'disconnected', TEST_OPEN => 1,
+        SERIAL => '10000001',
     };
     $defs{$hash->{NAME}} = $hash;
     $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
@@ -52,7 +54,7 @@ is(scalar @{$fixture->{fullStatus}[1]{status}{nrg}}, 12, 'legacy nrg has twelve 
 
 my $hash = fresh_device();
 main::Wattpilot_Parse($hash, encode_json($fixture->{hello}));
-is($hash->{SERIAL}, '10000001', 'legacy hello supplies serial');
+is($hash->{SERIAL}, '10000001', 'configured serial remains available for legacy PBKDF2');
 is($hash->{VERSION}, '36.3', 'legacy hello accepts profile fields');
 is(main::Wattpilot_GetAuthHashMode($hash, $fixture->{authRequired}), 'pbkdf2',
     'missing legacy hash selects PBKDF2');
