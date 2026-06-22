@@ -4,6 +4,11 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
+### Dokumentation und Tests
+
+- Die bereits vorhandene Kompatibilität zu den ursprünglichen Wattpilot Home/Go 11 J und 22 J 2.0 wird als Legacy-Protokoll-2-Vertrag dokumentiert und durch synthetische Regressionstests für PBKDF2 ohne angekündigtes Hashverfahren, partielle `fullStatus`-Nachrichten, 12-elementige `nrg`-Daten und gesicherte Befehle geschützt.
+- Issue #10 darf die fehlende `authRequired.hash`-Angabe des belegten Legacy-Protokoll-2-Ablaufs nicht als unbekanntes Verfahren ablehnen. Unbekannte explizite Hashverfahren bleiben davon unberührt und werden erst in #10 gehärtet.
+
 ## [v1.4.0] - 2026-06-22
 
 ### Geändert
