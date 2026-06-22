@@ -26,7 +26,7 @@ The repository `joscha82/wattpilot` at commit `4712ba3b8409fda55303870c047038b1b
 - `fullStatus.partial:true` may split initialization across multiple messages;
 - the first twelve positions of `nrg` contain the electrical values used by the current FHEM readings.
 
-These are reproducible implementation statements, not official documentation. The synthetic fixture [`../t/fixtures/legacy-protocol2-session.json`](../t/fixtures/legacy-protocol2-session.json) preserves this shape without using data captured from a real device.
+These are reproducible implementation statements, not official documentation. The synthetic fixture [`../t/fixtures/legacy-protocol2-session.json`](../t/fixtures/legacy-protocol2-session.json) preserves the non-identifying protocol shape used by the regression test. The serial required for deterministic PBKDF2 testing exists only inside the test code, because repository privacy checks deliberately reject identifier fields in ordinary synthetic fixtures.
 
 ## Regression contract for the current module
 
