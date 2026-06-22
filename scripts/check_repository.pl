@@ -23,6 +23,7 @@ my @required = qw(
     scripts/create_zip.pl scripts/check_reproducible_release.sh
     scripts/lib/Wattpilot/RepositoryCheck.pm
     docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md
+    docs/PROTOCOL-CONFLICTS.md
 );
 
 my @missing = grep { !-f $_ } @required;
@@ -54,6 +55,18 @@ for my $path (@maintained_text) {
     die "Mojibake or Unicode replacement character in $path\n"
         if contains_mojibake($text);
 }
+
+open my $conflict_fh, '<:encoding(UTF-8)', 'docs/PROTOCOL-CONFLICTS.md'
+    or die "Cannot read protocol conflict documentation: $!\n";
+my $conflicts = do { local $/; <$conflict_fh> };
+close $conflict_fh;
+die "Missing frc conflict documentation\n"
+    unless $conflicts =~ /0=Neutral.*1=Off.*2=On/s;
+die "Missing amp range conflict documentation\n"
+    unless $conflicts =~ /6.{0,3}16 A.*6.{0,3}32 A/s;
+die "Missing pinned protocol source revisions\n"
+    unless $conflicts =~ /4712ba3b[0-9a-f]{32}/
+        && $conflicts =~ /498aa870[0-9a-f]{32}/;
 
 my @fixtures;
 find(sub { push @fixtures, $File::Find::name if -f && /\.json\z/ }, 't/fixtures');
