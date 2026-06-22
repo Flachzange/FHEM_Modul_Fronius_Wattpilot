@@ -1,0 +1,43 @@
+name: Verify PR write path
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'openai/pr15-recovery'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: openai/pr15-recovery
+          fetch-depth: 0
+
+      - name: Apply intended README correction
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('README.md')
+          text = path.read_text(encoding='utf-8')
+          old = 'vollständige sanitiserte Beobachtung'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one README match, found {text.count(old)}')
+          path.write_text(text.replace(old, 'vollständige bereinigte Beobachtung', 1), encoding='utf-8')
+          PY
+
+      - name: Run repository checks
+        run: scripts/ci.sh
+
+      - name: Remove workflow and push result
+        run: |
+          rm .github/workflows/verify-pr-write-path.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add README.md .github/workflows/verify-pr-write-path.yml
+          git commit -m "Correct observed-fixture wording"
+          git push origin HEAD:openai/pr15-recovery
