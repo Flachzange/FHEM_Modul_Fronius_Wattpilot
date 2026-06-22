@@ -418,6 +418,52 @@ for my $order (qw(original-first replacement-first)) {
     is($DevIo::KEY_VALUES{'Wattpilot_oldName_passwordhash'}, 'legacy-hash-b', "$order A does not clean B's owned legacy hash");
 }
 
+for my $legacy_location (qw(current pending)) {
+    DevIo::reset_test_state();
+    %defs = ();
+    $modules{Wattpilot}{defptr} = {};
+    my $fuuid_a = '00000000-0000-0000-0000-0000000000a1';
+    my $fuuid_b = '00000000-0000-0000-0000-0000000000b2';
+    my $name_b = $legacy_location eq 'current' ? 'oldName' : 'reusedName';
+    my $legacy_name = $legacy_location eq 'current' ? $name_b : 'formerName';
+    my $device_b = synthetic_device($name_b, $fuuid_b);
+    $defs{$name_b} = $device_b;
+    my $stable_password_b = "Wattpilot_${fuuid_b}_password";
+    my $stable_hash_b = "Wattpilot_${fuuid_b}_passwordhash";
+    my $legacy_hash_a = "Wattpilot_${legacy_name}_passwordhash";
+    my $legacy_owner_a = "${legacy_hash_a}_owner";
+    $DevIo::KEY_VALUES{$stable_password_b} = 'password-b';
+    $DevIo::KEY_VALUES{$legacy_hash_a} = 'legacy-hash-a';
+    $DevIo::KEY_VALUES{$legacy_owner_a} = $fuuid_a;
+    if ($legacy_location eq 'pending') {
+        $DevIo::KEY_VALUES{"Wattpilot_${fuuid_b}_pending_legacy_passwordhash_names"} =
+            '["formerName"]';
+    }
+
+    is(main::Wattpilot_Define($device_b, "$name_b Wattpilot 192.0.2.11"), undef,
+        "$legacy_location foreign hash does not fail Define");
+    is($device_b->{STATE}, 'connecting',
+        "$legacy_location foreign hash leaves B connecting from its stable password");
+    is(scalar @DevIo::ACTIVE_TIMERS, 1,
+        "$legacy_location foreign hash schedules exactly one connection timer for B");
+    is($DevIo::KEY_VALUES{$legacy_hash_a}, 'legacy-hash-a',
+        "$legacy_location foreign hash remains unchanged during Define");
+    is($DevIo::KEY_VALUES{$legacy_owner_a}, $fuuid_a,
+        "$legacy_location foreign hash owner remains unchanged during Define");
+    ok(!exists $DevIo::KEY_VALUES{$stable_hash_b},
+        "$legacy_location scenario starts without a stable B hash");
+
+    $device_b->{SERIAL} = '0000000000000002';
+    main::Wattpilot_SendAuth($device_b,
+        { hash => 'pbkdf2', token1 => 'TOKEN-B-ONE', token2 => 'TOKEN-B-TWO' });
+    ok(defined $DevIo::KEY_VALUES{$stable_hash_b} && $DevIo::KEY_VALUES{$stable_hash_b} ne '',
+        "$legacy_location authentication stores B's own FUUID hash");
+    is($DevIo::KEY_VALUES{$legacy_hash_a}, 'legacy-hash-a',
+        "$legacy_location authentication preserves A's legacy hash");
+    is($DevIo::KEY_VALUES{$legacy_owner_a}, $fuuid_a,
+        "$legacy_location authentication preserves A's owner marker");
+}
+
 DevIo::reset_test_state();
 %defs = ();
 $modules{Wattpilot}{defptr} = {};

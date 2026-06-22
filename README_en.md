@@ -90,7 +90,7 @@ The password and its derived authentication value are stored under stable FUUID-
 
 When changing the password, the module first invalidates every known stable and name-based password hash. It then stores the new stable password and removes remaining legacy passwords. If any step fails, completed changes are rolled back from values read beforehand and FHEM receives an error. Before changing anything, `DeleteFn` snapshots every stable, known legacy, and pending-metadata value. Read or delete failures abort the operation and restore values already deleted; an incomplete rollback is reported explicitly so FHEM does not finalize deletion. After the real FHEM sequence `UndefFn` followed by a failed `DeleteFn`, the module restores `defptr`, an honest state, and exactly one reconnect timer only when the retained device is enabled and has a password.
 
-Credential reads distinguish value present, value absent, and storage failure. Define, enable, authentication, secured commands, and failed-delete restoration report storage or metadata failures as `credential error` instead of treating them as a missing password.
+Credential reads distinguish value present, value absent, and storage failure. Connection startup during Define depends only on a readable password; migration or cleanup of the optional password hash is best effort there and cannot block a device with its own stable password. Authentication derives and stores the current FUUID-based hash after connecting. Other relevant storage or metadata failures in Define, enable, authentication, secured commands, and failed-delete restoration are reported as `credential error` instead of being treated as a missing password.
 
 ### Start / Stop Charging
 
