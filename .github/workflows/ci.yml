@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          show-progress: false
       - name: Apply Issue 8 implementation
         run: python3 scripts/run_issue8_transform.py
       - name: Install Perl dependencies
