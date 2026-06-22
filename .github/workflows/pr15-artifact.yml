@@ -1,0 +1,22 @@
+name: PR15 artifact
+on:
+  push:
+    branches: [codex/document-flex-json-api]
+    paths: [.github/workflows/pr15-artifact.yml]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 scripts/pr15-fix-doc-sections.py
+          python3 scripts/pr15-fix-doc-rows.py
+          sh scripts/pr15-fix-readme.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr15-artifact
+          path: |
+            README.md
+            docs/WATTPILOT-FLEX-JSON-API.md
