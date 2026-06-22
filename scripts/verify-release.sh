@@ -5,7 +5,7 @@ script_dir=${0%/*}
 [ "$script_dir" = "$0" ] && script_dir=.
 cd "$script_dir/.."
 
-source_version=$(sed -n "s/^my \\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
+source_version=$(sed -n "s/^my \\\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
 version=${1:-$source_version}
 [ "$version" = "$source_version" ] || { echo "Requested version differs from source" >&2; exit 1; }
 
