@@ -25,6 +25,7 @@ No real protocol exchange was performed for this documentation change. The captu
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
 | Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes what FHEM 1.x currently does, not what the device specification promises. |
+| Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
 | Planned interface | Naming requested in Issue #13; documentation only, not active runtime behavior. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
@@ -162,12 +163,32 @@ The observed array has exactly 16 numeric elements: `[230,230.1,229.9,0,0,0,0,0,
 | Key | Observed value | Candidate mapping | Evidence/confidence |
 | --- | --- | --- | --- |
 | `car` | `3` | Current 1.x candidates: 0 Unknown, 1 Idle, 2 Charging, 3 WaitCar, 4 Complete, 5 Error | Current implementation only; capture directly observes only numeric 3. |
-| `frc` | `0` | Current 1.x candidates: 0 Start, 1 Stop | Current implementation only; capture directly observes only numeric 0; writability unverified. |
+| `frc` | `0` | Current 1.x: 0 Start, 1 Stop. Pinned Wattpilot-specific sources: 0 Neutral, 1 Off, 2 On. | The capture proves only numeric value 0. Current 1.x conflicts with the two pinned third-party sources; the actual Flex 43.4 enum and writability remain unverified. |
 | `lmo` | `4` | Current 1.x candidates: 3 Default, 4 Eco, 5 NextTrip | Current implementation only; capture directly observes only numeric 4; writability unverified. |
 | `modelStatus` | `23` | unknown | Numeric value directly observed; no enum meaning accepted. |
 | `pha` | `[false,false,false,true,true,true]` | unknown phase-status flags | Shape and booleans observed; index meanings and phase-state semantics unknown. |
 
 No go-e enum is promoted to Wattpilot fact here. Historical or third-party candidates require independent Wattpilot-specific evidence.
+
+## Known evidence conflicts
+
+The following conflicts are deliberately retained rather than silently resolved. They identify where the observed Flex 43.4 payload, current FHEM 1.x behavior, pinned Wattpilot-specific third-party implementations, and planned fixes do not yet form one verified specification.
+
+### `frc` force-state enum and writability
+
+- **Observed Flex 43.4 capture:** `frc` is a JSON number and the sanitized sample contains `0`. This proves neither the enum meaning nor writability.
+- **Current FHEM 1.x behavior:** reads `0` as `Start`, `1` as `Stop`, and sends `0` for Start and `1` for Stop.
+- **Pinned Wattpilot-specific third-party evidence:** both `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` and `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9` describe `0=Neutral`, `1=Off`, `2=On` and mark the field R/W.
+- **Repository issue state:** Issue #8 records the current FHEM mapping as a confirmed functional defect and plans Start→`2`, Stop→`1`.
+- **Remaining uncertainty:** the two pinned implementations are not official Fronius documentation, and the enum plus write behavior have not been reproduced on the captured Flex Home 22 C6 with firmware 43.4/protocol 4.
+
+### `amp` range, unit, and writability
+
+- **Observed Flex 43.4 capture:** `amp` is numeric with sanitized value `32`; `cll.currentLimitMax` and `cll.requestedCurrent` are also `32`. These observations support neither a complete accepted range nor writability by themselves.
+- **Current FHEM 1.x behavior:** interprets `amp` as amperes, displays it directly, accepts every unsigned integer, and sends it through `setValue`.
+- **Pinned older Wattpilot-specific evidence:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` describes `amp` as R/W amperes with range 6–16. Its older and incompletely established device/firmware scope conflicts with the observed Flex value 32 and must not be generalized to this Flex model.
+- **Repository issue state:** Issue #8 targets validation of the current public command to 6–32 A.
+- **Remaining uncertainty:** the actual accepted Flex 43.4 write range, validation behavior, and error response still require applicable documentation or a reproducible device test.
 
 ## Current FHEM mapping and planned 2.0 names
 
@@ -177,8 +198,8 @@ The current columns describe root `72_Wattpilot.pm` at the branch baseline. Plan
 | --- | --- | --- | --- | --- | --- |
 | hello `version` | version string used by module | `version` | `firmwareVersion` | copied immediately | current implementation; actual Flex hello unobserved |
 | `car` | inferred vehicle state | `CarState` | `carState` | 0 Unknown, 1 Idle, 2 Charging, 3 WaitCar, 4 Complete, 5 Error; immediate; also gates high-frequency updates | current implementation inference |
-| `frc` | inferred forced state | `Laden_starten` | `forceState` | read: 0 Start, 1 Stop; write: Start→0, Stop→1; immediate | current implementation; device writability unverified |
-| `amp` | inferred current limit/A | `Strom` | `chargingCurrent` | copied immediately; write accepts integer syntax and sends value | current implementation; device writability/range unverified by capture |
+| `frc` | forced-state candidate; semantics conflict | `Laden_starten` | `forceState` | current 1.x reads 0 Start, 1 Stop and writes Start→0, Stop→1; pinned Wattpilot-specific sources instead state 0 Neutral, 1 Off, 2 On | observed value 0 only; current implementation conflicts with pinned commits `4712ba3b8409fda55303870c047038b1b221d7ff` and `498aa8709f198fcde2b41159ad99dc02e57accc9`; actual Flex 43.4 enum/writability unverified |
+| `amp` | charging-current candidate in A; accepted range conflicts by source/scope | `Strom` | `chargingCurrent` | current 1.x copies immediately and sends any unsigned integer; observed Flex value and `cll.currentLimitMax` are 32; pinned older Wattpilot source states 6–16; Issue #8 targets 6–32 | observed Flex structure/value plus conflicting older third-party evidence; actual Flex 43.4 write range and writability unverified |
 | `lmo` | inferred charging mode | `Modus` | `chargingMode` | 3 Default, 4 Eco, 5 NextTrip; immediate; same candidates sent | current implementation; device writability unverified |
 | `ftt` | inferred seconds after midnight | `Zeit_NextTrip` | `nextTripTime` | read seconds→HH:MM; write HH:MM→seconds; immediate | current implementation; unit/writability unverified |
 | `eto` | inferred total energy | `EnergyTotal` | `energyTotal` | divides by 1000 and formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
@@ -213,7 +234,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `alw` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `alwt` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ama` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `amp` | number | `32` | Current 1.x implementation interprets this as configured charging current. | A (implementation interpretation) | read and written by current 1.x implementation; device writability not established by this capture | inferred from current implementation; value `32` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `amp` | number | `32` | Current 1.x interprets this as configured charging current. The observed Flex value and `cll.currentLimitMax` are 32, while a pinned older Wattpilot-specific source states a 6–16 range. | A (current implementation and older third-party interpretation) | current 1.x reads and writes the field; pinned older source marks it R/W; actual Flex 43.4 writability and accepted range are unverified | observed value 32; conflicting older third-party 6–16 candidate; Issue #8 target 6–32 | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; Issue #8. Model/firmware scope conflict remains explicit. |
 | `amt` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ana` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `apd` | object | `{"project_name":"wattpilot_flex-secure-release","version":"43.4","secure_version":0,"timestamp":"Apr 28 2026 12:58:50","idf_ver":"43.4","sha256":"8154f5f8ffcfc41f428b355625604c86ffd158ac"}` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -415,7 +436,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `fntp` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `forsch` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fot` | number | `20` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `frc` | number | `0` | Current 1.x implementation interprets this as forced charging state. | unknown | read and written by current 1.x implementation; device writability not established by this capture | inferred from current implementation; only value `0` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `frc` | number | `0` | Current 1.x interprets 0 as Start and 1 as Stop. Two pinned Wattpilot-specific sources instead state 0 Neutral, 1 Off, 2 On. | unknown | current 1.x reads/writes it; both pinned third-party sources mark it R/W; actual Flex 43.4 writability is unverified | observed numeric 0 only; current implementation conflicts with pinned third-party enum | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9`; Issue #8. |
 | `frci` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fre` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `frm` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
