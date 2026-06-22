@@ -29,6 +29,9 @@ cat "$package_dir/validation-ci.txt"
 for file in 72_Wattpilot.pm README.md README_en.md CHANGELOG.md TESTING.md REVIEW-CHECKLIST.md LICENSE; do
     cp "$file" "$package_dir/$file"
 done
+mkdir -p "$package_dir/docs" "$package_dir/t/fixtures"
+cp docs/PROTOCOL-SOURCES.md docs/PROTOCOL-CONFLICTS.md docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/"
+cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json "$package_dir/t/fixtures/"
 cp 72_Wattpilot.pm "$standalone"
 
 cat > "$package_dir/validation-build.txt" <<EOF
@@ -53,7 +56,10 @@ find dist -exec touch -d "@$epoch" {} +
 perl scripts/create_zip.pl "$package_dir" "$archive" "$epoch"
 sha256sum "$archive" > "$archive.sha256"
 
-sh scripts/verify-release.sh "$version" > "dist/verification-output.txt" 2>&1
+if ! sh scripts/verify-release.sh "$version" > "dist/verification-output.txt" 2>&1; then
+    cat "dist/verification-output.txt"
+    exit 1
+fi
 cat "dist/verification-output.txt"
 
 printf 'Release artifacts created:\n%s\n%s\n%s\n' "$standalone" "$archive" "$archive.sha256"
