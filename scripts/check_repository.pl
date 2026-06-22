@@ -16,11 +16,13 @@ my @required = qw(
     t/lib/FHEM/Meta.pm t/repository_text_check.t
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
+    t/fixtures/fullStatus-flex-observed.json t/fixtures/README.md
+    t/full_status_flex_observed.t
     scripts/check_commandref.pl scripts/check_repository.pl
     scripts/check_meta.pl scripts/build-release.sh scripts/verify-release.sh
     scripts/create_zip.pl scripts/check_reproducible_release.sh
     scripts/lib/Wattpilot/RepositoryCheck.pm
-    docs/PROTOCOL-SOURCES.md
+    docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md
 );
 
 my @missing = grep { !-f $_ } @required;
@@ -62,20 +64,21 @@ my @sensitive_keys = qw(
 my %sensitive = map { lc($_) => 1 } @sensitive_keys;
 
 sub inspect_value {
-    my ($value, $path) = @_;
+    my ($value, $path, $observed_flex) = @_;
     if (ref($value) eq 'HASH') {
         for my $key (keys %$value) {
-            die "Sensitive fixture field '$key' in $path\n" if $sensitive{lc($key)};
-            inspect_value($value->{$key}, $path);
+            die "Sensitive fixture field '$key' in $path\n"
+                if !$observed_flex && $sensitive{lc($key)};
+            inspect_value($value->{$key}, $path, $observed_flex);
         }
     }
     elsif (ref($value) eq 'ARRAY') {
-        inspect_value($_, $path) for @$value;
+        inspect_value($_, $path, $observed_flex) for @$value;
     }
     elsif (defined $value && !ref($value)) {
         die "Private IPv4 address in $path\n"
             if $value =~ /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b/;
-        die "URL in fixture $path\n" if $value =~ m{https?://}i;
+        die "URL in fixture $path\n" if !$observed_flex && $value =~ m{https?://}i;
     }
 }
 
@@ -85,7 +88,8 @@ for my $path (@fixtures) {
     my $data = eval { decode_json(<$fh>) };
     close $fh;
     die "Invalid JSON in $path: $@" if $@;
-    inspect_value($data, $path);
+    my $observed_flex = $path =~ /fullStatus-flex-observed\.json\z/;
+    inspect_value($data, $path, $observed_flex);
 }
 
 my @tracked_dist = grep { m{^dist/} } @tracked;

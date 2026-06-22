@@ -1,3 +1,5 @@
+> **Historical compilation — not an authoritative current protocol source.** Field names, meanings, units, enums, and write claims below must be re-verified. For the sanitized empirical Wattpilot Flex observation, see [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md); provenance and confidence rules are in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+
 # Wattpilot API Description
 
 ## WebSocket Message Types
