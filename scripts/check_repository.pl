@@ -68,6 +68,22 @@ die "Missing pinned protocol source revisions\n"
     unless $conflicts =~ /4712ba3b[0-9a-f]{32}/
         && $conflicts =~ /498aa870[0-9a-f]{32}/;
 
+open my $api_fh, '<:encoding(UTF-8)', 'docs/WATTPILOT-FLEX-JSON-API.md'
+    or die "Cannot read authoritative protocol reference: $!\n";
+my $api_reference = do { local $/; <$api_fh> };
+close $api_fh;
+die "Missing known-evidence-conflicts section in authoritative reference\n"
+    unless $api_reference =~ /^## Known evidence conflicts$/m;
+die "Missing frc conflict in authoritative field table\n"
+    unless $api_reference =~ /^\| `frc` \| number \| `0` \|[^\n]*Neutral[^\n]*Off[^\n]*On/m;
+die "Missing amp conflict in authoritative field table\n"
+    unless $api_reference =~ /^\| `amp` \| number \| `32` \|[^\n]*6.{0,3}16/m;
+die "Missing planned amp range in authoritative reference\n"
+    unless $api_reference =~ /Issue #8[^\n]*6.{0,3}32 A/;
+die "Missing pinned source revisions in authoritative reference\n"
+    unless $api_reference =~ /4712ba3b[0-9a-f]{32}/
+        && $api_reference =~ /498aa870[0-9a-f]{32}/;
+
 my @fixtures;
 find(sub { push @fixtures, $File::Find::name if -f && /\.json\z/ }, 't/fixtures');
 
