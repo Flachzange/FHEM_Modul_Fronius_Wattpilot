@@ -25,6 +25,13 @@ Only the first two classes may support implemented field semantics, and writable
 | Synthetic fixtures | Commit [`1aaf1a1833261292e0f6ff25b5b188c6651d2097`](https://github.com/Flachzange/FHEM_Modul_Fronius_Wattpilot/tree/1aaf1a1833261292e0f6ff25b5b188c6651d2097/t/fixtures), checked 2026-06-21 | Synthetic test input, not protocol evidence | Structurally shaped examples labelled Flex 43.4 | Values are deliberately synthetic and sanitized. They test parsing structure only and cannot confirm field meaning, device behavior, or writability. |
 | Sanitized observed Wattpilot Flex `fullStatus` | Maintainer-provided capture published in Issue #11 and committed as [`t/fixtures/fullStatus-flex-observed.json`](../t/fixtures/fullStatus-flex-observed.json), captured/checked 2026-06-21; SHA-256 `ca8f70cd954ebd70684744386660b80b4ce6a2cc0a5ab7751c27b59676b09d33` | **Empirical structure/value observation** | Wattpilot Flex Home 22 C6; `wattpilot_flex`; firmware 43.4; protocol 4; reported authentication mode bcrypt | One sanitized `fullStatus` with `partial:false` and 558 status keys. It confirms observed structure, JSON types, array lengths, null positions, and representative sanitized values only. It is not an official Fronius specification and does not by itself establish meanings, units, enums, requiredness, writability, other messages, other configurations, or other firmware/models. See [`WATTPILOT-FLEX-JSON-API.md`](WATTPILOT-FLEX-JSON-API.md). |
 
+## Known field-level conflicts
+
+The authoritative empirical reference and [`PROTOCOL-CONFLICTS.md`](PROTOCOL-CONFLICTS.md) preserve the known contradictions instead of silently resolving them:
+
+- **`frc`:** the Flex 43.4 capture proves only numeric value `0`. Current FHEM 1.x maps `0=Start`, `1=Stop`, while the two pinned Wattpilot-specific implementations above agree on `0=Neutral`, `1=Off`, `2=On` and label the field R/W. These remain third-party claims until reproduced or officially documented for Flex 43.4.
+- **`amp`:** the Flex 43.4 capture contains `amp=32` and `cll.currentLimitMax=32`. The pinned older Wattpilot-specific source at commit `4712ba3b8409fda55303870c047038b1b221d7ff` states R/W amperes with range 6–16, while Issue #8 targets 6–32 for the current public command. The accepted Flex 43.4 write range remains unverified.
+
 ## Use in future changes
 
 For every proposed protocol-field change, record the source revision, applicable device and firmware, confidence class, and any conflicting evidence. If evidence is incomplete, preserve the field as inferred or unknown and do not add a set command. Real captures must be sanitized before they enter tests, logs, issues, or fixtures.
