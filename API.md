@@ -4,7 +4,7 @@ This file is the stable entry point for the repository's JSON/WebSocket API docu
 
 ## Protocol profiles
 
-The original Wattpilot generation is covered by the evidence-qualified regression contract in [`docs/WATTPILOT-LEGACY-PROTOCOL2.md`](docs/WATTPILOT-LEGACY-PROTOCOL2.md). The Flex generation is documented separately below. Neither document is an official Fronius specification.
+The original Wattpilot generation is covered by the evidence-qualified regression contract in [`docs/WATTPILOT-LEGACY-PROTOCOL2.md`](docs/WATTPILOT-LEGACY-PROTOCOL2.md). Its compact synthetic fixture is [`t/fixtures/legacy-protocol2-session.json`](t/fixtures/legacy-protocol2-session.json). The Flex generation is documented separately below. Neither document is an official Fronius specification.
 
 ## Pure sanitized JSON example
 
