@@ -1,11 +1,14 @@
 name: Release diagnostic
 
 on:
-  push:
+  pull_request:
     branches:
-      - review-issue-11-protocol-conflicts
+      - main
     paths:
       - .github/workflows/debug-release.yml
+      - scripts/build-release.sh
+      - scripts/verify-release.sh
+      - docs/**
 
 permissions:
   contents: read
