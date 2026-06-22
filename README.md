@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **1.3.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Aktuelle Modulversion: **1.4.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## 1. Voraussetzungen (System & Perl Module)
 
@@ -94,7 +94,7 @@ Credential-Lesezugriffe unterscheiden Wert vorhanden, Wert nicht vorhanden und S
 
 ### Ladung Starten / Stoppen
 
-Startet oder stoppt den Ladevorgang manuell.
+Startet oder stoppt den Ladevorgang manuell. `Start` sendet `frc=2`, `Stop` sendet `frc=1`; das Reading zeigt zusätzlich `Neutral` für `frc=0`. Befehle werden nur bei offener, authentifizierter Verbindung und vorhandenem Signaturschlüssel gesendet.
 
 ```text
 set wallbox Laden_starten Start
@@ -103,7 +103,7 @@ set wallbox Laden_starten Stop
 
 ### Stromstärke ändern (Ampere)
 
-Legt den Ladestrom in Ampere fest (zwischen 6A und 32A).
+Legt den Ladestrom in Ampere fest. Nur ganzzahlige Werte von 6 A bis 32 A werden akzeptiert; ungültige Werte werden vor dem Senden abgewiesen.
 
 ```text
 set wallbox Strom 16

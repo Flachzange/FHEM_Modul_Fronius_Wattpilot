@@ -1,59 +1,23 @@
-name: Finalize Issue 8 branch
+name: CI
 
 on:
+  push:
   pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  finalize:
-    if: github.head_ref == 'codex/issue8-build'
+  test:
+    name: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: codex/issue8-build
-          fetch-depth: 0
-          show-progress: false
-      - name: Apply tested implementation
-        run: python3 scripts/run_issue8_transform.py
       - name: Install Perl dependencies
         run: sudo apt-get update && sudo apt-get install -y libarchive-zip-perl libjson-perl libcrypt-pbkdf2-perl libcrypt-bcrypt-perl
-      - name: Validate implementation and release
-        run: |
-          sh scripts/ci.sh
-          sh scripts/build-release.sh
-          sh scripts/check_reproducible_release.sh
-      - name: Commit clean implementation tree
-        run: |
-          git fetch origin main
-          rm scripts/apply_issue8.py scripts/run_issue8_transform.py
-          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
-          git add -A -- \
-            72_Wattpilot.pm CHANGELOG.md README.md README_en.md \
-            docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md \
-            t/72_Wattpilot.t t/command_semantics.t t/lib/DevIo.pm \
-            scripts/apply_issue8.py scripts/run_issue8_transform.py \
-            .github/workflows/ci.yml
-          git diff --cached --name-only origin/main | LC_ALL=C sort > /tmp/actual-files
-          cat > /tmp/expected-files <<'EOF'
-          72_Wattpilot.pm
-          CHANGELOG.md
-          README.md
-          README_en.md
-          docs/PROTOCOL-SOURCES.md
-          docs/WATTPILOT-FLEX-JSON-API.md
-          t/72_Wattpilot.t
-          t/command_semantics.t
-          t/lib/DevIo.pm
-          EOF
-          sed -i 's/^          //' /tmp/expected-files
-          LC_ALL=C sort -o /tmp/expected-files /tmp/expected-files
-          diff -u /tmp/expected-files /tmp/actual-files
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git commit -m "Correct command semantics and handle responses"
-          git push origin HEAD:codex/issue8-build
+      - name: Run checks
+        run: sh scripts/ci.sh
+      - name: Build and verify release
+        run: sh scripts/build-release.sh
+      - name: Verify reproducible release
+        run: sh scripts/check_reproducible_release.sh
