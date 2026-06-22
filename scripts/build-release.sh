@@ -5,7 +5,7 @@ script_dir=${0%/*}
 [ "$script_dir" = "$0" ] && script_dir=.
 cd "$script_dir/.."
 
-version=$(sed -n "s/^my \\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
+version=$(sed -n "s/^my \\\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
 [ -n "$version" ] || { echo "Cannot determine module version" >&2; exit 1; }
 
 epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}
