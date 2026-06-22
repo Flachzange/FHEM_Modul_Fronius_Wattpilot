@@ -26,6 +26,7 @@ package main;
 use strict;
 use warnings;
 use bytes ();
+use B qw(svref_2object SVf_POK SVp_POK);
 use DevIo;
 use FHEM::Meta;
 use JSON;
@@ -37,6 +38,7 @@ my $WATTPILOT_VERSION = '1.5.0';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
+my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
 
 eval {
     require Crypt::Bcrypt;
@@ -247,6 +249,12 @@ sub Wattpilot_ProcessJsonPayload($$) {
     my $remaining = $combined;
     my @documents;
     while ($remaining =~ /\S/) {
+        if (@documents >= $WATTPILOT_MAX_JSON_DOCUMENTS) {
+            delete $hash->{helper}{jsonBuffer};
+            Log3 $name, 1,
+                "Wattpilot ($name) - JSON input rejected because document count exceeds limit; payload suppressed";
+            return 0;
+        }
         my ($json, $used);
         my $ok = eval {
             ($json, $used) = $decoder->decode_prefix($remaining);
@@ -316,6 +324,13 @@ sub Wattpilot_IsScalarString($) {
     return defined($value) && !ref($value);
 }
 
+sub Wattpilot_IsJsonString($) {
+    my ($value) = @_;
+    return 0 if !defined($value) || ref($value);
+    my $flags = svref_2object(\$value)->FLAGS;
+    return ($flags & (SVf_POK | SVp_POK)) ? 1 : 0;
+}
+
 sub Wattpilot_IsNumber($) {
     my ($value) = @_;
     return 0 if !Wattpilot_IsScalarString($value);
@@ -376,7 +391,7 @@ sub Wattpilot_DispatchMessage($$) {
         Log3 $name, 2, "Wattpilot ($name) - Ignoring JSON message with non-object top level";
         return 0;
     }
-    if (!Wattpilot_IsScalarString($json->{type}) || $json->{type} eq '') {
+    if (!Wattpilot_IsJsonString($json->{type}) || $json->{type} eq '') {
         Log3 $name, 2, "Wattpilot ($name) - Ignoring JSON message with missing or invalid type";
         return 0;
     }
@@ -677,7 +692,8 @@ sub Wattpilot_BcryptPasswordHash($$$) {
 
 sub Wattpilot_DerivePasswordHash($$$) {
     my ($hash, $password, $serial) = @_;
-    my $mode = $hash->{helper}{authHashMode} // "pbkdf2";
+    my $mode = $hash->{helper}{authHashMode};
+    die "Authentication hash mode was not selected" if !defined($mode) || $mode eq "";
 
     if ($mode eq "pbkdf2") {
         my $h_args = { sha_size => 512 };
@@ -970,6 +986,26 @@ sub Wattpilot_Attr(@) {
 				 readingsSingleUpdate($hash, "state", "password missing", 1);
 			 }
 		}
+    }
+
+    if ($attrName eq "authHash" && ($cmd eq "set" || $cmd eq "del")) {
+        Wattpilot_ClearConnectionState($hash);
+        RemoveInternalTimer($hash);
+        DevIo_CloseDev($hash);
+
+        if (Wattpilot_IsDisabled($name)) {
+            readingsSingleUpdate($hash, "state", "disabled", 1);
+        } else {
+            my $password_result = Wattpilot_GetPassword($hash);
+            if ($password_result->{status} eq "error") {
+                readingsSingleUpdate($hash, "state", "credential error", 1);
+            } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
+                readingsSingleUpdate($hash, "state", "disconnected", 1);
+                InternalTimer(gettimeofday()+1, "Wattpilot_Connect", $hash, 0);
+            } else {
+                readingsSingleUpdate($hash, "state", "password missing", 1);
+            }
+        }
     }
 
     if ($attrName eq "rawJsonLog" && $cmd eq "set" && $attrVal eq "1") {
@@ -1586,7 +1622,7 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>This module controls a Fronius Wattpilot Wallbox via WebSocket API V2.</li>
   <li>It supports reading status values, setting charging modes, starting/stopping charging, and supports both PBKDF2 and bcrypt based authentication.</li>
-  <li>Decoded input is limited to 1 MiB, structurally framed, and type-checked. DevIo owns raw WebSocket-frame buffering; Wattpilot separately bounds logical JSON continuation. Omitted <code>deltaStatus</code> fields remain unchanged.</li>
+  <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents, structurally framed, and type-checked. DevIo owns raw WebSocket-frame buffering; Wattpilot separately bounds logical JSON continuation. Omitted <code>deltaStatus</code> fields remain unchanged.</li>
   <br>
 
   <a name="Wattpilot-define"></a>
@@ -1660,6 +1696,7 @@ sub Wattpilot_WriteJson($$) {
           <li><b>pbkdf2</b>: Force legacy PBKDF2 authentication</li>
           <li><b>bcrypt</b>: Force bcrypt authentication (used by newer Wattpilot Flex devices)</li>
         </ul>
+        Changing or deleting this attribute immediately invalidates the current authentication and closes the connection. If the device is enabled and its password is readable, exactly one fresh login is scheduled before secured commands are accepted again; otherwise the state remains disabled, credential error, or password missing as applicable.
     </li>
   </ul>
   <br>
@@ -1723,7 +1760,7 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>Dieses Modul dient zur Steuerung einer Fronius Wattpilot Wallbox über die WebSocket API V2.</li>
   <li>Es unterstützt das Auslesen von Statuswerten, das Setzen von Lademodi, das Starten/Stoppen der Ladung sowie die Authentifizierung per PBKDF2 und bcrypt.</li>
-  <li>Dekodierte Eingaben sind auf 1 MiB begrenzt, werden strukturell getrennt und typgeprüft. DevIo puffert rohe WebSocket-Frames; Wattpilot begrenzt die logische JSON-Fortsetzung separat. Ausgelassene <code>deltaStatus</code>-Felder bleiben unverändert.</li>
+  <li>Dekodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt, werden strukturell getrennt und typgeprüft. DevIo puffert rohe WebSocket-Frames; Wattpilot begrenzt die logische JSON-Fortsetzung separat. Ausgelassene <code>deltaStatus</code>-Felder bleiben unverändert.</li>
   <br>
 
   <a name="Wattpilot-define"></a>
@@ -1797,6 +1834,7 @@ sub Wattpilot_WriteJson($$) {
           <li><b>pbkdf2</b>: Erzwingt das ältere PBKDF2-Verfahren</li>
           <li><b>bcrypt</b>: Erzwingt bcrypt (für neuere Wattpilot-Flex-Geräte)</li>
         </ul>
+        Das Ändern oder Löschen dieses Attributs verwirft die aktuelle Authentifizierung sofort und trennt die Verbindung. Ist das Gerät aktiviert und das Passwort lesbar, wird genau eine neue Anmeldung geplant, bevor wieder gesicherte Befehle akzeptiert werden; andernfalls bleibt der passende Zustand disabled, credential error oder password missing bestehen.
     </li>
   </ul>
   <br>
