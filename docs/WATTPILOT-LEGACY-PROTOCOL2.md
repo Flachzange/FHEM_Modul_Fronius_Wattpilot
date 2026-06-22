@@ -30,7 +30,7 @@ These are reproducible implementation statements, not official documentation. Th
 
 ## Regression contract for the current module
 
-Before Issue #10 hardens authentication and input validation, the following behavior is protected by automated tests:
+Version 1.5.0 hardens authentication and input validation while the following behavior remains protected by automated tests:
 
 1. `authHash=auto` continues to select PBKDF2 when the legacy `authRequired` message omits `hash`.
 2. Explicit `pbkdf2` and `bcrypt` announcements remain supported.
@@ -40,7 +40,7 @@ Before Issue #10 hardens authentication and input validation, the following beha
 6. A later partial status message does not delete or reset readings for omitted keys.
 7. Legacy writes retain the current secured `setValue`/`securedMsg` schema and request-response correlation.
 
-Issue #10 may reject an explicitly unknown authentication algorithm. It must not reject a missing `authRequired.hash` merely because the field is absent in the documented legacy protocol-2 flow.
+Version 1.5.0 rejects an explicitly unknown authentication algorithm. It does not reject a missing `authRequired.hash` after `hello.devicetype=wattpilot` and `hello.protocol=2` identify this documented legacy profile.
 
 ## Deliberate limits
 
@@ -48,4 +48,4 @@ Issue #10 may reject an explicitly unknown authentication algorithm. It must not
 - No real FHEM, network, WebSocket, authentication, charging, or command-response integration test was performed.
 - The fixture is synthetic and confirms only the regression behavior of this repository.
 - `secured:false` is not added as a new runtime path here. Although the pinned client contains a branch for unsigned writes, no applicable real legacy Wattpilot observation was supplied for this repository.
-- Device identity fields are documented as profile evidence but are not yet used as strict runtime gating. Issue #10 must combine stricter validation with this compatibility contract rather than relying on the current permissive fallback for unknown algorithms.
+- The missing-hash fallback is gated by the evidenced `hello.devicetype=wattpilot` and protocol-2 profile. This identifies the compatibility branch; it does not turn the third-party evidence into an official Fronius specification.

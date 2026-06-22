@@ -25,15 +25,18 @@ package main;
 
 use strict;
 use warnings;
+use bytes ();
 use DevIo;
 use FHEM::Meta;
 use JSON;
 use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
+use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '1.4.0';
+my $WATTPILOT_VERSION = '1.5.0';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
+my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 
 eval {
     require Crypt::Bcrypt;
@@ -113,7 +116,7 @@ sub Wattpilot_Define($$) {
 sub Wattpilot_Undefine($$) {
     my ($hash, $name) = @_;
 
-    Wattpilot_ClearCommandState($hash);
+    Wattpilot_ClearConnectionState($hash);
     RemoveInternalTimer($hash);
     DevIo_CloseDev($hash);
     
@@ -124,7 +127,7 @@ sub Wattpilot_Undefine($$) {
 sub Wattpilot_Delete($$) {
     my ($hash, $name) = @_;
 
-    Wattpilot_ClearCommandState($hash);
+    Wattpilot_ClearConnectionState($hash);
     RemoveInternalTimer($hash);
     DevIo_CloseDev($hash);
     my $error = Wattpilot_DeleteStoredSecrets($hash);
@@ -172,7 +175,7 @@ sub Wattpilot_Connect($) {
     my ($hash) = @_;
     
     return if(DevIo_IsOpen($hash));
-    Wattpilot_ClearCommandState($hash);
+    Wattpilot_ClearConnectionState($hash);
     return if(Wattpilot_IsDisabled($hash->{NAME}));
     
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
@@ -208,77 +211,247 @@ sub Wattpilot_DoInit($) {
 sub Wattpilot_Read($) {
     my ($hash) = @_;
     my $buf = DevIo_SimpleRead($hash);
-    
-    return "" if(!defined($buf));
-    
-    if($hash->{buffer}) {
-        $buf = $hash->{buffer} . $buf;
-        $hash->{buffer} = "";
+
+    if (!defined($buf)) {
+        Wattpilot_ClearConnectionState($hash);
+        return "";
+    }
+    return "" if $buf eq "";
+
+    Wattpilot_ProcessJsonPayload($hash, $buf);
+    return "";
+}
+
+sub Wattpilot_ProcessJsonPayload($$) {
+    my ($hash, $payload) = @_;
+    my $name = $hash->{NAME};
+
+    if (!defined($payload) || ref($payload)) {
+        Log3 $name, 1, "Wattpilot ($name) - JSON input rejected as oversized or invalid; payload suppressed";
+        return 0;
     }
 
-    # Behandle mehrere verkettete JSON-Nachrichten (z.B. json1}{json2)
-    # Der Wattpilot sendet manchmal mehrere Pakete ohne Trennzeichen zusammen.
-    $buf =~ s/}\s*{/}\n{/g;
-    
-    my @messages = split(/\n/, $buf);
-    
-    foreach my $msg (@messages) {
-        # Prüfe, ob die Nachricht wie ein vollständiges JSON-Objekt aussieht
-        if ($msg =~ m/^{.*}$/) {
-             Wattpilot_Parse($hash, $msg);
-        } else {
-             # Unvollständige Nachricht? Im Buffer für den nächsten Read speichern.
-             # Hinweis: Einfaches Buffering. Sollte für die normale JSON-Struktur ausreichen.
-             $hash->{buffer} = $msg;
+    my $buffered = $hash->{helper}{jsonBuffer} // '';
+    if (bytes::length($buffered) + bytes::length($payload) > $WATTPILOT_MAX_JSON_BYTES) {
+        delete $hash->{helper}{jsonBuffer};
+        Log3 $name, 1, "Wattpilot ($name) - JSON input rejected as oversized or invalid; payload suppressed";
+        return 0;
+    }
+    my $combined = $buffered . $payload;
+    if ($combined !~ /\S/) {
+        delete $hash->{helper}{jsonBuffer};
+        return 0;
+    }
+
+    my $decoder = JSON->new->allow_nonref;
+    my $remaining = $combined;
+    my @documents;
+    while ($remaining =~ /\S/) {
+        my ($json, $used);
+        my $ok = eval {
+            ($json, $used) = $decoder->decode_prefix($remaining);
+            1;
+        };
+        if (!$ok || !$used) {
+            if (Wattpilot_JsonLooksIncomplete($remaining)) {
+                $hash->{helper}{jsonBuffer} = $combined;
+                return 0;
+            }
+            delete $hash->{helper}{jsonBuffer};
+            Log3 $name, 1, "Wattpilot ($name) - JSON decoding failed; payload suppressed";
+            return 0;
+        }
+        my $raw = substr($remaining, 0, $used, "");
+        push @documents, [$raw, $json];
+    }
+    delete $hash->{helper}{jsonBuffer};
+    for my $document (@documents) {
+        my ($raw, $json) = @$document;
+        Wattpilot_LogRawJson($hash, "IN", $raw);
+        Wattpilot_DispatchMessage($hash, $json);
+    }
+    return scalar @documents;
+}
+
+sub Wattpilot_JsonLooksIncomplete($) {
+    my ($text) = @_;
+    $text =~ s/^\s+//;
+    return 0 if $text eq '' || substr($text, 0, 1) ne '{';
+
+    my @stack;
+    my $in_string = 0;
+    my $escaped = 0;
+    for my $char (split //, $text) {
+        if ($in_string) {
+            if ($escaped) {
+                $escaped = 0;
+            } elsif ($char eq '\\') {
+                $escaped = 1;
+            } elsif ($char eq '"') {
+                $in_string = 0;
+            }
+            next;
+        }
+        if ($char eq '"') {
+            $in_string = 1;
+        } elsif ($char eq '{' || $char eq '[') {
+            push @stack, $char;
+        } elsif ($char eq '}' || $char eq ']') {
+            return 0 if !@stack;
+            my $open = pop @stack;
+            return 0 if ($open eq '{' && $char ne '}') || ($open eq '[' && $char ne ']');
+            return 0 if !@stack;
         }
     }
+    return $in_string || $escaped || @stack ? 1 : 0;
 }
 
 sub Wattpilot_Parse($$) {
     my ($hash, $msg) = @_;
-    my $name = $hash->{NAME};
-	
-    Wattpilot_LogRawJson($hash, "IN", $msg);
-    
-    my $json = eval { decode_json($msg) };
-    if($@) {
-        Log3 $name, 1, "Wattpilot ($name) - JSON decoding failed; payload suppressed";
-        return;
+    return Wattpilot_ProcessJsonPayload($hash, $msg);
+}
+
+sub Wattpilot_IsScalarString($) {
+    my ($value) = @_;
+    return defined($value) && !ref($value);
+}
+
+sub Wattpilot_IsNumber($) {
+    my ($value) = @_;
+    return 0 if !Wattpilot_IsScalarString($value);
+    return $value =~ /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+}
+
+sub Wattpilot_IsInteger($) {
+    my ($value) = @_;
+    return Wattpilot_IsScalarString($value) && $value =~ /^-?(?:0|[1-9]\d*)$/;
+}
+
+sub Wattpilot_IsBoolean($) {
+    my ($value) = @_;
+    return 1 if JSON::is_bool($value);
+    return Wattpilot_IsScalarString($value) && $value =~ /^(?:0|1)$/;
+}
+
+sub Wattpilot_ValidateStatus($$) {
+    my ($hash, $status) = @_;
+    return 0 if ref($status) ne 'HASH';
+
+    my %integer = map { $_ => 1 } qw(car frc ftt amp lmo);
+    my %number = map { $_ => 1 } qw(eto wh);
+    for my $key (keys %integer) {
+        next if !exists($status->{$key}) || !defined($status->{$key});
+        if (!Wattpilot_IsInteger($status->{$key})) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+            delete $status->{$key};
+        }
     }
-    
-    my $type = $json->{type} // "";
+    for my $key (keys %number) {
+        next if !exists($status->{$key}) || !defined($status->{$key});
+        if (!Wattpilot_IsNumber($status->{$key})) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+            delete $status->{$key};
+        }
+    }
+    if (exists($status->{nrg}) && defined($status->{nrg})) {
+        my $valid = ref($status->{nrg}) eq 'ARRAY'
+            && @{$status->{nrg}} >= 12
+            && !grep { !defined($_) || !Wattpilot_IsNumber($_) } @{$status->{nrg}}[0..11];
+        if (!$valid) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=nrg";
+            delete $status->{nrg};
+        }
+    }
+    return 1;
+}
+
+sub Wattpilot_DispatchMessage($$) {
+    my ($hash, $json) = @_;
+    my $name = $hash->{NAME};
+
+    if (ref($json) ne 'HASH') {
+        Log3 $name, 2, "Wattpilot ($name) - Ignoring JSON message with non-object top level";
+        return 0;
+    }
+    if (!Wattpilot_IsScalarString($json->{type}) || $json->{type} eq '') {
+        Log3 $name, 2, "Wattpilot ($name) - Ignoring JSON message with missing or invalid type";
+        return 0;
+    }
+
+    my $type = $json->{type};
     my %known_type = map { $_ => 1 } qw(hello authRequired authSuccess authError fullStatus deltaStatus response);
     Log3 $name, 4, "Wattpilot ($name) - Received JSON message type=" . ($known_type{$type} ? $type : "unknown");
-    
+
     if ($type eq 'hello') {
-        $hash->{SERIAL} = $json->{serial} if (!$hash->{SERIAL}); # Seriennummer übernehmen falls fehlt
-        $hash->{VERSION} = $json->{version};
-        readingsSingleUpdate($hash, "version", $json->{version}, 1);
+        $hash->{helper}{deviceType} = $json->{devicetype}
+            if Wattpilot_IsScalarString($json->{devicetype});
+        $hash->{helper}{protocol} = int($json->{protocol})
+            if Wattpilot_IsInteger($json->{protocol});
+        $hash->{SERIAL} = $json->{serial}
+            if (!$hash->{SERIAL} && Wattpilot_IsScalarString($json->{serial}) && $json->{serial} =~ /^\d+$/);
+        if (Wattpilot_IsScalarString($json->{version})) {
+            $hash->{VERSION} = $json->{version};
+            readingsSingleUpdate($hash, "version", $json->{version}, 1);
+        }
         Log3 $name, 4, "Wattpilot ($name) - Hello received";
     } elsif ($type eq 'authRequired') {
         Log3 $name, 4, "Wattpilot ($name) - Auth Required";
         Wattpilot_ClearCommandState($hash);
         Wattpilot_SendAuth($hash, $json);
     } elsif ($type eq 'authSuccess') {
+        if (!$hash->{helper}{authPending}) {
+            Log3 $name, 1, "Wattpilot ($name) - Authentication success arrived outside an active challenge";
+            Wattpilot_AbortAuthentication($hash, "auth_sequence_invalid");
+            return 0;
+        }
         Log3 $name, 2, "Wattpilot ($name) - Authentication Successful";
         $hash->{helper}{authenticated} = 1;
+        delete $hash->{helper}{authPending};
+        delete $hash->{helper}{authHashMode};
         readingsSingleUpdate($hash, "state", "connected", 1);
     } elsif ($type eq 'authError') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication failed";
-        Wattpilot_ClearCommandState($hash);
-        readingsSingleUpdate($hash, "state", "auth_failed", 1);
-        DevIo_CloseDev($hash);
+        Wattpilot_AbortAuthentication($hash, "auth_failed");
     } elsif ($type eq 'fullStatus' || $type eq 'deltaStatus') {
-        Wattpilot_UpdateReadings($hash, $json->{status});
+        if (ref($json->{status}) ne 'HASH') {
+            Log3 $name, 2, "Wattpilot ($name) - Ignoring status message with missing or invalid status";
+            return 0;
+        }
+        my %status = %{$json->{status}};
+        Wattpilot_ValidateStatus($hash, \%status);
+        Wattpilot_UpdateReadings($hash, \%status);
     } elsif ($type eq 'response') {
+        if (exists($json->{success}) && !Wattpilot_IsBoolean($json->{success})) {
+            Log3 $name, 2, "Wattpilot ($name) - Ignoring response with invalid success value";
+            return 0;
+        }
+        if (exists($json->{success}) && $json->{success}
+            && ref($json->{status}) ne 'HASH') {
+            Log3 $name, 2, "Wattpilot ($name) - Ignoring successful response with missing or invalid status";
+            return 0;
+        }
+        if (ref($json->{status}) eq 'HASH') {
+            my %status = %{$json->{status}};
+            Wattpilot_ValidateStatus($hash, \%status);
+            $json = { %$json, status => \%status };
+        }
         Wattpilot_HandleResponse($hash, $json);
+    } else {
+        Log3 $name, 3, "Wattpilot ($name) - Ignoring unsupported JSON message type=unknown";
     }
+    return 1;
 }
 
 sub Wattpilot_UpdateReadings($$) {
     my ($hash, $status) = @_;
     my $name = $hash->{NAME};
     return if ref($status) ne 'HASH';
+    my %validated_status = %$status;
+    $status = \%validated_status;
+    Wattpilot_ValidateStatus($hash, $status);
     
     # Rate-Limiting Logik:
     # Einige Werte (wie 'nrg' - Spannung/Strom) aktualisieren sehr häufig (hochfrequent).
@@ -302,7 +475,7 @@ sub Wattpilot_UpdateReadings($$) {
     # --- KRITISCHE / NIEDERFREQUENTE UPDATES (Immer aktualisieren) ---
     
     # Fahrzeug Status (Car State)
-    if (defined $status->{car}) {
+    if (defined $status->{car} && Wattpilot_IsInteger($status->{car})) {
         my %CarStateMap = (0 => 'Unknown', 1 => 'Idle', 2 => 'Charging', 3 => 'WaitCar', 4 => 'Complete', 5 => 'Error');
         my $state = $CarStateMap{int($status->{car})} // "Unknown";
         readingsBulkUpdate($hash, "CarState", $state);
@@ -315,7 +488,7 @@ sub Wattpilot_UpdateReadings($$) {
     my $is_charging = ($hash->{helper}{car_state} // 0) == 2;
     
     # Force state (frc): compatibility labels Start/Stop plus explicit Neutral.
-    if (defined $status->{frc}) {
+    if (defined $status->{frc} && Wattpilot_IsInteger($status->{frc})) {
         my $frc_val = $status->{frc};
         my %frc_map = (0 => 'Neutral', 1 => 'Stop', 2 => 'Start');
         my $state = (defined($frc_val) && !ref($frc_val) && $frc_val =~ /^-?\d+$/
@@ -326,7 +499,7 @@ sub Wattpilot_UpdateReadings($$) {
     }
     
     # Nächste Fahrt Zeit (ftt)
-    if (defined $status->{ftt}) {
+    if (defined $status->{ftt} && Wattpilot_IsInteger($status->{ftt})) {
         # Sekunden ab Mitternacht in hh:mm umrechnen
         my $secs = $status->{ftt};
         my $h = int($secs / 3600);
@@ -335,11 +508,11 @@ sub Wattpilot_UpdateReadings($$) {
     }
     
     # Stromstärke (amp) - Sollte immer sofort aktualisiert werden
-    if (defined $status->{amp}) {
+    if (defined $status->{amp} && Wattpilot_IsInteger($status->{amp})) {
         readingsBulkUpdate($hash, "Strom", $status->{amp});
     }
 	
-	if (defined $status->{lmo}) {
+	if (defined $status->{lmo} && Wattpilot_IsInteger($status->{lmo})) {
     my %mode_rev = (
         3 => 'Default',
         4 => 'Eco',
@@ -367,18 +540,18 @@ sub Wattpilot_UpdateReadings($$) {
     if ($process_nrg) {
         
         # Energie Gesamt (eto)
-        if (defined $status->{eto}) {
+        if (defined $status->{eto} && Wattpilot_IsNumber($status->{eto})) {
              # Rundung auf 2 Nachkommastellen, Umrechnung Wh -> kWh wenn nötig (Hier Annahme: Rohwert durch 1000)
              readingsBulkUpdate($hash, "EnergyTotal", sprintf("%.2f", $status->{eto} / 1000));
         }
 
         # Energie seit Anstecken (wh)
-        if (defined $status->{wh}) {
+        if (defined $status->{wh} && Wattpilot_IsNumber($status->{wh})) {
              readingsBulkUpdate($hash, "Energie_seit_Anstecken", sprintf("%.2f", $status->{wh}));
         }
         
         # Energie Details (nrg Array)
-        if (defined $status->{nrg}) {
+        if (ref($status->{nrg}) eq 'ARRAY') {
             my @nrg = @{$status->{nrg}};
             if (@nrg > 11) {
                 readingsBulkUpdate($hash, "Voltage_L1", sprintf("%.2f", $nrg[0]));
@@ -406,18 +579,27 @@ sub Wattpilot_SendAuth($$) {
 
     if ($password_result->{status} eq "error") {
         Log3 $name, 1, "Wattpilot ($name) - Cannot authenticate because credential storage is unavailable";
-        readingsSingleUpdate($hash, "state", "credential error", 1);
+        Wattpilot_AbortAuthentication($hash, "credential error");
         return;
     }
     my $password = $password_result->{status} eq "value" ? $password_result->{value} : undef;
-    if (!$password || !$serial) {
+    if (!$password || !defined($serial) || $serial !~ /^\d+$/) {
         Log3 $name, 1, "Wattpilot ($name) - Missing Password or Serial for authentication";
+        Wattpilot_AbortAuthentication($hash, "auth_config_missing");
+        return;
+    }
+
+    if (!Wattpilot_IsScalarString($json->{token1}) || $json->{token1} eq ''
+        || !Wattpilot_IsScalarString($json->{token2}) || $json->{token2} eq '') {
+        Log3 $name, 1, "Wattpilot ($name) - Authentication challenge has invalid tokens";
+        Wattpilot_AbortAuthentication($hash, "auth_challenge_invalid");
         return;
     }
 
     my $mode = eval { Wattpilot_GetAuthHashMode($hash, $json) };
     if ($@) {
-        Log3 $name, 1, "Wattpilot ($name) - Failed to determine authentication hash mode";
+        Log3 $name, 1, "Wattpilot ($name) - Authentication hash mode is unsupported";
+        Wattpilot_AbortAuthentication($hash, "auth_hash_unsupported");
         return;
     }
     $hash->{helper}{authHashMode} = $mode;
@@ -427,21 +609,23 @@ sub Wattpilot_SendAuth($$) {
     };
     if ($@) {
         Log3 $name, 1, "Wattpilot ($name) - Password hash derivation failed for mode=$mode";
-        readingsSingleUpdate($hash, "state", "auth_hash_failed", 1);
+        Wattpilot_AbortAuthentication($hash, "auth_hash_failed");
         return;
     }
 
     if (!Wattpilot_SetStoredPasswordHash($hash, $password_hash)) {
-        readingsSingleUpdate($hash, "state", "auth_hash_store_failed", 1);
+        Wattpilot_AbortAuthentication($hash, "auth_hash_store_failed");
         return;
     }
 
     my $token1 = $json->{token1};
     my $token2 = $json->{token2};
 
-    my $random_bytes = '';
-    for (my $i = 0; $i < 16; $i++) {
-        $random_bytes .= chr(int(rand(256)));
+    my $random_bytes = eval { Wattpilot_SecureRandomBytes(16) };
+    if ($@ || !defined($random_bytes) || length($random_bytes) != 16) {
+        Log3 $name, 1, "Wattpilot ($name) - Secure authentication nonce generation failed";
+        Wattpilot_AbortAuthentication($hash, "auth_nonce_failed");
+        return;
     }
     my $token3 = unpack 'H*', $random_bytes;
 
@@ -457,11 +641,17 @@ sub Wattpilot_SendAuth($$) {
         hash   => $final_hash,
     };
 
-    my $msg = encode_json($auth_response);
+    my $msg = JSON->new->canonical->encode($auth_response);
     Log3 $name, 3, "Wattpilot ($name) - Sending Auth Response using mode=$mode";
     Wattpilot_WriteJson($hash, $msg);
-	
+	$hash->{helper}{authPending} = 1;
 	readingsSingleUpdate($hash, "authHashMode", $mode, 1);
+}
+
+sub Wattpilot_SecureRandomBytes($) {
+    my ($length) = @_;
+    die "Invalid secure random length" if !defined($length) || $length < 1;
+    return urandom($length);
 }
 
 sub Wattpilot_BcryptPasswordHash($$$) {
@@ -558,7 +748,7 @@ sub Wattpilot_Set($@) {
 		
 	
 		readingsSingleUpdate($hash, "state", "password stored", 1);
-		Wattpilot_ClearCommandState($hash);
+		Wattpilot_ClearConnectionState($hash);
 		
 		RemoveInternalTimer($hash);
 		DevIo_CloseDev($hash);
@@ -605,6 +795,7 @@ sub Wattpilot_SendSecure($$$) {
         $hash->{msg_id}++;
         $requestId = $hash->{msg_id};
     } while (exists $pending->{$requestId});
+    $requestId = int($hash->{msg_id});
 
     my $payload = {
         type => "setValue",
@@ -612,7 +803,7 @@ sub Wattpilot_SendSecure($$$) {
         key => $key,
         value => $val
     };
-    my $payload_str = encode_json($payload);
+    my $payload_str = JSON->new->canonical->encode($payload);
     my $hmac = Digest::SHA::hmac_sha256_hex($payload_str, $stored_hash);
     my $secure_msg = {
         type => "securedMsg",
@@ -621,7 +812,7 @@ sub Wattpilot_SendSecure($$$) {
         hmac => $hmac
     };
 
-    my $final_msg = encode_json($secure_msg);
+    my $final_msg = JSON->new->canonical->encode($secure_msg);
     Log3 $name, 3, "Wattpilot ($name) - Sending secured command key=$key requestId=$requestId";
     Wattpilot_WriteJson($hash, $final_msg);
     $pending->{$requestId} = { key => $key, value => $val, sentAt => gettimeofday() };
@@ -654,6 +845,23 @@ sub Wattpilot_ClearCommandState($) {
         if ref($pending) eq 'HASH' && keys %$pending;
     delete $hash->{helper}{pendingRequests};
     delete $hash->{helper}{authenticated};
+    delete $hash->{helper}{authPending};
+    delete $hash->{helper}{authHashMode};
+}
+
+sub Wattpilot_ClearConnectionState($) {
+    my ($hash) = @_;
+    Wattpilot_ClearCommandState($hash);
+    delete $hash->{helper}{deviceType};
+    delete $hash->{helper}{protocol};
+    delete $hash->{helper}{jsonBuffer};
+}
+
+sub Wattpilot_AbortAuthentication($$) {
+    my ($hash, $state) = @_;
+    Wattpilot_ClearConnectionState($hash);
+    readingsSingleUpdate($hash, "state", $state, 1);
+    DevIo_CloseDev($hash);
 }
 
 sub Wattpilot_ScheduleRequestTimeout($) {
@@ -728,7 +936,7 @@ sub Wattpilot_Get($@) {
 sub Wattpilot_Ready($) {
     my ($hash) = @_;
     if($hash->{STATE} eq "disconnected") {
-        Wattpilot_ClearCommandState($hash);
+        Wattpilot_ClearConnectionState($hash);
         return Wattpilot_OpenDev($hash, 1, sub {
              my ($hash, $error) = @_;
              return if($error);
@@ -747,7 +955,7 @@ sub Wattpilot_Attr(@) {
     
     if($attrName eq "disable") {
         if($cmd eq "set" && $attrVal eq "1") {
-             Wattpilot_ClearCommandState($hash);
+             Wattpilot_ClearConnectionState($hash);
              RemoveInternalTimer($hash);
              DevIo_CloseDev($hash);
              readingsSingleUpdate($hash, "state", "disabled", 1);
@@ -789,13 +997,22 @@ sub Wattpilot_GetAuthHashMode($$) {
     my ($hash, $json) = @_;
     my $name = $hash->{NAME};
 
-    my $attr_mode   = AttrVal($name, "authHash", "auto");
-    my $device_mode = lc($json->{hash} // "");
+    my $attr_mode = AttrVal($name, "authHash", "auto");
 
-    return $attr_mode if ($attr_mode ne "auto");
+    return $attr_mode if $attr_mode eq "pbkdf2" || $attr_mode eq "bcrypt";
+    die "Unsupported authHash attribute" if $attr_mode ne "auto";
 
+    if (!exists($json->{hash})) {
+        return "pbkdf2"
+            if ($hash->{helper}{deviceType} // '') eq 'wattpilot'
+                && ($hash->{helper}{protocol} // -1) == 2;
+        die "Missing auth hash outside legacy Wattpilot protocol 2";
+    }
+    die "Invalid announced auth hash" if !Wattpilot_IsScalarString($json->{hash});
+    my $device_mode = lc($json->{hash});
     return "bcrypt" if ($device_mode eq "bcrypt");
-    return "pbkdf2";
+    return "pbkdf2" if ($device_mode eq "pbkdf2");
+    die "Unsupported announced auth hash";
 }
 
 sub Wattpilot_GetPassword {
@@ -1369,6 +1586,7 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>This module controls a Fronius Wattpilot Wallbox via WebSocket API V2.</li>
   <li>It supports reading status values, setting charging modes, starting/stopping charging, and supports both PBKDF2 and bcrypt based authentication.</li>
+  <li>Decoded input is limited to 1 MiB, structurally framed, and type-checked. DevIo owns raw WebSocket-frame buffering; Wattpilot separately bounds logical JSON continuation. Omitted <code>deltaStatus</code> fields remain unchanged.</li>
   <br>
 
   <a name="Wattpilot-define"></a>
@@ -1438,7 +1656,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>authHash &lt;auto|pbkdf2|bcrypt&gt;</code><br>
         Selects the password hashing method for authentication.<br>
         <ul>
-          <li><b>auto</b>: Use the method announced by the Wattpilot device</li>
+          <li><b>auto</b>: Accept announced PBKDF2 or bcrypt. A missing hash selects PBKDF2 only for the evidenced legacy <code>devicetype=wattpilot</code>, protocol-2 profile; unknown modes are rejected.</li>
           <li><b>pbkdf2</b>: Force legacy PBKDF2 authentication</li>
           <li><b>bcrypt</b>: Force bcrypt authentication (used by newer Wattpilot Flex devices)</li>
         </ul>
@@ -1505,6 +1723,7 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>Dieses Modul dient zur Steuerung einer Fronius Wattpilot Wallbox über die WebSocket API V2.</li>
   <li>Es unterstützt das Auslesen von Statuswerten, das Setzen von Lademodi, das Starten/Stoppen der Ladung sowie die Authentifizierung per PBKDF2 und bcrypt.</li>
+  <li>Dekodierte Eingaben sind auf 1 MiB begrenzt, werden strukturell getrennt und typgeprüft. DevIo puffert rohe WebSocket-Frames; Wattpilot begrenzt die logische JSON-Fortsetzung separat. Ausgelassene <code>deltaStatus</code>-Felder bleiben unverändert.</li>
   <br>
 
   <a name="Wattpilot-define"></a>
@@ -1574,7 +1793,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>authHash &lt;auto|pbkdf2|bcrypt&gt;</code><br>
         Wählt das Verfahren zur Passwort-Hash-Bildung für die Authentifizierung.<br>
         <ul>
-          <li><b>auto</b>: Das vom Gerät angekündigte Verfahren wird verwendet</li>
+          <li><b>auto</b>: Akzeptiert angekündigtes PBKDF2 oder bcrypt. Ein fehlender Hash wählt nur beim belegten Legacy-Profil <code>devicetype=wattpilot</code>, Protokoll 2, PBKDF2; unbekannte Verfahren werden abgelehnt.</li>
           <li><b>pbkdf2</b>: Erzwingt das ältere PBKDF2-Verfahren</li>
           <li><b>bcrypt</b>: Erzwingt bcrypt (für neuere Wattpilot-Flex-Geräte)</li>
         </ul>
@@ -1643,7 +1862,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v1.4.0",
+  "version": "v1.5.0",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>"
@@ -1662,7 +1881,8 @@ sub Wattpilot_WriteJson($$) {
         "DevIo": "0",
         "JSON": "0",
         "Digest::SHA": "0",
-        "Crypt::PBKDF2": "0"
+        "Crypt::PBKDF2": "0",
+        "Crypt::URandom": "0"
       },
       "recommends": {
         "Crypt::Bcrypt": "0"

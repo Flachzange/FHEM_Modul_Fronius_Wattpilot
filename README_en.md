@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **1.4.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Current module version: **1.5.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## 1. Prerequisites (System & Perl Modules)
 
@@ -12,6 +12,7 @@ For the module to work, some additional Perl modules must be installed on the se
 
 * `JSON`
 * `Crypt::PBKDF2`
+* `Crypt::URandom`
 * `Crypt::Bcrypt`
 * `Digest::SHA`
 * `MIME::Base64`
@@ -25,11 +26,11 @@ sudo apt-get update
 sudo apt-get install libjson-perl libdigest-sha-perl libmime-base64-perl
 ```
 
-For `Crypt::PBKDF2` and `Crypt::Bcrypt` (often not available as an apt package), it is best to use cpanminus:
+For `Crypt::PBKDF2`, `Crypt::URandom`, and `Crypt::Bcrypt` (often not available as an apt package), it is best to use cpanminus:
 
 ```bash
 sudo apt-get install cpanminus
-sudo cpanm Crypt::PBKDF2 Crypt::Bcrypt
+sudo cpanm Crypt::PBKDF2 Crypt::URandom Crypt::Bcrypt
 ```
 
 ## 2. Installing the Module
@@ -173,13 +174,15 @@ The default is `0`. Complete inbound and outbound JSON messages are logged only 
 
 The module uses a central write path for outbound JSON. It suppresses DevIo's own level-5 payload log only for the synchronous write call without changing the FHEM `verbose` attribute globally or persistently. `DevIo_SimpleWrite(..., 2)` receives unpacked text; DevIo determines the WebSocket opcode from its connection and `$hash->{binary}`. Complete clear-text output from Wattpilot-owned logging is produced only by the explicit raw mode described above.
 
-Technical limit: in inspected FHEM revision `5354e001b55c323f457bd907434e46f284d9582c`, DevIo `privacy=1` masks only the initial opening line. For WebSockets, `DevIo_OpenDev` creates an internal HttpUtils hash without `hideurl` and without inheriting `devioLoglevel`; HttpUtils can log URLs, DNS/IP results, timeouts, and connection errors at levels 4 or 5. Wattpilot preserves correct DevIo semantics for initial connection (`reopen=0`) and reconnect (`reopen=1`) and redacts its own messages, but cannot reliably suppress those transitive core logs through the public DevIo interface. Reliable full suppression requires an upstream FHEM change that passes privacy to HttpUtils as `hideurl` and provides suitable log/error redaction. Until then, high-verbose logs must not be treated as endpoint-free and must be protected and sanitized before sharing.
+Technical limit: in inspected FHEM revision `6a920121204142b435c7b05cd9e9e2dd754879f6`, DevIo `privacy=1` masks only the initial opening line. For WebSockets, `DevIo_OpenDev` creates an internal HttpUtils hash without `hideurl` and without inheriting `devioLoglevel`; HttpUtils can log URLs, DNS/IP results, timeouts, and connection errors at levels 4 or 5. Wattpilot preserves correct DevIo semantics for initial connection (`reopen=0`) and reconnect (`reopen=1`) and redacts its own messages, but cannot reliably suppress those transitive core logs through the public DevIo interface. Reliable full suppression requires an upstream FHEM change that passes privacy to HttpUtils as `hideurl` and provides suitable log/error redaction. Until then, high-verbose logs must not be treated as endpoint-free and must be protected and sanitized before sharing.
+
+At this revision, `DevIo_DecodeWS` owns incomplete raw WebSocket-frame buffering in `.WSBUF`, but it does not use the `FIN` bit as a logical message boundary. Wattpilot therefore has no second raw-frame buffer and instead keeps a separate JSON continuation buffer bounded to 1 MiB in total. It structurally processes multiple complete concatenated JSON values, waits for the next decoded payload when a top-level object is syntactically incomplete, and atomically rejects malformed or oversized sequences. Status messages require an object; known scalar fields and the first twelve `nrg` elements are type-checked before use. Omitted `deltaStatus` fields remain unchanged.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 
 Selects the password hashing method.
 
-* `auto` (Default): Automatically selects the method required by the device.
+* `auto` (Default): Accepts only an explicitly announced `pbkdf2` or `bcrypt`. For the evidenced legacy profile `devicetype=wattpilot`, protocol 2, a missing `authRequired.hash` remains compatible and selects PBKDF2. An explicitly unknown mode, or a missing mode outside that profile, is rejected.
 * `pbkdf2`: Forces PBKDF2 (older models).
 * `bcrypt`: Forces bcrypt (newer Wattpilot Flex models).
 
