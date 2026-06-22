@@ -1,7 +1,6 @@
 {
   "hello": {
     "type": "hello",
-    "serial": "10000001",
     "devicetype": "wattpilot",
     "version": "36.3",
     "protocol": 2,
