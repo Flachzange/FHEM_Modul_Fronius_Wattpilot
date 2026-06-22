@@ -13,20 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          show-progress: false
-      - name: Capture Issue 8 transform
-        run: |
-          set +e
-          python3 scripts/run_issue8_transform.py > issue8-transform.log 2>&1
-          printf '%s\n' "$?" > issue8-transform.status
-          exit 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: issue8-transform-diagnostic
-          path: |
-            issue8-transform.log
-            issue8-transform.status
-          if-no-files-found: error
-      - name: Validate transform
-        run: test "$(cat issue8-transform.status)" = "0"
+      - name: Install Perl dependencies
+        run: sudo apt-get update && sudo apt-get install -y libarchive-zip-perl libjson-perl libcrypt-pbkdf2-perl libcrypt-bcrypt-perl
+      - name: Run checks
+        run: sh scripts/ci.sh
+      - name: Build and verify release
+        run: sh scripts/build-release.sh
+      - name: Verify reproducible release
+        run: sh scripts/check_reproducible_release.sh
