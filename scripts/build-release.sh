@@ -56,7 +56,10 @@ find dist -exec touch -d "@$epoch" {} +
 perl scripts/create_zip.pl "$package_dir" "$archive" "$epoch"
 sha256sum "$archive" > "$archive.sha256"
 
-sh scripts/verify-release.sh "$version" > "dist/verification-output.txt" 2>&1
+if ! sh scripts/verify-release.sh "$version" > "dist/verification-output.txt" 2>&1; then
+    cat "dist/verification-output.txt"
+    exit 1
+fi
 cat "dist/verification-output.txt"
 
 printf 'Release artifacts created:\n%s\n%s\n%s\n' "$standalone" "$archive" "$archive.sha256"
