@@ -1,0 +1,35 @@
+{
+  "hello": {
+    "type": "hello",
+    "devicetype": "wattpilot",
+    "version": "36.3",
+    "protocol": 2,
+    "secured": true
+  },
+  "authRequired": {
+    "type": "authRequired",
+    "token1": "A",
+    "token2": "B"
+  },
+  "fullStatus": [
+    {
+      "type": "fullStatus",
+      "partial": true,
+      "status": {
+        "car": 1,
+        "amp": 16,
+        "frc": 0,
+        "lmo": 3
+      }
+    },
+    {
+      "type": "fullStatus",
+      "partial": false,
+      "status": {
+        "eto": 123456,
+        "wh": 789,
+        "nrg": [230, 231, 232, 0, 1, 2, 3, 230, 462, 696, 0, 1388]
+      }
+    }
+  ]
+}

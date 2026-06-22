@@ -2,6 +2,10 @@
 
 This file is the stable entry point for the repository's JSON/WebSocket API documentation.
 
+## Protocol profiles
+
+The original Wattpilot generation is covered by [`docs/WATTPILOT-LEGACY-PROTOCOL2.md`](docs/WATTPILOT-LEGACY-PROTOCOL2.md) and the synthetic fixture [`t/fixtures/legacy-protocol2-session.json`](t/fixtures/legacy-protocol2-session.json). The Flex generation is documented separately below. Neither document is an official protocol specification.
+
 ## Pure sanitized JSON example
 
 The complete sanitized `fullStatus` capture is available as a standalone JSON file:
@@ -20,10 +24,10 @@ Use [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md) for the
 
 Use [`docs/WATTPILOT-FLEX-FIELD-DESCRIPTIONS.md`](docs/WATTPILOT-FLEX-FIELD-DESCRIPTIONS.md) as a companion lookup for readable aliases, titles, description candidates, unit candidates, enum candidates, categories, and historical read/write claims.
 
-Those descriptions are retained from the former root `API.md` compilation. They are **historical candidates**, not confirmed Wattpilot Flex facts. Always cross-check them against the empirical Flex reference and the evidence notes in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Those descriptions are retained from the former root `API.md` compilation. They are historical candidates, not confirmed Wattpilot Flex facts. Always cross-check them against the empirical Flex reference and [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Evidence rule
 
-No document in this repository is an official Fronius API specification. A historical alias, a go-e description, current FHEM behavior, or a third-party implementation does not by itself establish field meaning, unit, enum semantics, requiredness, or writability for Wattpilot Flex.
+No document in this repository is an official Fronius API specification. A historical alias, current implementation, or third-party implementation does not by itself establish field meaning, unit, enum semantics, requiredness, or writability.
 
 When sources conflict, the conflict must remain visible rather than being silently resolved.
