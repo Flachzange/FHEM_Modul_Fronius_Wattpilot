@@ -2,6 +2,16 @@
 
 This file is the stable entry point for the repository's JSON/WebSocket API documentation.
 
+## Pure sanitized JSON example
+
+The complete sanitized `fullStatus` capture is available as a standalone JSON file:
+
+[`t/fixtures/fullStatus-flex-observed.json`](t/fixtures/fullStatus-flex-observed.json)
+
+It contains the complete observed message wrapper and all 558 direct `status` keys from the documented Wattpilot Flex Home 22 C6 capture. Identifiers, network coordinates, authentication material, exact operational counters, market data, and installation-specific labels were replaced while preserving the key set, nesting, array lengths, null positions, JSON scalar types, and representative values.
+
+This fixture is the single canonical JSON copy used both by the documentation and automated tests. It should not be duplicated under another path, because two independently editable copies could drift apart.
+
 ## Current empirical Flex reference
 
 Use [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md) for the sanitized observation from a Wattpilot Flex Home 22 C6 with firmware 43.4 and protocol 4. It is authoritative only for the observed key presence, nesting, array shape, JSON types, and sanitized representative values in that capture.
