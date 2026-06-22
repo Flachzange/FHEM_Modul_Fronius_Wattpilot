@@ -1,22 +1,87 @@
-name: PR15 artifact
+name: Create clean PR 15 replacement
+
 on:
   push:
     branches: [codex/document-flex-json-api]
     paths: [.github/workflows/pr15-artifact.yml]
+
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
+        with:
+          fetch-depth: 0
+
+      - name: Apply reviewed changes
+        run: |
           python3 scripts/pr15-fix-doc-sections.py
           python3 scripts/pr15-fix-doc-rows.py
           sh scripts/pr15-fix-readme.sh
-      - uses: actions/upload-artifact@v4
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('docs/PROTOCOL-SOURCES.md')
+          s = p.read_text(encoding='utf-8')
+          marker = '\n## Use in future changes\n'
+          block = '''\n## Known field-level conflicts\n\n- **`frc`:** the Flex 43.4 capture proves only numeric value `0`. Current FHEM 1.x maps `0=Start`, `1=Stop`, while pinned Wattpilot-specific implementations at commits `4712ba3b8409fda55303870c047038b1b221d7ff` and `498aa8709f198fcde2b41159ad99dc02e57accc9` agree on `0=Neutral`, `1=Off`, `2=On` and label the field R/W. These remain third-party claims until reproduced or officially documented for Flex 43.4.\n- **`amp`:** the Flex 43.4 capture contains `amp=32` and `cll.currentLimitMax=32`. Pinned older Wattpilot-specific evidence at commit `4712ba3b8409fda55303870c047038b1b221d7ff` states R/W amperes with range 6–16, while Issue #8 targets 6–32 for the current public command. The accepted Flex 43.4 write range remains unverified.\n'''
+          if s.count(marker) != 1:
+              raise SystemExit('unexpected protocol sources insertion point')
+          p.write_text(s.replace(marker, block + marker, 1), encoding='utf-8')
+
+          p = Path('scripts/build-release.sh')
+          s = p.read_text(encoding='utf-8')
+          old = 'cp docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/"'
+          new = 'cp docs/PROTOCOL-SOURCES.md docs/PROTOCOL-CONFLICTS.md docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/"'
+          if s.count(old) != 1:
+              raise SystemExit('unexpected build-release source line')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('scripts/verify-release.sh')
+          s = p.read_text(encoding='utf-8')
+          old = '"$package_dir/SHA256SUMS" "$package_dir/docs/PROTOCOL-SOURCES.md" \\\n    "$package_dir/docs/WATTPILOT-FLEX-JSON-API.md" \\'
+          new = '"$package_dir/SHA256SUMS" "$package_dir/docs/PROTOCOL-SOURCES.md" \\\n    "$package_dir/docs/PROTOCOL-CONFLICTS.md" \\\n    "$package_dir/docs/WATTPILOT-FLEX-JSON-API.md" \\'
+          if s.count(old) != 1:
+              raise SystemExit('unexpected verify-release artifact list')
+          s = s.replace(old, new, 1)
+          old = 'cmp docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/WATTPILOT-FLEX-JSON-API.md"'
+          new = 'cmp docs/PROTOCOL-CONFLICTS.md "$package_dir/docs/PROTOCOL-CONFLICTS.md"\n' + old
+          if s.count(old) != 1:
+              raise SystemExit('unexpected verify-release comparison point')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Remove temporary helpers
+        run: |
+          rm -f .github/workflows/pr15-artifact.yml
+          rm -f scripts/pr15-fix-doc-sections.py
+          rm -f scripts/pr15-fix-doc-rows.py
+          rm -f scripts/pr15-fix-readme.sh
+          rm -f scripts/pr15-review-note.txt
+
+      - name: Validate
+        run: |
+          scripts/ci.sh
+          scripts/build-release.sh
+          scripts/check_reproducible_release.sh
+
+      - uses: peter-evans/create-pull-request@v7
         with:
-          name: pr15-artifact
-          path: |
-            README.md
-            docs/WATTPILOT-FLEX-JSON-API.md
+          branch: openai/pr15-review-fixes
+          base: main
+          title: '[OpenAI] Document observed Wattpilot Flex JSON API'
+          body: |
+            Replaces draft PR #15 with a clean branch.
+
+            Includes the observed Flex fixture and exhaustive API documentation from #15, plus the independently reviewed `frc` and `amp` evidence conflicts, regression checks, and release packaging.
+
+            Runtime code remains unchanged.
+
+            Closes #11
+          commit-message: Document observed Flex API and protocol conflicts
+          draft: true
+          delete-branch: false
