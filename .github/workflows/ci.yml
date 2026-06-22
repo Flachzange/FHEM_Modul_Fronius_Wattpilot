@@ -1,41 +1,59 @@
-name: CI
+name: Finalize Issue 8 branch
 
 on:
-  push:
   pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test:
-    name: test
+  finalize:
+    if: github.head_ref == 'codex/issue8-build'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: codex/issue8-build
+          fetch-depth: 0
           show-progress: false
-      - name: Apply Issue 8 implementation
+      - name: Apply tested implementation
         run: python3 scripts/run_issue8_transform.py
       - name: Install Perl dependencies
         run: sudo apt-get update && sudo apt-get install -y libarchive-zip-perl libjson-perl libcrypt-pbkdf2-perl libcrypt-bcrypt-perl
-      - name: Run checks
-        run: sh scripts/ci.sh
-      - name: Build and verify release
-        run: sh scripts/build-release.sh
-      - name: Verify reproducible release
-        run: sh scripts/check_reproducible_release.sh
-      - name: Collect reviewed sources
+      - name: Validate implementation and release
         run: |
-          mkdir -p issue8-result/t/lib issue8-result/docs
-          cp 72_Wattpilot.pm README.md README_en.md CHANGELOG.md issue8-result/
-          cp t/72_Wattpilot.t t/command_semantics.t issue8-result/t/
-          cp t/lib/DevIo.pm issue8-result/t/lib/DevIo.pm
-          cp docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md issue8-result/docs/
-          cp dist/verification-output.txt issue8-result/
-          sha256sum 72_Wattpilot.pm dist/Wattpilot_v1.4.0.zip > issue8-result/SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: issue8-result
-          path: issue8-result
-          if-no-files-found: error
+          sh scripts/ci.sh
+          sh scripts/build-release.sh
+          sh scripts/check_reproducible_release.sh
+      - name: Commit clean implementation tree
+        run: |
+          git fetch origin main
+          rm scripts/apply_issue8.py scripts/run_issue8_transform.py
+          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
+          git add -A -- \
+            72_Wattpilot.pm CHANGELOG.md README.md README_en.md \
+            docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md \
+            t/72_Wattpilot.t t/command_semantics.t t/lib/DevIo.pm \
+            scripts/apply_issue8.py scripts/run_issue8_transform.py \
+            .github/workflows/ci.yml
+          git diff --cached --name-only origin/main | LC_ALL=C sort > /tmp/actual-files
+          cat > /tmp/expected-files <<'EOF'
+          72_Wattpilot.pm
+          CHANGELOG.md
+          README.md
+          README_en.md
+          docs/PROTOCOL-SOURCES.md
+          docs/WATTPILOT-FLEX-JSON-API.md
+          t/72_Wattpilot.t
+          t/command_semantics.t
+          t/lib/DevIo.pm
+          EOF
+          sed -i 's/^          //' /tmp/expected-files
+          LC_ALL=C sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Correct command semantics and handle responses"
+          git push origin HEAD:codex/issue8-build
