@@ -115,8 +115,8 @@ Examples in this section are minimal synthetic documentation values unless expli
 - Direction: device → client in the historical compilation.
 - Candidate fields: `type`, `requestId`, `success`, and `status`.
 - Example: `{"type":"response","requestId":"1","success":true,"status":{"amp":16}}`
-- Evidence: historical compilation only; current 1.x parser does not handle this type and the accepted capture does not contain it.
-- Open questions: complete Flex 43.4 schema, error shape, request-ID type, and whether status is always returned.
+- Evidence: pinned Wattpilot-specific third-party implementation at commit `4712ba3b8409fda55303870c047038b1b221d7ff`; not observed in the accepted Flex capture and not official Fronius documentation. Version 1.4.0 correlates numeric request IDs and `sm`-suffixed IDs, treats returned `status` as a partial update, and reports failures without copying the device message into normal logs/readings.
+- Open questions: complete Flex 43.4 schema, device-side timeout, error-code fields, and whether status is always returned.
 
 ## Observed arrays
 

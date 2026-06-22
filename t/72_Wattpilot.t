@@ -42,6 +42,15 @@ sub fresh_device {
     return $hash;
 }
 
+sub mark_command_ready {
+    my ($hash) = @_;
+    $hash->{TEST_OPEN} = 1;
+    $hash->{STATE} = 'connected';
+    $hash->{helper}{authenticated} = 1;
+    delete $hash->{helper}{pendingRequests};
+    delete $hash->{msg_id};
+}
+
 sub synthetic_device {
     my ($name, $fuuid) = @_;
     return {
@@ -551,6 +560,7 @@ unlike($normal_logs, qr/TOKEN-SYNTHETIC|TOKEN-SECOND|SERIAL-SYNTHETIC|HASH-SYNTH
 
 DevIo::reset_test_state();
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
+mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 my $normal_outgoing = $DevIo::WRITES[0][1];
 unlike(log_text(), qr/\Q$normal_outgoing\E|synthetic-command-key|"hmac"/, 'normal logs redact outbound secured payload, key, and HMAC');
@@ -629,6 +639,7 @@ DevIo::reset_test_state();
 $DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 0;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
+mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 my $secured_outgoing = $DevIo::WRITES[0][1];
 my $secured_hex = unpack('H*', $secured_outgoing);
@@ -639,6 +650,7 @@ DevIo::reset_test_state();
 $DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 4;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
+mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 $secured_outgoing = $DevIo::WRITES[0][1];
 is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged when rawJsonLog is enabled below verbose 5');
@@ -647,6 +659,7 @@ DevIo::reset_test_state();
 $DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
+mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 $secured_outgoing = $DevIo::WRITES[0][1];
 is(payload_log_count($secured_outgoing), 1, 'securedMsg has exactly one intentional raw log entry');
@@ -708,6 +721,7 @@ unlike(log_text(), qr/TOKEN-ONE|TOKEN-TWO/, 'authentication credential error log
 $hash = fresh_device();
 $stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
 $DevIo::GET_KEY_ERRORS{$stable_hash} = 'synthetic secure credential read failure';
+mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 is(scalar @DevIo::WRITES, 0, 'secured command sends nothing after credential read failure');
 is($hash->{STATE}, 'credential error', 'secured command reports credential storage failure honestly');

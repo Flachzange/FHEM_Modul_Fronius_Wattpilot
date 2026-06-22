@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **1.3.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Current module version: **1.4.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## 1. Prerequisites (System & Perl Modules)
 
@@ -94,7 +94,7 @@ Credential reads distinguish value present, value absent, and storage failure. C
 
 ### Start / Stop Charging
 
-Manually starts or stops the charging process.
+Manually starts or stops the charging process. `Start` sends `frc=2`, `Stop` sends `frc=1`; the reading also reports `Neutral` for `frc=0`. Commands are sent only while the connection is open, authenticated, and a signing key is available.
 
 ```text
 set wallbox Laden_starten Start
@@ -103,7 +103,7 @@ set wallbox Laden_starten Stop
 
 ### Change Current (Amperes)
 
-Sets the charging current in Amperes (between 6A and 32A).
+Sets the charging current in ampere. Only integer values from 6 A through 32 A are accepted; invalid values are rejected before sending.
 
 ```text
 set wallbox Strom 16

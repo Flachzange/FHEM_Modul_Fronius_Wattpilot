@@ -30,7 +30,8 @@ Only the first two classes may support implemented field semantics, and writable
 The authoritative empirical reference and [`PROTOCOL-CONFLICTS.md`](PROTOCOL-CONFLICTS.md) preserve the known contradictions instead of silently resolving them:
 
 - **`frc`:** the Flex 43.4 capture proves only numeric value `0`. Current FHEM 1.x maps `0=Start`, `1=Stop`, while the two pinned Wattpilot-specific implementations above agree on `0=Neutral`, `1=Off`, `2=On` and label the field R/W. These remain third-party claims until reproduced or officially documented for Flex 43.4.
-- **`amp`:** the Flex 43.4 capture contains `amp=32` and `cll.currentLimitMax=32`. The pinned older Wattpilot-specific source at commit `4712ba3b8409fda55303870c047038b1b221d7ff` states R/W amperes with range 6–16, while Issue #8 targets 6–32 for the current public command. The accepted Flex 43.4 write range remains unverified.
+- **`amp`:** the Flex 43.4 capture contains `amp=32` and `cll.currentLimitMax=32`. The pinned older Wattpilot-specific source at commit `4712ba3b8409fda55303870c047038b1b221d7ff` states R/W amperes with range 6–16. Version 1.4.0 validates the established public FHEM command to 6–32 A; the exact Flex 43.4 device-side rejection behavior remains unverified.
+- **Secured commands and `response`:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` emits numeric request IDs inside `setValue`, wraps secured writes with an `sm`-suffixed outer ID and HMAC, and correlates incoming `response.requestId`. Successful optional `status` fields are applied as partial updates; failures expose request ID plus a device message. This is pinned third-party Wattpilot evidence, not official Fronius documentation. Version 1.4.0 accepts numeric IDs and their `sm` form, suppresses untrusted device messages in normal diagnostics, and bounds pending state to 32 requests/30 seconds.
 
 ## Use in future changes
 

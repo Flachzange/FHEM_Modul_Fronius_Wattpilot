@@ -4,6 +4,14 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
+## [v1.4.0] - 2026-06-22
+
+### Geändert
+
+- `frc` verwendet die korrigierten Werte 0=Neutral, 1=Stop und 2=Start; unbekannte Werte bleiben ausdrücklich unbekannt.
+- Gesicherte Befehle werden nur bei offener und authentifizierter Verbindung sowie vorhandenem Signaturschlüssel gesendet. `Strom` wird vor dem Senden auf 6–32 A begrenzt.
+- `response`-Nachrichten werden über die Request-ID korreliert, erfolgreiche Statuswerte über denselben Reading-Pfad verarbeitet und Fehler beziehungsweise Timeouts redigiert über Command-Readings gemeldet. Pending-Requests sind auf 32 Einträge und 30 Sekunden begrenzt.
+
 ## [v1.3.0] - 2026-06-21
 
 ### Hinzugefügt

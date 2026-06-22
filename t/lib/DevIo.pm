@@ -4,6 +4,8 @@ use strict;
 use warnings;
 
 our $FHEM_SOURCE_REVISION = '5354e001b55c323f457bd907434e46f284d9582c';
+our $FHEM_TIMER_SOURCE_REVISION = '72a81ea2b3836953fd52afbbd3f1ced034e3baeb';
+our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
 our ($OPEN_ERROR, $OPEN_MODE);
@@ -32,6 +34,7 @@ sub reset_test_state {
     @READING_UPDATES = ();
     @RENAMES = ();
     @IGNORED_RENAME_REPLIES = ();
+    $NOW = undef;
 }
 
 # Models fhem.pl CommandRename at the pinned revision: framework-owned hashes
@@ -160,12 +163,27 @@ sub InternalTimer {
     return;
 }
 sub RemoveInternalTimer {
-    my ($argument) = @_;
-    push @REMOVED_TIMERS, $argument;
-    @ACTIVE_TIMERS = grep { $_->[2] != $argument } @ACTIVE_TIMERS;
+    my ($argument, $function) = @_;
+    push @REMOVED_TIMERS, [$argument, $function];
+    @ACTIVE_TIMERS = grep {
+        my ($timer_function, $timer_argument) = ($_->[1], $_->[2]);
+        !(defined($timer_argument) && $timer_argument == $argument
+          && (!defined($function) || $timer_function eq $function));
+    } @ACTIVE_TIMERS;
     return;
 }
-sub gettimeofday { return time }
+sub run_due_timers {
+    my ($now) = @_;
+    $NOW = $now;
+    my @due = grep { $_->[0] <= $now } @ACTIVE_TIMERS;
+    @ACTIVE_TIMERS = grep { $_->[0] > $now } @ACTIVE_TIMERS;
+    for my $timer (@due) {
+        no strict 'refs';
+        &{"main::$timer->[1]"}($timer->[2]);
+        use strict 'refs';
+    }
+}
+sub gettimeofday { return defined($NOW) ? $NOW : time }
 sub readingsSingleUpdate {
     push @READING_UPDATES, [@_];
     my ($hash, $reading, $value) = @_;
@@ -176,7 +194,12 @@ sub readingsSingleUpdate {
     return;
 }
 sub readingsBeginUpdate { return }
-sub readingsBulkUpdate { return }
+sub readingsBulkUpdate {
+    push @READING_UPDATES, [@_];
+    my ($hash, $reading, $value) = @_;
+    $hash->{READINGS}{$reading}{VAL} = $value;
+    return;
+}
 sub readingsEndUpdate { return }
 sub getKeyValue {
     push @KEY_OPERATIONS, [get => $_[0]];
