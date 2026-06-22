@@ -5,7 +5,7 @@ script_dir=${0%/*}
 [ "$script_dir" = "$0" ] && script_dir=.
 cd "$script_dir/.."
 
-version=$(sed -n "s/^my \\\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
+version=$(sed -n "s/^my \\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
 [ -n "$version" ] || { echo "Cannot determine module version" >&2; exit 1; }
 
 epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}
@@ -30,7 +30,7 @@ for file in 72_Wattpilot.pm README.md README_en.md CHANGELOG.md TESTING.md REVIE
     cp "$file" "$package_dir/$file"
 done
 mkdir -p "$package_dir/docs" "$package_dir/t/fixtures"
-cp docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/"
+cp docs/PROTOCOL-SOURCES.md docs/PROTOCOL-CONFLICTS.md docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/"
 cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json "$package_dir/t/fixtures/"
 cp 72_Wattpilot.pm "$standalone"
 
