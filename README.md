@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **1.2.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert.
+Aktuelle Modulversion: **1.3.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert.
 
 ## 1. Voraussetzungen (System & Perl Module)
 
@@ -86,6 +86,12 @@ set wallbox Password <DeinPasswort>
 
 Danach verbindet sich das Modul automatisch. Sobald der Status `connected` ist, können Sie es steuern.
 
+Das Passwort und der daraus abgeleitete Authentifizierungswert werden unter stabilen FUUID-basierten Schlüsseln gespeichert. Der Rename-Pfad berücksichtigt, dass FHEM den Namen bereits vor `RenameFn` ändert und dessen Rückgabe verwirft. Vor jeder Migration oder Bereinigung wird deshalb zuerst ein FUUID-basierter Pending-Verweis auf den früheren Namen gespeichert. Nur dieser persistente Verweis darf einen fehlenden Owner-Marker für dieselbe FUUID wiederherstellen; der aktuelle Gerätename allein begründet niemals Eigentum. Schlägt das Speichern des Pending-Verweises fehl, werden namensbasierte Altwerte weder gelesen noch beansprucht oder verschoben. Namensbasierte Werte ohne belastbaren Eigentumsnachweis bleiben unangetastet und können nach einem Update ein erneutes `set <name> Password <secret>` erfordern. Fremde oder nicht verifizierbare Ressourcen bleiben ebenfalls unangetastet. Ein vorhandener stabiler Zugangswert bleibt trotz eines solchen Bereinigungskonflikts nutzbar; der Konflikt wird protokolliert. `rereadcfg`, Reload, Disable und normales Undefine löschen keine Zugangsdaten; nur das tatsächliche Löschen des FHEM-Geräts entfernt eindeutig eigene Werte.
+
+Beim Ändern des Passworts invalidiert das Modul zuerst alle bekannten stabilen und namensbasierten Passwort-Hashes. Danach speichert es das neue stabile Passwort und entfernt verbliebene Legacy-Passwörter. Schlägt ein Schritt fehl, werden bereits vorgenommene Änderungen aus zuvor gelesenen Werten zurückgerollt und FHEM erhält einen Fehlertext. `DeleteFn` liest vor Änderungen Snapshots aller stabilen, bekannten Legacy- und Pending-Metadatenwerte. Bei Lese- oder Löschfehlern bricht es ab und stellt bereits gelöschte Werte wieder her; auch ein unvollständiger Rollback wird ausdrücklich gemeldet, damit FHEM das Gerät nicht endgültig löscht. Nach dem realen FHEM-Ablauf `UndefFn` gefolgt von einer fehlgeschlagenen `DeleteFn` werden `defptr`, ein ehrlicher Status und – nur bei aktivem Gerät mit vorhandenem Passwort – genau ein Reconnect-Timer wiederhergestellt.
+
+Credential-Lesezugriffe unterscheiden Wert vorhanden, Wert nicht vorhanden und Speicherfehler. Der Verbindungsaufbau in Define hängt ausschließlich von einem lesbaren Passwort ab; Migration oder Bereinigung des optionalen Passwort-Hashes erfolgt dort best effort und blockiert ein Gerät mit eigenem stabilem Passwort nicht. Nach der Verbindung erzeugt die Authentifizierung den aktuellen FUUID-basierten Hash neu. Sonstige relevante Speicher- oder Metadatenfehler werden in Define, Enable, Authentifizierung, gesicherten Befehlen und fehlgeschlagener Delete-Wiederherstellung als `credential error` behandelt und nicht als fehlendes Passwort ausgegeben.
+
 ### Ladung Starten / Stoppen
 
 Startet oder stoppt den Ladevorgang manuell.
@@ -159,7 +165,15 @@ Steuert die Ausführlichkeit der Log-Einträge im FHEM Logfile.
 * `2`: Wichtige Ereignisse (z.B. Login erfolgreich).
 * `3`: Protokolliert gesendete Befehle.
 * `4`: Protokolliert empfangene Daten vom Wattpilot.
-* `5`: Debugging (sehr viel Text).
+* `5`: Debugging. Vollständige JSON-Nachrichten bleiben ohne `rawJsonLog=1` unterdrückt.
+
+### `rawJsonLog` (0 oder 1)
+
+Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden ausschließlich protokolliert, wenn gleichzeitig `rawJsonLog=1` und `verbose=5` gesetzt sind. Das umfasst Authentifizierungs- und `securedMsg`-Frames. Beim Aktivieren wird eine Sicherheitswarnung ausgegeben: Diese Rohdaten können Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten. Nur kurzzeitig zur gezielten Diagnose aktivieren und Rohdaten niemals unbereinigt weitergeben.
+
+Das Modul verwendet für ausgehende JSON-Nachrichten einen zentralen Schreibpfad. Dieser unterdrückt den DevIo-eigenen Level-5-Payload-Logeintrag nur während des synchronen Schreibaufrufs, ohne das FHEM-Attribut `verbose` dauerhaft oder global zu verändern. `DevIo_SimpleWrite(..., 2)` erhält dabei ungepackten Text; den WebSocket-Opcode bestimmt DevIo anhand seiner Verbindung und von `$hash->{binary}`. Ein vollständiger Klartext-Logeintrag aus dem Wattpilot-Modul entsteht ausschließlich über den oben beschriebenen Raw-Modus.
+
+Technische Grenze: In der geprüften FHEM-Revision `5354e001b55c323f457bd907434e46f284d9582c` maskiert DevIo `privacy=1` nur die initiale Öffnungszeile. Für WebSockets erzeugt `DevIo_OpenDev` intern einen neuen HttpUtils-Hash ohne `hideurl` und ohne übernommenes `devioLoglevel`; HttpUtils kann URL, DNS/IP, Timeout- und Verbindungsfehler auf Level 4 oder 5 protokollieren. Wattpilot bewahrt die korrekte DevIo-Bedeutung von Initialverbindung (`reopen=0`) und Reconnect (`reopen=1`) und redigiert seine eigenen Meldungen, kann diese transitiven Core-Logs über die öffentliche DevIo-Schnittstelle aber nicht zuverlässig verhindern. Eine belastbare Vollunterdrückung erfordert eine FHEM-Core-Erweiterung, die `privacy` an HttpUtils als `hideurl` und ein geeignetes Log-/Fehler-Redaktionsverhalten weiterreicht. Bis dahin dürfen Logs bei hohem `verbose` nicht als endpointfrei betrachtet werden und müssen entsprechend geschützt und vor Weitergabe bereinigt werden.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 

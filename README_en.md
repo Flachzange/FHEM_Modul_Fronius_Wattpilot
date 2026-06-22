@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **1.2.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **1.3.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## 1. Prerequisites (System & Perl Modules)
 
@@ -86,6 +86,12 @@ set wallbox Password <YourPassword>
 
 After that, the module connects automatically. Once the status is `connected`, you can control it.
 
+The password and its derived authentication value are stored under stable FUUID-based keys. The rename path accounts for FHEM changing the name before calling `RenameFn` and discarding its return value. Before any migration or cleanup, the module therefore stores an FUUID-based pending locator for the former name. Only that persistent locator may recreate a missing owner marker for the same FUUID; the current device name alone never establishes ownership. If the pending locator cannot be stored, name-based legacy values are not read, claimed, or moved. Name-based values without durable ownership proof remain untouched and may require `set <name> Password <secret>` again after an update. Foreign or otherwise unverifiable resources also remain untouched. A readable stable credential stays usable despite such a cleanup conflict, which is logged. `rereadcfg`, reload, disable, and normal undefine do not delete credentials; only actually deleting the FHEM device removes values that are proven to belong to it.
+
+When changing the password, the module first invalidates every known stable and name-based password hash. It then stores the new stable password and removes remaining legacy passwords. If any step fails, completed changes are rolled back from values read beforehand and FHEM receives an error. Before changing anything, `DeleteFn` snapshots every stable, known legacy, and pending-metadata value. Read or delete failures abort the operation and restore values already deleted; an incomplete rollback is reported explicitly so FHEM does not finalize deletion. After the real FHEM sequence `UndefFn` followed by a failed `DeleteFn`, the module restores `defptr`, an honest state, and exactly one reconnect timer only when the retained device is enabled and has a password.
+
+Credential reads distinguish value present, value absent, and storage failure. Connection startup during Define depends only on a readable password; migration or cleanup of the optional password hash is best effort there and cannot block a device with its own stable password. Authentication derives and stores the current FUUID-based hash after connecting. Other relevant storage or metadata failures in Define, enable, authentication, secured commands, and failed-delete restoration are reported as `credential error` instead of being treated as a missing password.
+
 ### Start / Stop Charging
 
 Manually starts or stops the charging process.
@@ -159,7 +165,15 @@ Controls the verbosity of log entries in the FHEM log file.
 * `2`: Important events (e.g., login successful).
 * `3`: Logs sent commands.
 * `4`: Logs received data from Wattpilot.
-* `5`: Debugging (lots of text).
+* `5`: Debugging. Complete JSON messages remain suppressed unless `rawJsonLog=1` is also set.
+
+### `rawJsonLog` (0 or 1)
+
+The default is `0`. Complete inbound and outbound JSON messages are logged only when both `rawJsonLog=1` and `verbose=5` are set. This includes authentication and `securedMsg` frames. Enabling the attribute emits a security warning: raw data can contain authentication, network, device, and operational data. Enable it only briefly for targeted diagnostics and never share raw output without sanitizing it first.
+
+The module uses a central write path for outbound JSON. It suppresses DevIo's own level-5 payload log only for the synchronous write call without changing the FHEM `verbose` attribute globally or persistently. `DevIo_SimpleWrite(..., 2)` receives unpacked text; DevIo determines the WebSocket opcode from its connection and `$hash->{binary}`. Complete clear-text output from Wattpilot-owned logging is produced only by the explicit raw mode described above.
+
+Technical limit: in inspected FHEM revision `5354e001b55c323f457bd907434e46f284d9582c`, DevIo `privacy=1` masks only the initial opening line. For WebSockets, `DevIo_OpenDev` creates an internal HttpUtils hash without `hideurl` and without inheriting `devioLoglevel`; HttpUtils can log URLs, DNS/IP results, timeouts, and connection errors at levels 4 or 5. Wattpilot preserves correct DevIo semantics for initial connection (`reopen=0`) and reconnect (`reopen=1`) and redacts its own messages, but cannot reliably suppress those transitive core logs through the public DevIo interface. Reliable full suppression requires an upstream FHEM change that passes privacy to HttpUtils as `hideurl` and provides suitable log/error redaction. Until then, high-verbose logs must not be treated as endpoint-free and must be protected and sanitized before sharing.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 
