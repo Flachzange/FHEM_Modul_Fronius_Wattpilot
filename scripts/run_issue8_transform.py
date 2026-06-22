@@ -4,7 +4,6 @@ from pathlib import Path
 path = Path('scripts/apply_issue8.py')
 text = path.read_text(encoding='utf-8')
 replacements = [
-    ('Startet oder stoppt den Ladevorgang manuell', 'Startet oder stoppt die Ladung manuell'),
     ('Starts or stops charging manually.', 'Manually starts or stops the charging process.'),
     ('Sets the charging current in ampere (between 6A and 32A).',
      'Sets the charging current in Amperes (between 6A and 32A).'),
