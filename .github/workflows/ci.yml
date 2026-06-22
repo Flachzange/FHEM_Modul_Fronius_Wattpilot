@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Apply Issue 8 implementation
+        run: python3 scripts/apply_issue8.py
       - name: Install Perl dependencies
         run: sudo apt-get update && sudo apt-get install -y libarchive-zip-perl libjson-perl libcrypt-pbkdf2-perl libcrypt-bcrypt-perl
       - name: Run checks
@@ -21,3 +23,19 @@ jobs:
         run: sh scripts/build-release.sh
       - name: Verify reproducible release
         run: sh scripts/check_reproducible_release.sh
+      - name: Collect reviewed sources
+        run: |
+          mkdir -p issue8-result/t/lib issue8-result/docs
+          cp 72_Wattpilot.pm README.md README_en.md CHANGELOG.md issue8-result/
+          cp t/lib/DevIo.pm t/command_semantics.t issue8-result/t/
+          mkdir -p issue8-result/t/lib
+          cp t/lib/DevIo.pm issue8-result/t/lib/DevIo.pm
+          rm -f issue8-result/t/DevIo.pm
+          cp docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md issue8-result/docs/
+          cp dist/verification-output.txt issue8-result/
+          sha256sum 72_Wattpilot.pm dist/Wattpilot_v1.4.0.zip > issue8-result/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: issue8-result
+          path: issue8-result
+          if-no-files-found: error
