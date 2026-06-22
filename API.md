@@ -2,6 +2,10 @@
 
 This file is the stable entry point for the repository's JSON/WebSocket API documentation.
 
+## Protocol profiles
+
+The original Wattpilot generation is covered by the evidence-qualified regression contract in [`docs/WATTPILOT-LEGACY-PROTOCOL2.md`](docs/WATTPILOT-LEGACY-PROTOCOL2.md). The Flex generation is documented separately below. Neither document is an official Fronius specification.
+
 ## Pure sanitized JSON example
 
 The complete sanitized `fullStatus` capture is available as a standalone JSON file:
