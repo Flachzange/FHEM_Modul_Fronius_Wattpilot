@@ -12,13 +12,13 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ### Geändert
 
-- Zugangsdaten werden stabil FUUID-basiert gespeichert; bestehende namensbasierte Schlüssel werden verlustsicher migriert und erst nach erfolgreicher Neuspeicherung entfernt.
+- Zugangsdaten werden stabil FUUID-basiert gespeichert. Frühere Namen werden nur nach erfolgreicher Speicherung eines FUUID-basierten Pending-Verweises migriert oder bereinigt; ein Gerätename allein berechtigt nie zur Übernahme eines Legacy-Werts. Unbeanspruchte Altwerte bleiben unangetastet und können ein erneutes Setzen des Passworts erfordern.
 - `UndefFn`, Rename, `rereadcfg`, Reload und Disable erhalten Zugangsdaten. Nur `DeleteFn` entfernt sie bei einem echten Löschen des Geräts.
 - Wattpilot-eigene normale Logs der Level 1–4 enthalten keine vollständigen JSON-Payloads, Tokens, HMACs, Passwort-Hashes, Seriennummern oder privaten Endpunkte mehr; transitive FHEM-Core-/HttpUtils-Logs bleiben ausdrücklich außerhalb dieser Garantie.
 - Timer und DevIo-Verbindungen werden bei Undefine, Delete und Disable bereinigt.
 - DevIo-eigene Level-5-Payload-Logs werden durch den zentralen Wattpilot-Schreibpfad unterdrückt; Raw JSON bleibt ausschließlich explizit verfügbar. Transitive HttpUtils-Endpoint-Logs sind über die aktuelle öffentliche DevIo-Schnittstelle nicht vollständig unterdrückbar und werden als technische Grenze dokumentiert.
 - Credential-Löschfehler verhindern über einen `DeleteFn`-Fehlertext das endgültige Löschen, Auth-Hash-Speicherfehler stoppen den Login, und Passwortänderungen invalidieren alte Hashes transaktional mit Rollback.
-- Rename-Migrationen hängen nicht von der durch FHEM verworfenen `RenameFn`-Rückgabe ab. Getrennte FUUID-Pending-Metadaten und persistente Owner-Marker schützen Legacy-Ressourcen auch bei Wiederverwendung früherer Gerätenamen; fremde oder nicht verifizierbare Ressourcen werden erhalten. Credential-Lesefehler bleiben bis zu Define, Enable, Authentifizierung, gesicherten Befehlen und Delete-Wiederherstellung als `credential error` unterscheidbar. Credential-Löschungen verwenden vollständige Snapshots und stellen bei Teilfehlern Werte sowie den nach `UndefFn` abgebauten Runtime-Zustand wieder her.
+- Rename-Migrationen hängen nicht von der durch FHEM verworfenen `RenameFn`-Rückgabe ab. Persistente Pending-Metadaten sind der FUUID-basierte Eigentumsnachweis für Wiederholungen und dürfen fehlende Owner-Marker wiederherstellen; fehlt dieser Nachweis, wird sicher abgebrochen und ein später unter demselben Namen definiertes Gerät kann den Altwert nicht übernehmen. Credential-Lesefehler bleiben bis zu Define, Enable, Authentifizierung, gesicherten Befehlen und Delete-Wiederherstellung als `credential error` unterscheidbar. Credential-Löschungen verwenden vollständige Snapshots und stellen bei Teilfehlern Werte sowie den nach `UndefFn` abgebauten Runtime-Zustand wieder her.
 
 ### Hinzugefügt
 

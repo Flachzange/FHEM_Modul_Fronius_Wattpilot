@@ -83,8 +83,8 @@ sub Wattpilot_Define($$) {
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
     
-	my $password_result = Wattpilot_GetStoredSecret($hash, "password", { bootstrap_current => 1 });
-	my $password_hash_result = Wattpilot_GetStoredSecret($hash, "passwordhash", { bootstrap_current => 1 });
+	my $password_result = Wattpilot_GetStoredSecret($hash, "password", { include_owned_current => 1 });
+	my $password_hash_result = Wattpilot_GetStoredSecret($hash, "passwordhash", { include_owned_current => 1 });
 	
     $hash->{STATE} = "Initialized";
     
@@ -137,7 +137,8 @@ sub Wattpilot_RestoreAfterFailedDelete($$) {
         return;
     }
 
-    my $password_result = Wattpilot_GetStoredSecret($hash, "password", { migrate => 0 });
+    my $password_result = Wattpilot_GetStoredSecret(
+        $hash, "password", { migrate => 0, include_owned_current => 1 });
     if ($password_result->{status} eq "error") {
         readingsSingleUpdate($hash, "state", "credential error", 1);
     } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
@@ -685,12 +686,12 @@ sub Wattpilot_GetAuthHashMode($$) {
 
 sub Wattpilot_GetPassword {
     my ($hash) = @_;
-    return Wattpilot_GetStoredSecret($hash, "password");
+    return Wattpilot_GetStoredSecret($hash, "password", { include_owned_current => 1 });
 }
 
 sub Wattpilot_GetPasswordHash {
     my ($hash) = @_;
-    return Wattpilot_GetStoredSecret($hash, "passwordhash");
+    return Wattpilot_GetStoredSecret($hash, "passwordhash", { include_owned_current => 1 });
 }
 
 sub Wattpilot_SetStoredPasswordHash {
@@ -903,6 +904,16 @@ sub Wattpilot_ReadOwnedLegacySecret($$$$) {
     }
 
     if (!defined $owner) {
+        my ($pending_error, $pending_names) =
+          Wattpilot_ReadPendingLegacyNames($hash, $suffix);
+        return Wattpilot_CredentialError($pending_error)
+          if defined $pending_error;
+        my %pending = map { $_ => 1 } @$pending_names;
+        if (!$pending{$legacy_name}) {
+            Log3 $name, 1,
+              "Wattpilot ($name) - legacy ownership claim is not authorized by persistent pending metadata";
+            return Wattpilot_CredentialError("legacy ownership claim not authorized");
+        }
         my $claim_error = setKeyValue($owner_key, $fuuid);
         if (defined $claim_error) {
             Log3 $name, 1, "Wattpilot ($name) - could not persist legacy credential ownership";
@@ -932,6 +943,11 @@ sub Wattpilot_GetOwnedLegacyResourceKeys($$$) {
     my ($hash, $suffix, $legacy_names) = @_;
     my @keys;
     my %seen;
+    my ($pending_error, $pending_names) =
+      Wattpilot_ReadPendingLegacyNames($hash, $suffix);
+    return ($pending_error, []) if defined $pending_error;
+    my %pending = map { $_ => 1 } @$pending_names;
+
     for my $legacy_name (@$legacy_names) {
         next if $seen{$legacy_name}++;
         my $owner_key = Wattpilot_LegacyOwnerKey($legacy_name, $suffix);
@@ -939,6 +955,12 @@ sub Wattpilot_GetOwnedLegacyResourceKeys($$$) {
         if (defined $owner_error) {
             Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - could not verify legacy credential ownership";
             return ("legacy ownership read failed", []);
+        }
+        if (!defined($owner) && $pending{$legacy_name}) {
+            # The persistent FUUID pending locator is sufficient proof for
+            # transactional enumeration. Do not create an owner marker before
+            # the caller has completed its snapshot.
+            $owner = $hash->{FUUID};
         }
         if (!defined($owner) || $owner ne $hash->{FUUID}) {
             Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - unowned or foreign legacy credential preserved";
@@ -1033,7 +1055,7 @@ sub Wattpilot_GetStoredSecret {
     }
 
     for my $legacy_name (sort @$pending_names) {
-        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 0);
+        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 1);
         return $legacy_result if $legacy_result->{status} eq "error";
         if ($legacy_result->{status} eq "absent") {
             Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
@@ -1043,13 +1065,45 @@ sub Wattpilot_GetStoredSecret {
         return Wattpilot_MigrateLegacySecret($hash, $legacy_name, $suffix, $legacy_result->{value}, 1);
     }
 
-    if ($options->{bootstrap_current}) {
-        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $name, $suffix, 1);
+    if ($options->{include_owned_current}) {
+        my $legacy_result =
+          Wattpilot_ReadCurrentOwnedLegacySecret($hash, $name, $suffix);
         return $legacy_result if $legacy_result->{status} eq "error";
-        return Wattpilot_CredentialAbsent() if $legacy_result->{status} eq "absent";
-        return Wattpilot_MigrateLegacySecret($hash, $name, $suffix, $legacy_result->{value}, 0);
+        if ($legacy_result->{status} eq "value") {
+            return $legacy_result
+              if exists($options->{migrate}) && !$options->{migrate};
+            my $pending_error =
+              Wattpilot_AddPendingLegacyName($hash, $suffix, $name);
+            if (defined $pending_error) {
+                Log3 $name, 1,
+                  "Wattpilot ($name) - could not persist current-name legacy recovery metadata";
+                return Wattpilot_CredentialError($pending_error);
+            }
+            return Wattpilot_MigrateLegacySecret(
+                $hash, $name, $suffix, $legacy_result->{value}, 1);
+        }
     }
     return Wattpilot_CredentialAbsent();
+}
+
+sub Wattpilot_ReadCurrentOwnedLegacySecret($$$) {
+    my ($hash, $legacy_name, $suffix) = @_;
+    my $name = $hash->{NAME};
+    my $owner_key = Wattpilot_LegacyOwnerKey($legacy_name, $suffix);
+    my ($owner_error, $owner) = getKeyValue($owner_key);
+    if (defined $owner_error) {
+        Log3 $name, 1,
+          "Wattpilot ($name) - could not inspect current-name legacy ownership";
+        return Wattpilot_CredentialError("legacy ownership read failed");
+    }
+    return Wattpilot_CredentialAbsent() if !defined $owner;
+    if ($owner ne $hash->{FUUID}) {
+        Log3 $name, 1,
+          "Wattpilot ($name) - current-name legacy credential belongs to a different device";
+        return Wattpilot_CredentialError("legacy ownership conflict");
+    }
+    return Wattpilot_ReadOwnedLegacySecret(
+        $hash, $legacy_name, $suffix, 0);
 }
 
 sub Wattpilot_CleanupLegacyLocator {
@@ -1098,7 +1152,7 @@ sub Wattpilot_MigrateLegacySecret {
 sub Wattpilot_CleanupPendingLegacySecrets($$$) {
     my ($hash, $suffix, $pending_names) = @_;
     for my $legacy_name (sort @$pending_names) {
-        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 0);
+        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 1);
         next if $legacy_result->{status} eq "error";
         if ($legacy_result->{status} eq "absent") {
             Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
@@ -1118,13 +1172,19 @@ sub Wattpilot_MigrateLegacySecrets($$) {
     my @errors;
     for my $suffix (qw(password passwordhash)) {
         my $pending_error = Wattpilot_AddPendingLegacyName($hash, $suffix, $legacy_name);
+        if (defined $pending_error) {
+            push @errors, $suffix;
+            next;
+        }
         my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 1);
         if ($legacy_result->{status} eq "error") {
             push @errors, $suffix;
             next;
         }
         if ($legacy_result->{status} eq "absent") {
-            Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix) if !defined $pending_error;
+            my $cleanup_error =
+              Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
+            push @errors, $suffix if defined $cleanup_error;
             next;
         }
 
@@ -1141,14 +1201,16 @@ sub Wattpilot_MigrateLegacySecrets($$) {
         }
         if (!defined $stable_value) {
             my $migration_result = Wattpilot_MigrateLegacySecret(
-                $hash, $legacy_name, $suffix, $legacy_result->{value}, !defined($pending_error));
+                $hash, $legacy_name, $suffix, $legacy_result->{value}, 1);
             push @errors, $suffix if $migration_result->{status} eq "error";
         } else {
             my $delete_error = setKeyValue(Wattpilot_LegacySecretKey($legacy_name, $suffix), undef);
             if (defined $delete_error) {
                 push @errors, $suffix;
             } else {
-                Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix, defined($pending_error));
+                my $cleanup_error =
+                  Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
+                push @errors, $suffix if defined $cleanup_error;
             }
         }
     }
@@ -1212,7 +1274,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Set</b>
   <ul>
     <li><code>set &lt;name&gt; Password &lt;secret&gt;</code><br>
-        Stores the password persistently under a stable FUUID-based key and starts a reconnect. Before a password change, all known owned stable and name-based derived hashes are invalidated; failures roll completed changes back. Rename recovery does not depend on the callback reply discarded by FHEM. Former names are stored separately for password and password hash as non-sensitive FUUID-related metadata, and persistent owner markers prevent another FUUID from reading, changing, migrating, or deleting those legacy resources. Foreign or unverifiable resources are preserved and reported as credential errors. Retries survive <code>rereadcfg</code>, reload, restart, and a new device hash. Credential reads distinguish present, absent, and failed storage access. Undefine, rename, reload, <code>rereadcfg</code>, and disable preserve credentials. Delete snapshots all owned values and metadata first and restores already deleted values after a partial failure. After an Undef/Delete failure it also restores the retained device runtime without duplicate connections or timers; any snapshot, delete, or rollback error prevents FHEM from finalizing the delete.</li>
+        Stores the password persistently under stable FUUID-based keys and starts a reconnect. Rename recovery does not depend on the callback reply discarded by FHEM. A former name is migrated or cleaned up only after a FUUID-based pending locator has been persisted; only that locator may recreate a missing owner marker for the same FUUID. The current device name alone never authorizes ownership. Unowned pre-FUUID values are preserved and may require <code>set Password</code> again. If pending metadata cannot be stored, rename fails closed without reading, claiming, or moving the legacy value. Foreign or unverifiable resources remain untouched. A readable stable credential remains usable when cleanup of such resources is not possible; cleanup conflicts are logged. Credential reads distinguish present, absent, and failed storage access. Undefine, rename, reload, <code>rereadcfg</code>, and disable preserve credentials. Delete snapshots all owned values and metadata first and restores already deleted values after a partial failure. After an Undef/Delete failure it also restores the retained device runtime without duplicate connections or timers; any snapshot, delete, or rollback error prevents FHEM from finalizing the delete.</li>
 
     <li><code>set &lt;name&gt; Laden_starten &lt;Start|Stop&gt;</code><br>
         Manually starts or stops charging (corresponds to parameter <code>frc</code>).</li>
@@ -1345,7 +1407,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Set</b>
   <ul>
     <li><code>set &lt;name&gt; Password &lt;secret&gt;</code><br>
-        Speichert das Passwort persistent unter einem stabilen FUUID-basierten Schlüssel und startet einen Reconnect. Vor einer Passwortänderung werden alle bekannten eigenen stabilen und namensbasierten abgeleiteten Hashes invalidiert; Fehler rollen bereits vorgenommene Änderungen zurück. Rename-Recovery hängt nicht von der durch FHEM verworfenen Callback-Rückgabe ab. Frühere Namen werden getrennt für Passwort und Passwort-Hash als nicht-sensitive FUUID-bezogene Metadaten gespeichert; persistente Owner-Marker verhindern, dass eine andere FUUID diese Legacy-Ressourcen liest, ändert, migriert oder löscht. Fremde oder nicht verifizierbare Ressourcen bleiben erhalten und werden als Credential-Fehler gemeldet. Wiederholungen überleben <code>rereadcfg</code>, Reload, Neustart und einen neuen Device-Hash. Credential-Lesezugriffe unterscheiden vorhanden, nicht vorhanden und Speicherfehler. Undefine, Rename, Reload, <code>rereadcfg</code> und Disable erhalten die Zugangsdaten. Delete liest zuerst Snapshots aller eigenen Werte und Metadaten und stellt bei einem Teilfehler bereits gelöschte Werte wieder her. Nach einem Undef/Delete-Fehler stellt es außerdem den Runtime-Zustand des behaltenen Geräts ohne doppelte Verbindung oder Timer wieder her; jeder Snapshot-, Lösch- oder Rollbackfehler verhindert das endgültige Löschen durch FHEM.</li>
+        Speichert das Passwort persistent unter stabilen FUUID-basierten Schlüsseln und startet einen Reconnect. Rename-Recovery hängt nicht von der durch FHEM verworfenen Callback-Rückgabe ab. Ein früherer Name wird erst migriert oder bereinigt, nachdem ein FUUID-basierter Pending-Verweis persistent gespeichert wurde; nur dieser Verweis darf einen fehlenden Owner-Marker für dieselbe FUUID wiederherstellen. Der aktuelle Gerätename allein begründet niemals Eigentum. Namensbasierte Altwerte ohne Eigentumsnachweis bleiben erhalten und können ein erneutes <code>set Password</code> erfordern. Kann der Pending-Verweis nicht gespeichert werden, liest, beansprucht oder verschiebt Rename den Legacy-Wert nicht. Fremde oder nicht verifizierbare Ressourcen bleiben unangetastet. Ein lesbarer stabiler Zugangswert bleibt trotz nicht möglicher Legacy-Bereinigung nutzbar; der Konflikt wird protokolliert. Credential-Lesezugriffe unterscheiden vorhanden, nicht vorhanden und Speicherfehler. Undefine, Rename, Reload, <code>rereadcfg</code> und Disable erhalten die Zugangsdaten. Delete liest zuerst Snapshots aller eigenen Werte und Metadaten und stellt bei einem Teilfehler bereits gelöschte Werte wieder her. Nach einem Undef/Delete-Fehler stellt es außerdem den Runtime-Zustand des behaltenen Geräts ohne doppelte Verbindung oder Timer wieder her; jeder Snapshot-, Lösch- oder Rollbackfehler verhindert das endgültige Löschen durch FHEM.</li>
 
     <li><code>set &lt;name&gt; Laden_starten &lt;Start|Stop&gt;</code><br>
         Startet oder stoppt die Ladung manuell (entspricht dem Parameter <code>frc</code>).</li>

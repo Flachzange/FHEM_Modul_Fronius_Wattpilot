@@ -134,6 +134,20 @@ is($DevIo::KEY_VALUES{$stable_password}, 'synthetic-password', 'snapshot failure
 is(scalar(grep { $_->[0] eq 'set' } @DevIo::KEY_OPERATIONS), 0, 'snapshot failure performs no credential writes');
 
 $hash = fresh_device();
+$legacy_password = 'Wattpilot_formerWallbox_password';
+my $pending_password_key = 'Wattpilot_' . $hash->{FUUID} . '_pending_legacy_password_names';
+$DevIo::KEY_VALUES{$legacy_password} = 'pending-owned-password';
+$DevIo::KEY_VALUES{$pending_password_key} = '["formerWallbox"]';
+$DevIo::GET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_password'} =
+    'synthetic snapshot read failure after ownership enumeration';
+like(main::Wattpilot_Delete($hash, $hash->{NAME}), qr/before changes were made/,
+    'DeleteFn aborts after pending ownership enumeration when the snapshot fails');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_formerWallbox_password_owner'},
+    'failed DeleteFn snapshot creates no owner-marker side effect');
+is($DevIo::KEY_VALUES{$legacy_password}, 'pending-owned-password',
+    'failed DeleteFn snapshot preserves the pending-owned legacy credential');
+
+$hash = fresh_device();
 $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
 $legacy_password = 'Wattpilot_testWallbox_password';
 $DevIo::KEY_VALUES{$stable_password} = 'synthetic-password';
@@ -172,13 +186,28 @@ is($hash->{STATE}, 'disabled', 'failed DeleteFn restores disabled state for a di
 is(scalar @DevIo::ACTIVE_TIMERS, 0, 'failed DeleteFn schedules no reconnect while disabled');
 
 $hash = fresh_device();
-my $pending_password_key = 'Wattpilot_' . $hash->{FUUID} . '_pending_legacy_password_names';
+$pending_password_key = 'Wattpilot_' . $hash->{FUUID} . '_pending_legacy_password_names';
 $DevIo::KEY_VALUES{$pending_password_key} = '[]';
 $DevIo::SET_KEY_ERRORS{$pending_password_key} = 'synthetic metadata delete failure';
 main::Wattpilot_Undefine($hash, $hash->{NAME});
 main::Wattpilot_Delete($hash, $hash->{NAME});
 is($hash->{STATE}, 'password missing', 'failed DeleteFn reports missing password honestly');
 is(scalar @DevIo::ACTIVE_TIMERS, 0, 'failed DeleteFn schedules no reconnect without a password');
+
+$hash = fresh_device();
+$legacy_password = 'Wattpilot_testWallbox_password';
+$DevIo::KEY_VALUES{$legacy_password} = 'owned-current-password';
+own_legacy($hash, 'testWallbox', 'password');
+$DevIo::SET_KEY_ERRORS{$legacy_password} = 'synthetic current legacy delete failure';
+main::Wattpilot_Undefine($hash, $hash->{NAME});
+like(main::Wattpilot_Delete($hash, $hash->{NAME}), qr/credential deletion failed/,
+    'failed DeleteFn retains an owned current-name legacy password');
+is($hash->{STATE}, 'disconnected',
+    'failed DeleteFn restores from an owned current-name legacy password without claiming');
+is(scalar @DevIo::ACTIVE_TIMERS, 1,
+    'failed DeleteFn reconnects exactly once from an owned current-name legacy password');
+is($DevIo::KEY_VALUES{$legacy_password}, 'owned-current-password',
+    'failed DeleteFn preserves the owned current-name legacy password');
 
 $hash = fresh_device();
 $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
@@ -290,16 +319,71 @@ is_deeply(pending_names($replacement_hash, 'passwordhash'), [], 'restart migrati
 
 $hash = fresh_device();
 $legacy_password = 'Wattpilot_testWallbox_password';
+$legacy_hash = 'Wattpilot_testWallbox_passwordhash';
 $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
+$stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
 $pending_password_key = 'Wattpilot_' . $hash->{FUUID} . '_pending_legacy_password_names';
+my $pending_hash_key = 'Wattpilot_' . $hash->{FUUID} . '_pending_legacy_passwordhash_names';
 $DevIo::KEY_VALUES{$legacy_password} = 'legacy-password';
+$DevIo::KEY_VALUES{$legacy_hash} = 'legacy-derived-value';
 $DevIo::SET_KEY_ERRORS{$pending_password_key} = 'synthetic metadata persistence failure';
+$DevIo::SET_KEY_ERRORS{$pending_hash_key} = 'synthetic hash metadata persistence failure';
+$DevIo::SET_KEY_ERRORS{$stable_password} = 'synthetic stable write failure';
+$DevIo::SET_KEY_ERRORS{$stable_hash} = 'synthetic stable hash write failure';
 is(DevIo::command_rename('testWallbox', 'renamedWallbox'), undef, 'CommandRename ignores RenameFn status and still completes');
 is(scalar @DevIo::IGNORED_RENAME_REPLIES, 1, 'CommandRename test double records the discarded callback reply');
-is($DevIo::KEY_VALUES{$stable_password}, 'legacy-password', 'pending metadata failure still stores the credential under its stable key');
-ok(!exists $DevIo::KEY_VALUES{$legacy_password}, 'pending metadata failure does not prevent safe owned legacy cleanup');
+ok(!exists $DevIo::KEY_VALUES{$stable_password}, 'pending metadata failure performs no untracked stable password migration');
+ok(!exists $DevIo::KEY_VALUES{$stable_hash}, 'pending metadata failure performs no untracked stable hash migration');
+is($DevIo::KEY_VALUES{$legacy_password}, 'legacy-password', 'pending metadata failure preserves the unowned legacy password');
+is($DevIo::KEY_VALUES{$legacy_hash}, 'legacy-derived-value', 'pending metadata failure preserves the unowned legacy hash');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password_owner'}, 'pending metadata failure creates no owner without a durable FUUID locator');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash_owner'}, 'pending hash metadata failure creates no owner without a durable FUUID locator');
 my $metadata_failure_restart = synthetic_device('renamedWallbox', $hash->{FUUID});
-is(credential_value(main::Wattpilot_GetPassword($metadata_failure_restart)), 'legacy-password', 'new hash with the same FUUID uses the stable credential after pending metadata failure');
+is(main::Wattpilot_GetPassword($metadata_failure_restart)->{status}, 'absent', 'new hash fails closed when no durable former-name locator exists');
+my $metadata_failure_reuse = synthetic_device('testWallbox', '00000000-0000-0000-0000-000000000099');
+is(main::Wattpilot_GetPassword($metadata_failure_reuse)->{status}, 'absent', 'reused old name cannot claim an unowned legacy password');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_00000000-0000-0000-0000-000000000099_password'}, 'old-name reuse creates no foreign stable password');
+ok(!scalar(grep { $_->[0] eq 'get' && ($_->[1] eq $legacy_password || $_->[1] eq $legacy_hash) } @DevIo::KEY_OPERATIONS),
+    'pending metadata failure never reads the unowned legacy secret values');
+
+for my $order (qw(original-first replacement-first)) {
+    $hash = fresh_device();
+    my $fuuid_owner = $hash->{FUUID};
+    my $fuuid_reuse = '00000000-0000-0000-0000-000000000099';
+    $legacy_password = 'Wattpilot_testWallbox_password';
+    $legacy_hash = 'Wattpilot_testWallbox_passwordhash';
+    $stable_password = "Wattpilot_${fuuid_owner}_password";
+    $stable_hash = "Wattpilot_${fuuid_owner}_passwordhash";
+    my $password_owner_key = 'Wattpilot_testWallbox_password_owner';
+    my $hash_owner_key = 'Wattpilot_testWallbox_passwordhash_owner';
+    $DevIo::KEY_VALUES{$legacy_password} = 'legacy-password';
+    $DevIo::KEY_VALUES{$legacy_hash} = 'legacy-derived-value';
+    $DevIo::SET_KEY_ERRORS{$password_owner_key} = 'synthetic owner write failure';
+    $DevIo::SET_KEY_ERRORS{$hash_owner_key} = 'synthetic hash owner write failure';
+    DevIo::command_rename('testWallbox', 'renamedWallbox');
+    is_deeply(pending_names($hash, 'password'), ['testWallbox'], "$order owner failure keeps password locator pending");
+    is_deeply(pending_names($hash, 'passwordhash'), ['testWallbox'], "$order owner failure keeps hash locator pending");
+    ok(!exists $DevIo::KEY_VALUES{$stable_password}, "$order owner failure creates no stable password");
+    ok(!exists $DevIo::KEY_VALUES{$stable_hash}, "$order owner failure creates no stable hash");
+
+    %defs = ();
+    $modules{Wattpilot}{defptr} = {};
+    my $device_owner = synthetic_device('renamedWallbox', $fuuid_owner);
+    my $device_reuse = synthetic_device('testWallbox', $fuuid_reuse);
+    my @definitions = $order eq 'original-first'
+        ? ([$device_owner, 'renamedWallbox Wattpilot 192.0.2.10'], [$device_reuse, 'testWallbox Wattpilot 192.0.2.11'])
+        : ([$device_reuse, 'testWallbox Wattpilot 192.0.2.11'], [$device_owner, 'renamedWallbox Wattpilot 192.0.2.10']);
+    is(main::Wattpilot_Define($_->[0], $_->[1]), undef, "$order define sequence completes") for @definitions;
+    ok(!exists $DevIo::KEY_VALUES{"Wattpilot_${fuuid_reuse}_password"}, "$order reused name does not adopt password while owner persistence is failing");
+    ok(!exists $DevIo::KEY_VALUES{"Wattpilot_${fuuid_reuse}_passwordhash"}, "$order reused name does not adopt hash while owner persistence is failing");
+    delete $DevIo::SET_KEY_ERRORS{$password_owner_key};
+    delete $DevIo::SET_KEY_ERRORS{$hash_owner_key};
+    is(credential_value(main::Wattpilot_GetPassword($device_owner)), 'legacy-password', "$order original FUUID reclaims password through its pending locator");
+    is(credential_value(main::Wattpilot_GetPasswordHash($device_owner)), 'legacy-derived-value', "$order original FUUID reclaims hash through its pending locator");
+    is($DevIo::KEY_VALUES{$stable_password}, 'legacy-password', "$order recovery stores password under original FUUID");
+    is($DevIo::KEY_VALUES{$stable_hash}, 'legacy-derived-value', "$order recovery stores hash under original FUUID");
+    ok(!exists $DevIo::KEY_VALUES{"Wattpilot_${fuuid_reuse}_password"}, "$order recovery never creates a password for reused-name FUUID");
+}
 
 # Stable ownership: former names are locators only. A different FUUID owner
 # must never be read, migrated, overwritten, or deleted through A's pending list.
@@ -368,14 +452,13 @@ is(main::Wattpilot_Delete($device_b, 'oldName'), undef, 'B deletion removes only
 is($DevIo::KEY_VALUES{"Wattpilot_${fuuid_a}_password"}, 'restored-password-a', 'B deletion does not damage A stable credential');
 
 DevIo::reset_test_state();
-my $ambiguous_a = synthetic_device('renamedA', $fuuid_a);
-$DevIo::KEY_VALUES{"Wattpilot_${fuuid_a}_pending_legacy_password_names"} = '["unverifiedName"]';
+my $unowned_current = synthetic_device('unverifiedName', $fuuid_a);
 $DevIo::KEY_VALUES{'Wattpilot_unverifiedName_password'} = 'ambiguous-password';
-my $ambiguous_result = main::Wattpilot_GetPassword($ambiguous_a);
-is($ambiguous_result->{status}, 'error', 'unverifiable ownership is an explicit credential error');
-is($DevIo::KEY_VALUES{'Wattpilot_unverifiedName_password'}, 'ambiguous-password', 'unverifiable legacy credential is preserved');
-ok(!scalar(grep { $_->[0] eq 'get' && $_->[1] eq 'Wattpilot_unverifiedName_password' } @DevIo::KEY_OPERATIONS), 'getter does not read a secret before ownership is verified');
-like(log_text(), qr/ownership is unverifiable/, 'unverifiable ownership is reported without credential contents');
+my $ambiguous_result = main::Wattpilot_GetPassword($unowned_current);
+is($ambiguous_result->{status}, 'absent', 'an unowned current-name legacy credential is not claimed from the mutable name');
+is($DevIo::KEY_VALUES{'Wattpilot_unverifiedName_password'}, 'ambiguous-password', 'unowned legacy credential is preserved');
+ok(!scalar(grep { $_->[0] eq 'get' && $_->[1] eq 'Wattpilot_unverifiedName_password' } @DevIo::KEY_OPERATIONS), 'getter does not read an unowned secret value');
+ok(!exists $DevIo::KEY_VALUES{'Wattpilot_unverifiedName_password_owner'}, 'getter creates no owner marker from the current name alone');
 
 $hash = fresh_device();
 $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
@@ -588,14 +671,14 @@ $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
 $stable_hash = 'Wattpilot_' . $hash->{FUUID} . '_passwordhash';
 $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'} = 'legacy-password';
 $DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'} = 'legacy-derived-value';
-is(credential_value(main::Wattpilot_GetStoredSecret($hash, 'password', { bootstrap_current => 1 })), 'legacy-password', 'upgrade migrates the legacy password before authentication');
-is(credential_value(main::Wattpilot_GetStoredSecret($hash, 'passwordhash', { bootstrap_current => 1 })), 'legacy-derived-value', 'upgrade establishes stable ownership for the legacy password hash');
+is(main::Wattpilot_GetStoredSecret($hash, 'password', { include_owned_current => 1 })->{status}, 'absent', 'unowned pre-FUUID password is not migrated from a mutable name');
+is(main::Wattpilot_GetStoredSecret($hash, 'passwordhash', { include_owned_current => 1 })->{status}, 'absent', 'unowned pre-FUUID hash is not migrated from a mutable name');
 is(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), undef, 'password can be changed before first successful authentication');
 is($DevIo::KEY_VALUES{$stable_password}, 'new-synthetic-password', 'password change stores the new stable password');
 ok(!exists $DevIo::KEY_VALUES{$stable_hash}, 'password change leaves no stable derived hash');
-ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'}, 'password change removes the legacy derived hash');
-ok(!exists $DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'}, 'password change removes the legacy password after stable storage succeeds');
-is(main::Wattpilot_GetPasswordHash($hash)->{status}, 'absent', 'obsolete legacy hash cannot be migrated after password change');
+is($DevIo::KEY_VALUES{'Wattpilot_testWallbox_passwordhash'}, 'legacy-derived-value', 'password change preserves an unverifiable legacy hash');
+is($DevIo::KEY_VALUES{'Wattpilot_testWallbox_password'}, 'legacy-password', 'password change preserves an unverifiable legacy password');
+is(main::Wattpilot_GetPasswordHash($hash)->{status}, 'absent', 'unowned legacy hash remains unusable after password change');
 
 $hash = fresh_device();
 $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
