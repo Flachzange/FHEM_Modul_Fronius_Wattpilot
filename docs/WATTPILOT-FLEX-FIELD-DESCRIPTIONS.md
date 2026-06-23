@@ -26,14 +26,14 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 
 - Observed as a number with representative value `32` in the Flex capture.
 - Historical alias and meaning candidate: `chargingCurrent`, requested charging current in amperes.
-- Current module version 1.4.0 accepts integer values 6–32 A and sends `amp` through `setValue`.
+- The current 2.0 development runtime exposes `chargingCurrent`, accepts integer values 6–32 A, and sends `amp` through `setValue`.
 - Actual Flex 43.4 writability, full accepted range, and device-side validation were not established by a real command test.
 
 ### `frc`
 
 - Observed as a number with representative value `0`.
 - Pinned Wattpilot-specific evidence gives `0=Neutral`, `1=Off`, `2=On`.
-- Current module version 1.4.0 maps these to `Neutral`, `Stop`, and `Start` and sends Start as `2`, Stop as `1`.
+- The current 2.0 development runtime exposes `forceState` values `neutral`, `off`, and `on` and sends `0`, `1`, and `2` respectively.
 - The enum and write behavior have not been reproduced on the documented Flex device.
 
 ### `nrg`
@@ -55,7 +55,7 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 | `amp` | `chargingCurrent` | Requested charging current; current FHEM public range 6–32 A | R/W | implementation plus conflicting historical/pinned evidence |
 | `amt` | `temperatureCurrentLimit` | Current limit caused by temperature, candidate unit A | R | historical candidate |
 | `bac` | `buttonAllowCurrentChange` | Whether the hardware button may change current | R/W | historical candidate |
-| `car` | `carState` | Candidate enum: `0 Unknown`, `1 Idle`, `2 Charging`, `3 WaitCar`, `4 Complete`, `5 Error` | R | implementation/historical candidate |
+| `car` | `carState` | Current module mapping: `0 unknown`, `1 idle`, `2 charging`, `3 waitingForCar`, `4 complete`, `5 error`; only observed numeric values are evidence | R | implementation/historical candidate |
 | `cbl` | `cableCurrentLimit` | Cable current limit, candidate unit A | R | historical candidate |
 | `cdi` | `chargingDurationInfo` | Charging-duration object; candidate `type=0` counter, `type=1` duration in ms | R | historical candidate |
 | `cpe` | `cpEnable` | Charge-controller request for CP signal enablement | R | historical candidate |
@@ -65,7 +65,7 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 | `err` | `errorState` | Charger error-state enum candidate | R | historical candidate |
 | `ffb` | `lockFeedback` | Candidate enum: `NoProblem=0`, `ProblemLock=1`, `ProblemUnlock=2` | R | historical candidate |
 | `ffba` | `lockFeedbackAge` | Age of lock feedback, candidate unit ms | R | historical candidate |
-| `frc` | `forceState` | `0 Neutral`, `1 Off/Stop`, `2 On/Start` | R/W | pinned third party plus implementation; Flex write unverified |
+| `frc` | `forceState` | Current module mapping: `0 neutral`, `1 off`, `2 on` | R/W candidate | pinned third party plus implementation; Flex write unverified |
 | `fsp` | `forceSinglePhase` | Force or report single-phase operation | R/W candidate | historical candidate |
 | `fsptws` | `forceSinglePhaseToggleWishedSince` | Time since a phase-toggle request, candidate unit ms | R | historical candidate |
 | `lccfc` | `lastCarStateChangedFromCharging` | Time marker for leaving Charging, candidate unit ms | R | historical candidate |
@@ -94,15 +94,15 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 
 | Key | Alias / readable name | Meaning, unit, or layout candidate | R/W candidate | Evidence |
 |---|---|---|---|---|
-| `eto` | `energyCounterTotal` | Total energy, candidate unit Wh; current FHEM divides by 1000 for its reading | R | implementation/historical candidate |
+| `eto` | `energyTotal` | Total energy candidate; the current module divides the raw value by 1000, with Wh-to-kWh meaning still an implementation interpretation | R | implementation/historical candidate |
 | `etop` | `energyTotalPersisted` | Persisted total energy, candidate unit Wh | R | historical candidate |
 | `fhz` | `frequency` | Grid frequency, candidate unit Hz | R | historical candidate |
-| `nrg` | `energy` | 16-element electrical array; historical layout candidate covers U, I, P, total P, and power factor | R | observed structure plus implementation/historical interpretation |
+| `nrg` | `voltageL1..3`, `currentL1..3`, `powerL1..3`, `power` | 16-element electrical array; current public readings use selected indices, while index meanings and units remain implementation interpretations | R | observed structure plus implementation/historical interpretation |
 | `pakku` | `pAkku` | Battery power, candidate unit W | R | historical candidate |
 | `pgrid` | `pGrid` | Grid power, candidate unit W | R | historical candidate |
 | `ppv` | `pPv` | PV power, candidate unit W | R | historical candidate |
 | `tpa` | `totalPowerAverage` | Candidate 30-second total-power average | R | historical candidate |
-| `wh` | `energyCounterSinceStart` | Energy since vehicle connection, candidate unit Wh | R | implementation/historical candidate |
+| `wh` | `energySincePlugIn` | Energy since vehicle connection; the current module interprets the raw value as Wh | R | implementation/historical candidate |
 
 ### Candidate `nrg` layout
 
@@ -132,7 +132,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `frm` | `roundingMode` | Candidate enum: `PreferPowerFromGrid=0`, `Default=1`, `PreferPowerToGrid=2` | R candidate | historical candidate |
 | `fst` | `startingPower` | Minimum power to start charging, candidate unit W | R/W | historical candidate |
 | `fte` | `froniusTripEnergy` | Minimum next-trip energy, candidate unit Wh | R/W | historical candidate |
-| `ftt` | `froniusTripTime` | Next-trip time in seconds after local midnight | R/W | implementation/historical candidate |
+| `ftt` | `nextTripTime` | Current module renders seconds after local midnight as `HH:MM`; Flex writability remains unverified | R/W candidate | implementation/historical candidate |
 | `ful` | `useDynamicPricing` | Dynamic-price charging enabled candidate | unknown | historical candidate |
 | `fup` | `usePvSurplus` | PV-surplus charging enabled | R/W | historical candidate |
 | `fzf` | `zeroFeedin` | Zero-feed-in behavior candidate | R/W | historical candidate |
@@ -162,7 +162,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `awpl` | `awattarPriceList` | Dynamic price list with Unix timestamps candidate | R/W candidate | historical candidate |
 | `clp` | `currentLimitPresets` | Current-limit presets; historical maximum five entries | R/W | historical candidate |
 | `fmt` | `minChargeTime` | Minimum charge time, candidate unit ms | R/W | historical candidate |
-| `lmo` | `logicMode` | Current FHEM labels: `3 Default`, `4 Eco`, `5 NextTrip`; historical labels conflict (`Awattar`, `AutomaticStop`) | R/W | implementation with explicit historical conflict |
+| `lmo` | `chargingMode` | Current module mapping: `3 default`, `4 eco`, `5 nextTrip`; historical labels conflict (`Awattar`, `AutomaticStop`) | R/W candidate | implementation with explicit historical conflict |
 | `sch_week` | `schedulerWeekday` | Weekday schedule; candidate control `Disabled=0`, `Inside=1`, `Outside=2` | R/W | historical candidate |
 | `sch_satur` | `schedulerSaturday` | Saturday schedule; same control candidate | R/W | historical candidate |
 | `sch_sund` | `schedulerSunday` | Sunday schedule; same control candidate | R/W | historical candidate |

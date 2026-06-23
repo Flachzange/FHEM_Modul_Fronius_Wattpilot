@@ -11,7 +11,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Gemeinsame Session-Invalidierung und die Ermittlung des konfigurierten Runtime-Zustands wurden zentralisiert, ohne die bewährte Timer-, DevIo- und Reconnect-Eigentumslogik zu ersetzen.
 - Statusdaten werden genau einmal in einer Kopie normalisiert. Die Reading-Verarbeitung ist in unmittelbare Werte, Fahrzeugübergänge, Electrical-Gating, Energiewerte und `nrg`-Readings aufgeteilt.
 - Neue Vertragstests verlangen exakt 23 öffentliche 2.0-Readings, prüfen alle bekannten und unbekannten Enum-Abbildungen, lehnen sämtliche alten Set-Befehle ab und verhindern alte öffentliche Strings außerhalb ausdrücklich markierter Negativtests.
-- Die öffentliche 2.0-Schnittstelle ist im gemeinsamen Entwicklungsbranch auf englische `lowerCamelCase`-Readings, Set-Befehle und Zustandswerte umgestellt. Der formale Versionswechsel und die vollständige Benutzerdokumentation folgen in den nachgelagerten 2.0-Arbeitspaketen; dieser Zwischenstand darf nicht separat nach `main` gemergt werden.
+- Die öffentliche 2.0-Schnittstelle ist im gemeinsamen Entwicklungsbranch auf englische `lowerCamelCase`-Readings, Set-Befehle und Zustandswerte umgestellt. Deutsche und englische Commandref, beide READMEs, API-Einstieg, Feldkatalog und Protokollmapping dokumentieren denselben aktiven Vertrag; alte 1.x-Namen bleiben nur in ausdrücklich markierten Umstellungs- oder Historienabschnitten. Der formale Versionswechsel folgt im abschließenden Release-Arbeitspaket; dieser Zwischenstand darf nicht separat nach `main` gemergt werden.
 
 ## [v1.6.0] - 2026-06-23
 

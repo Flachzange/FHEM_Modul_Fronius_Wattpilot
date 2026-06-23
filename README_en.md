@@ -2,7 +2,34 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **1.6.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Target version of this development line: **2.0.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+
+## Breaking change in 2.0
+
+Version 2.0 supports only a fresh definition. There are no aliases and no automatic migration for previous reading or set-command names. Old readings in an existing device are not deleted automatically. Adapt DOIFs, notifies, plots, DbLog/Influx queries, dashboards, and scripts manually.
+
+<!-- BEGIN 2.0 migration names -->
+
+| 1.x | 2.0 |
+| :--- | :--- |
+| `version` | `firmwareVersion` |
+| `CarState` | `carState` |
+| `Laden_starten` | `forceState` |
+| `Strom` | `chargingCurrent` |
+| `Modus` | `chargingMode` |
+| `Zeit_NextTrip` | `nextTripTime` |
+| `EnergyTotal` | `energyTotal` |
+| `Energie_seit_Anstecken` | `energySincePlugIn` |
+| `Voltage_L1..3` | `voltageL1..3` |
+| `Current_L1..3` | `currentL1..3` |
+| `Power_L1..3` | `powerL1..3` |
+| `Password` | `password` |
+| `Laden_starten Start|Stop` | `forceState neutral|off|on` |
+| `Strom` | `chargingCurrent` |
+| `Modus Default|Eco|NextTrip` | `chargingMode default|eco|nextTrip` |
+| `Zeit_NextTrip` | `nextTripTime` |
+
+<!-- END 2.0 migration names -->
 
 ## 1. Prerequisites (System & Perl Modules)
 
@@ -62,7 +89,7 @@ define <Name> Wattpilot <IP-Address> [Serial]
 * **<IP-Address>**: The local IP address of the Wattpilot on the network (e.g., `192.0.2.10`, reserved for documentation).
 * **[Serial]** (Optional): The serial number of the box. If omitted, the module attempts to read it automatically.
 
-**Note:** The password is no longer specified in the definition, but set separately using the `set Password` command.
+**Note:** Version 2.0 requires a fresh definition. Set the password separately with `set <Name> password <secret>`.
 
 ### Example
 
@@ -70,67 +97,56 @@ Enter this into the FHEM command line:
 
 ```text
 define testWallbox Wattpilot 192.0.2.10 10000001
-set testWallbox Password documentation-value-only
+set testWallbox password documentation-value-only
 ```
 
 ## 4. Functions & Commands (Control)
 
-Once the device is defined, you must first set the password:
-
-### Set Password
-
-Stores the password persistently in FHEM (encrypted in the FHEM database, not in the `fhem.cfg`).
+After defining the device, set the password first:
 
 ```text
-set wallbox Password <YourPassword>
+set wallbox password <YourPassword>
 ```
 
-After that, the module connects automatically. Once the status is `connected`, you can control it.
+The password is stored only under stable FUUID-based keys. Rename, reload, `rereadcfg`, disable, and normal undefine preserve those values. Only actually deleting the FHEM device removes its two stable credential keys. Password replacement and deletion are transactional and report an incomplete rollback explicitly.
 
-The password and its derived authentication value are stored exclusively under stable FUUID-based keys. Rename does not change those keys and performs no credential migration. `rereadcfg`, reload, disable, rename, and normal undefine preserve credentials; only actually deleting the FHEM device removes its two stable values.
+Once `state` is `connected`, the following commands are available:
 
-Password replacement and deletion first snapshot the stable password and password hash. If a change fails partway through, already changed values are restored in reverse order; an incomplete rollback is reported explicitly. After the real FHEM sequence `UndefFn` followed by a failed `DeleteFn`, the module restores `defptr`, an honest state, and exactly one reconnect timer only when the retained device is enabled and has a password.
-
-Credential reads distinguish value present, value absent, and storage failure. Storage failures in Define, enable, authentication, secured commands, and failed-delete restoration are reported as `credential error` and are never treated as a missing password. Released 1.6.x versions are the final releases supporting name-based credential migration. Version 2.0 requires a fresh definition and a new `set <name> Password <secret>`; old name-based keys are neither read nor cleaned up automatically.
-
-### Start / Stop Charging
-
-Manually starts or stops the charging process. `Start` sends `frc=2`, `Stop` sends `frc=1`; the reading also reports `Neutral` for `frc=0`. Commands are sent only while the connection is open, authenticated, and a signing key is available.
+### Set charging current
 
 ```text
-set wallbox Laden_starten Start
-set wallbox Laden_starten Stop
+set wallbox chargingCurrent 16
 ```
 
-### Change Current (Amperes)
+Only integer values from 6 through 32 are accepted. Internally the module sends `amp`.
 
-Sets the charging current in ampere. Only integer values from 6 A through 32 A are accepted; invalid values are rejected before sending.
+### Set force state
 
 ```text
-set wallbox Strom 16
+set wallbox forceState neutral
+set wallbox forceState off
+set wallbox forceState on
 ```
 
-Tip: In the FHEM interface, this often appears as a slider.
+The mapping is `neutral -> frc=0`, `off -> frc=1`, and `on -> frc=2`.
 
-### Change Mode
-
-Changes the operating mode of the Wallbox.
+### Set charging mode
 
 ```text
-set wallbox Modus Eco
-set wallbox Modus NextTrip
-set wallbox Modus Default
+set wallbox chargingMode default
+set wallbox chargingMode eco
+set wallbox chargingMode nextTrip
 ```
 
-### Set Next Trip Time
+The mapping is `default -> lmo=3`, `eco -> lmo=4`, and `nextTrip -> lmo=5`.
 
-Sets the desired time for the "Next Trip" mode.
+### Set next-trip time
 
 ```text
-set wallbox Zeit_NextTrip 07:30
+set wallbox nextTripTime 07:30
 ```
 
-Format: `hh:mm`
+The format must be exactly `HH:MM`. A one-digit hour such as `7:30` is rejected. Internally the value is sent as seconds after midnight through `ftt`.
 
 ## 5. Configuration (Attributes)
 
@@ -190,32 +206,37 @@ Selects the password hashing method.
 
 ## 6. Readings (Values)
 
-The module provides the following values ("Readings"):
+The module exposes exactly these 23 public readings:
 
 | Reading | Description |
 | :--- | :--- |
-| `state` | Connection status (`disabled`, `password missing`, `credential error`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connection failed`, `auth_failed`, `auth_timeout`, `initialization_timeout`). `connected` is set only after successful authentication and a valid status message. |
-| `version` | Firmware / protocol version of the device. |
-| `authHashMode` | Authentication method used (pbkdf2 or bcrypt). |
-| `CarState` | Status of the car (Idle, Charging, WaitCar, Complete). |
-| `power` | Current total power in Watts. |
-| `Power_L1..3` | Power on individual phases in Watts. |
-| `EnergyTotal` | Total energy counter in kWh. |
-| `Voltage_L1..3` | Voltage on the 3 phases in Volts. |
-| `Current_L1..3` | Current on the 3 phases in Amperes. |
-| `Strom` | The current limit currently set in Wattpilot (Amperes). |
-| `Laden_starten` | Status of manual charging control (Start/Stop). |
-| `Modus` | Current charging mode (Eco/Default/NextTrip). |
-| `Zeit_NextTrip` | Set time for Next Trip (Format hh:mm). |
-| `Energie_seit_Anstecken` | Energy consumed in Wh since the car was connected. |
+| `state` | Lifecycle state: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed`, or `authNonceFailed`. |
+| `firmwareVersion` | Firmware/version string from the device `hello` message. |
+| `authHashMode` | Effective mode: `pbkdf2` or `bcrypt`. |
+| `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error`, or `unknown:<raw-value>`. |
+| `forceState` | `neutral`, `off`, `on`, or `unknown:<raw-value>`. |
+| `chargingCurrent` | Configured/requested charging current, interpreted as amperes. |
+| `chargingMode` | `default`, `eco`, `nextTrip`, or `unknown:<raw-value>`. |
+| `nextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
+| `energyTotal` | `eto / 1000`, formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence and is not proven by the sanitized Flex capture. |
+| `energySincePlugIn` | `wh`, formatted with two decimals and interpreted as Wh. |
+| `voltageL1`, `voltageL2`, `voltageL3` | `nrg[0..2]`, interpreted as volts. |
+| `currentL1`, `currentL2`, `currentL3` | `nrg[4..6]`, interpreted as amperes. |
+| `powerL1`, `powerL2`, `powerL3` | `nrg[7..9]`, interpreted as watts. |
+| `power` | `nrg[11]`, interpreted as total watts. |
+| `lastCommandRequestId` | Correlation ID of the most recent secured command. |
+| `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
+| `lastCommandError` | Concise redacted error or result text. |
+
+The meanings and units assigned to the used `nrg` positions and to `eto`/`wh` remain implementation or historical interpretations. The documented Flex capture confirms structure and data types, but not every unit, enum meaning, or write capability independently.
 
 ## 7. Troubleshooting
 
-* **Status remains `disconnected`, `connecting`, `connection failed`, `auth_timeout`, or `initialization_timeout`**:
+* **Status remains `disconnected`, `connecting`, `connectionFailed`, `authTimeout`, or `initializationTimeout`**:
   * Check the IP address. Can the FHEM server ping the IP?
   * Are FHEM and Wattpilot on the same network? (Often issues with Guest networks).
 * **Log shows "Authentication Failed"**:
-  * Check the password with `set <Name> Password ...`.
+  * Check the password with `set <Name> password ...`.
   * If necessary, try setting the `authHash` attribute explicitly to `pbkdf2` or `bcrypt`.
 * **Perl Error in Log (`Can't locate Crypt/PBKDF2.pm`)**:
   * The prerequisites (Step 1) were not met. Install the missing Perl module.

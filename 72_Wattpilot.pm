@@ -1695,9 +1695,40 @@ sub Wattpilot_WriteJson($$) {
 <a name="Wattpilot"></a>
 <h3>Wattpilot</h3>
 <ul>
-  <li>This module controls a Fronius Wattpilot Wallbox via WebSocket API V2.</li>
-  <li>It supports reading status values, setting charging modes, starting/stopping charging, and supports both PBKDF2 and bcrypt based authentication.</li>
-  <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents, structurally framed, and type-checked. DevIo owns raw WebSocket-frame buffering; Wattpilot separately bounds logical JSON continuation. Omitted <code>deltaStatus</code> fields remain unchanged.</li>
+  <li>This module controls a Fronius Wattpilot wallbox through the local WebSocket API.</li>
+  <li>The public 2.0 interface uses English <code>lowerCamelCase</code> reading and set-command names.</li>
+  <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents. Known fields are type-checked, omitted partial-update fields remain unchanged, and missing values are never converted to zero.</li>
+  <br>
+
+  <a name="Wattpilot-breaking"></a>
+  <b>Breaking change from 1.x</b>
+  <ul>
+    <li>Version 2.0 requires a fresh FHEM definition and a new <code>set &lt;name&gt; password &lt;secret&gt;</code>.</li>
+    <li>There are no aliases, compatibility attributes, or automatic migrations for old public reading and set-command names.</li>
+    <li>Old readings in an existing device are not deleted automatically. Adapt DOIFs, notifies, plots, DbLog/Influx queries, dashboards, scripts, and other consumers manually.</li>
+    <li>Old name-based credential keys are neither read nor removed. Released 1.6.x versions are the final line with that upgrade support.</li>
+  </ul>
+  <!-- BEGIN 2.0 migration names -->
+  <table class="block wide">
+    <tr><th>1.x name</th><th>2.0 name</th></tr>
+    <tr><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
+    <tr><td><code>CarState</code></td><td><code>carState</code></td></tr>
+    <tr><td><code>Laden_starten</code></td><td><code>forceState</code></td></tr>
+    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
+    <tr><td><code>Modus</code></td><td><code>chargingMode</code></td></tr>
+    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+    <tr><td><code>EnergyTotal</code></td><td><code>energyTotal</code></td></tr>
+    <tr><td><code>Energie_seit_Anstecken</code></td><td><code>energySincePlugIn</code></td></tr>
+    <tr><td><code>Voltage_L1..3</code></td><td><code>voltageL1..3</code></td></tr>
+    <tr><td><code>Current_L1..3</code></td><td><code>currentL1..3</code></td></tr>
+    <tr><td><code>Power_L1..3</code></td><td><code>powerL1..3</code></td></tr>
+    <tr><td><code>Password</code></td><td><code>password</code></td></tr>
+    <tr><td><code>Laden_starten Start|Stop</code></td><td><code>forceState neutral|off|on</code></td></tr>
+    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
+    <tr><td><code>Modus Default|Eco|NextTrip</code></td><td><code>chargingMode default|eco|nextTrip</code></td></tr>
+    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+  </table>
+  <!-- END 2.0 migration names -->
   <br>
 
   <a name="Wattpilot-define"></a>
@@ -1706,43 +1737,33 @@ sub Wattpilot_WriteJson($$) {
     <code>define &lt;name&gt; Wattpilot &lt;IP-Address&gt; [&lt;Serial&gt;]</code>
     <br><br>
     Defines a Wattpilot device.<br>
-    <b>&lt;IP-Address&gt;</b>: The local IP address of the Wattpilot (for example 192.0.2.10).<br>
-    <b>&lt;Serial&gt;</b>: (Optional) The serial number of the device. If not provided, it will be taken from the <code>hello</code> message during connection setup.<br>
+    <b>&lt;IP-Address&gt;</b>: Local IP address of the Wattpilot.<br>
+    <b>&lt;Serial&gt;</b>: Optional serial number. If omitted, the module uses the value from the device <code>hello</code> message.<br>
     <br>
-    The password is no longer part of the device definition and must be set separately via <code>set &lt;name&gt; Password &lt;secret&gt;</code>.
+    Set the password separately with <code>set &lt;name&gt; password &lt;secret&gt;</code>.
   </ul>
   <br>
 
   <a name="Wattpilot-set"></a>
   <b>Set</b>
   <ul>
-    <li><code>set &lt;name&gt; Password &lt;secret&gt;</code><br>
-        Stores the password and derived authentication value exclusively under stable FUUID-based keys and starts a reconnect. Rename does not rewrite credentials. Password replacement and device deletion snapshot the two stable values first and roll back prior changes after a partial failure; an incomplete rollback is reported explicitly. Credential reads distinguish present, absent, and storage failure. Undefine, rename, reload, <code>rereadcfg</code>, and disable preserve credentials. Released 1.6.x versions are the final releases with name-based credential migration support. Version 2.0 requires a fresh definition and a new password operation; old name-based keys are not read or cleaned up automatically.</li>
-
-    <li><code>set &lt;name&gt; Laden_starten &lt;Start|Stop&gt;</code><br>
-        Manually starts or stops charging (corresponds to parameter <code>frc</code>). Start sends <code>2</code>, Stop sends <code>1</code>; the reading keeps the compatible labels <code>Start</code>/<code>Stop</code> and adds <code>Neutral</code> for value <code>0</code>.</li>
-
-    <li><code>set &lt;name&gt; Strom &lt;6-32&gt;</code><br>
-        Sets the charging current in ampere. Values outside the public range 6–32 are rejected before any message is sent.</li>
-
-    <li><code>set &lt;name&gt; Modus &lt;Default|Eco|NextTrip&gt;</code><br>
-        Changes the charging mode:<br>
-        <ul>
-          <li><b>Default</b>: Standard charging</li>
-          <li><b>Eco</b>: PV surplus charging</li>
-          <li><b>NextTrip</b>: Scheduled charging for next trip</li>
-        </ul>
-    </li>
-
-    <li><code>set &lt;name&gt; Zeit_NextTrip &lt;hh:mm&gt;</code><br>
-        Sets the planned departure time for NextTrip mode. Internally this is converted to seconds after midnight.</li>
+    <li><code>set &lt;name&gt; password &lt;secret&gt;</code><br>
+        Stores the password under stable FUUID-based keys and starts a controlled reconnect. Rename does not rewrite credentials. Password replacement and deletion use two-key transactions with rollback. Storage errors remain distinguishable from a missing password.</li>
+    <li><code>set &lt;name&gt; chargingCurrent &lt;6-32&gt;</code><br>
+        Sends protocol key <code>amp</code>. Only integer values from 6 through 32 are accepted.</li>
+    <li><code>set &lt;name&gt; forceState &lt;neutral|off|on&gt;</code><br>
+        Sends <code>frc=0</code>, <code>frc=1</code>, or <code>frc=2</code>.</li>
+    <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
+        Sends <code>lmo=3</code>, <code>lmo=4</code>, or <code>lmo=5</code>.</li>
+    <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
+        Requires exactly two-digit <code>HH:MM</code> and sends protocol key <code>ftt</code> as seconds after midnight.</li>
   </ul>
   <br>
 
   <a name="Wattpilot-get"></a>
   <b>Get</b>
   <ul>
-    <li>Currently no dedicated <code>get</code> commands are implemented.</li>
+    <li>No dedicated <code>get</code> commands are implemented.</li>
   </ul>
   <br>
 
@@ -1750,31 +1771,21 @@ sub Wattpilot_WriteJson($$) {
   <b>Attributes</b>
   <ul>
     <li><code>interval &lt;seconds&gt;</code><br>
-        Interval in seconds for updating high-frequency readings such as voltages and phase currents. <code>0</code> means no rate limiting.</li>
-
+        Rate limit for the electrical reading group. <code>0</code> disables rate limiting.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps high-frequency <code>nrg</code>/power/current readings passive while the car is not charging. <code>1</code> processes real incoming idle values subject to <code>interval</code>. When charging changes to a valid non-charging <code>car</code> state, one authoritative idle <code>nrg</code> received in the same message or within 30 seconds bypasses the rate limit once so real zero values from the device clear stale readings. No protocol polling command is sent: no evidenced Wattpilot WebSocket request for all values or full status is known. If that 30-second window receives no valid <code>nrg</code>, the module closes the session and schedules at most one controlled reconnect for that idle episode. This is a bounded fallback inferred from third-party client behavior that initial status is server-pushed after login; it is not an official Fronius refresh feature. Missing fields, timeouts, disconnects, and failed refreshes never synthesize zero values.</li>
-
-    <li><code>defaultAmp &lt;value&gt;</code><br>
-        Default value for the current setting slider in the frontend.</li>
-
+        <code>0</code> keeps electrical readings passive while not charging. <code>1</code> processes real incoming idle values. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
-        Disables the module completely. If set to <code>1</code>, the connection is closed.</li>
-
+        Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
-        Default: <code>0</code>. Exact inbound and outbound JSON is logged only when this attribute is <code>1</code> and <code>verbose</code> is also <code>5</code>. This includes authentication and <code>securedMsg</code> frames. A central write path suppresses DevIo's own level-5 payload logging without persistently changing <code>verbose</code>. <code>DevIo_SimpleWrite(..., 2)</code> receives unpacked text; DevIo selects the WebSocket opcode from its connection and <code>$hash-&gt;{binary}</code>. Wattpilot-owned normal logs are redacted. Technical limit: DevIo's internal HttpUtils connection hash does not inherit <code>privacy</code> as <code>hideurl</code> or inherit <code>devioLoglevel</code>, so FHEM core may still log endpoint URLs, DNS/IP results, timeouts, and connection errors at levels 4 or 5; those core logs are outside the module's redaction guarantee. Enabling raw logging emits a warning because logs can contain sensitive authentication, network, device, and operational data. Never share this output without sanitizing it.</li>
-
+        Exact JSON is logged only with both <code>rawJsonLog=1</code> and <code>verbose=5</code>. This can expose sensitive authentication, network, device, and operational data. DevIo/HttpUtils core logs may still contain endpoint details at high verbosity.</li>
     <li><code>authHash &lt;auto|pbkdf2|bcrypt&gt;</code><br>
-        Selects the password hashing method for authentication.<br>
-        <ul>
-          <li><b>auto</b>: Accept announced PBKDF2 or bcrypt. A missing hash selects PBKDF2 only for the evidenced legacy <code>devicetype=wattpilot</code>, protocol-2 profile; unknown modes are rejected.</li>
-          <li><b>pbkdf2</b>: Force legacy PBKDF2 authentication</li>
-          <li><b>bcrypt</b>: Force bcrypt authentication (used by newer Wattpilot Flex devices)</li>
-        </ul>
-        Changing or deleting this attribute immediately invalidates the current authentication and closes the connection. If the device is enabled and its password is readable, exactly one fresh login is scheduled before secured commands are accepted again; otherwise the state remains disabled, credential error, or password missing as applicable.
-    </li>
+        Selects authentication hashing. <code>auto</code> accepts announced PBKDF2 or bcrypt; a missing hash selects PBKDF2 only for the evidenced predecessor <code>devicetype=wattpilot</code>, protocol-2 profile. Changing the attribute invalidates the current session and schedules one fresh login when possible.</li>
     <li><code>authHashCost &lt;4-14&gt;</code><br>
-        bcrypt cost used for newly derived authentication hashes. Changing or deleting it is authentication-relevant and therefore closes the current session and schedules exactly one fresh login when enabled and configured.</li>
+        bcrypt cost for newly derived authentication hashes. Changing it invalidates the current session.</li>
+    <li><code>debug &lt;0|1&gt;</code><br>
+        Retained attribute without separate runtime handling in the current implementation.</li>
+    <li><code>defaultAmp &lt;6-32&gt;</code><br>
+        Retained attribute without separate runtime handling in the current implementation.</li>
   </ul>
   <br>
 
@@ -1782,49 +1793,22 @@ sub Wattpilot_WriteJson($$) {
   <b>Readings</b>
   <ul>
     <li><code>state</code><br>
-        Current connection/authentication state, e.g. <code>disabled</code>, <code>password missing</code>, <code>credential error</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connection failed</code>, <code>auth_failed</code>, <code>auth_timeout</code>, or <code>initialization_timeout</code>. <code>connected</code> requires an open DevIo connection, successful authentication, and at least one valid post-authentication status message; <code>authSuccess</code> alone is not enough.</li>
-
-    <li><code>version</code><br>
-        Firmware / protocol version reported by the Wattpilot.</li>
-
-    <li><code>authHashMode</code><br>
-        Effective authentication hash mode currently used (<code>pbkdf2</code> or <code>bcrypt</code>).</li>
-
-    <li><code>CarState</code><br>
-        Vehicle charging state, for example <code>Idle</code>, <code>Charging</code>, <code>Complete</code>.</li>
-
-    <li><code>Laden_starten</code><br>
-        Force-state reading derived from <code>frc</code>: <code>Neutral</code>, <code>Stop</code>, <code>Start</code>, or an explicit <code>Unknown(value)</code>.</li>
-
-    <li><code>lastCommandStatus</code>, <code>lastCommandRequestId</code>, <code>lastCommandError</code><br>
-        Result of the most recent secured command: pending, success, failed, or timeout. Device error payloads remain suppressed in normal logging.</li>
-
-    <li><code>Strom</code><br>
-        Configured charging current in ampere.</li>
-
-    <li><code>Modus</code><br>
-        Current charging mode (<code>Default</code>, <code>Eco</code>, <code>NextTrip</code>).</li>
-
-    <li><code>Zeit_NextTrip</code><br>
-        Planned departure time in <code>hh:mm</code>.</li>
-
-    <li><code>Energie_seit_Anstecken</code><br>
-        Energy charged since the vehicle was plugged in.</li>
-
-    <li><code>EnergyTotal</code><br>
-        Total energy counter in kWh.</li>
-
-    <li><code>power</code><br>
-        Current total power.</li>
-
-    <li><code>Voltage_L1</code>, <code>Voltage_L2</code>, <code>Voltage_L3</code><br>
-        Voltage per phase.</li>
-
-    <li><code>Current_L1</code>, <code>Current_L2</code>, <code>Current_L3</code><br>
-        Current per phase.</li>
-
-    <li><code>Power_L1</code>, <code>Power_L2</code>, <code>Power_L3</code><br>
-        Power per phase.</li>
+        Lifecycle state: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code>, or <code>authNonceFailed</code>.</li>
+    <li><code>firmwareVersion</code><br>Firmware/version string reported by the device <code>hello</code> message.</li>
+    <li><code>authHashMode</code><br>Effective authentication mode: <code>pbkdf2</code> or <code>bcrypt</code>.</li>
+    <li><code>carState</code><br><code>unknown</code>, <code>idle</code>, <code>charging</code>, <code>waitingForCar</code>, <code>complete</code>, <code>error</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
+    <li><code>forceState</code><br><code>neutral</code>, <code>off</code>, <code>on</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
+    <li><code>chargingCurrent</code><br>Configured/requested charging current; interpreted as amperes.</li>
+    <li><code>chargingMode</code><br><code>default</code>, <code>eco</code>, <code>nextTrip</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
+    <li><code>nextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
+    <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
+    <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
+    <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Values from <code>nrg[0..2]</code>, interpreted as volts.</li>
+    <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Values from <code>nrg[4..6]</code>, interpreted as amperes.</li>
+    <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
+    <li><code>power</code><br>Value from <code>nrg[11]</code>, interpreted as total watts.</li>
+    <li><code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, <code>lastCommandError</code><br>
+        Correlation and result of the most recent secured command. Status values are <code>pending</code>, <code>success</code>, <code>failed</code>, or <code>timeout</code>.</li>
   </ul>
 </ul>
 
@@ -1835,86 +1819,97 @@ sub Wattpilot_WriteJson($$) {
 <a name="Wattpilot"></a>
 <h3>Wattpilot</h3>
 <ul>
-  <li>Dieses Modul dient zur Steuerung einer Fronius Wattpilot Wallbox über die WebSocket API V2.</li>
-  <li>Es unterstützt das Auslesen von Statuswerten, das Setzen von Lademodi, das Starten/Stoppen der Ladung sowie die Authentifizierung per PBKDF2 und bcrypt.</li>
-  <li>Dekodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt, werden strukturell getrennt und typgeprüft. DevIo puffert rohe WebSocket-Frames; Wattpilot begrenzt die logische JSON-Fortsetzung separat. Ausgelassene <code>deltaStatus</code>-Felder bleiben unverändert.</li>
+  <li>Dieses Modul steuert eine Fronius-Wattpilot-Wallbox über die lokale WebSocket-API.</li>
+  <li>Die öffentliche 2.0-Schnittstelle verwendet englische Reading- und Set-Namen in <code>lowerCamelCase</code>.</li>
+  <li>Decodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt. Bekannte Felder werden typgeprüft, ausgelassene Teil-Updates bleiben unverändert und fehlende Werte werden niemals als Null behandelt.</li>
+  <br>
+
+  <a name="Wattpilot-breaking"></a>
+  <b>Inkompatible Änderung gegenüber 1.x</b>
+  <ul>
+    <li>Version 2.0 erfordert eine frische FHEM-Definition und ein neues <code>set &lt;name&gt; password &lt;secret&gt;</code>.</li>
+    <li>Für alte öffentliche Reading- und Set-Namen gibt es keine Aliase, Kompatibilitätsattribute oder automatische Migration.</li>
+    <li>Alte Readings eines bestehenden Devices werden nicht automatisch gelöscht. DOIFs, Notifies, Plots, DbLog-/Influx-Abfragen, Dashboards, Skripte und weitere Verbraucher müssen manuell angepasst werden.</li>
+    <li>Alte namensbasierte Credential-Schlüssel werden weder gelesen noch gelöscht. Veröffentlichte 1.6.x-Versionen sind die letzte Linie mit dieser Upgrade-Unterstützung.</li>
+  </ul>
+  <!-- BEGIN 2.0 migration names -->
+  <table class="block wide">
+    <tr><th>1.x-Name</th><th>2.0-Name</th></tr>
+    <tr><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
+    <tr><td><code>CarState</code></td><td><code>carState</code></td></tr>
+    <tr><td><code>Laden_starten</code></td><td><code>forceState</code></td></tr>
+    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
+    <tr><td><code>Modus</code></td><td><code>chargingMode</code></td></tr>
+    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+    <tr><td><code>EnergyTotal</code></td><td><code>energyTotal</code></td></tr>
+    <tr><td><code>Energie_seit_Anstecken</code></td><td><code>energySincePlugIn</code></td></tr>
+    <tr><td><code>Voltage_L1..3</code></td><td><code>voltageL1..3</code></td></tr>
+    <tr><td><code>Current_L1..3</code></td><td><code>currentL1..3</code></td></tr>
+    <tr><td><code>Power_L1..3</code></td><td><code>powerL1..3</code></td></tr>
+    <tr><td><code>Password</code></td><td><code>password</code></td></tr>
+    <tr><td><code>Laden_starten Start|Stop</code></td><td><code>forceState neutral|off|on</code></td></tr>
+    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
+    <tr><td><code>Modus Default|Eco|NextTrip</code></td><td><code>chargingMode default|eco|nextTrip</code></td></tr>
+    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+  </table>
+  <!-- END 2.0 migration names -->
   <br>
 
   <a name="Wattpilot-define"></a>
   <b>Define</b>
   <ul>
-    <code>define &lt;name&gt; Wattpilot &lt;IP-Addresse&gt; [&lt;Seriennummer&gt;]</code>
+    <code>define &lt;name&gt; Wattpilot &lt;IP-Adresse&gt; [&lt;Seriennummer&gt;]</code>
     <br><br>
     Definiert ein Wattpilot-Device.<br>
-    <b>&lt;IP-Addresse&gt;</b>: Die lokale IP-Adresse des Wattpiloten (z.B. 192.0.2.10).<br>
-    <b>&lt;Seriennummer&gt;</b>: (Optional) Die Seriennummer des Geräts. Wenn sie nicht angegeben wird, wird sie beim Verbindungsaufbau aus der <code>hello</code>-Nachricht übernommen.<br>
+    <b>&lt;IP-Adresse&gt;</b>: Lokale IP-Adresse des Wattpilot.<br>
+    <b>&lt;Seriennummer&gt;</b>: Optional. Ohne Angabe wird der Wert aus der <code>hello</code>-Nachricht übernommen.<br>
     <br>
-    Das Passwort ist nicht mehr Teil des <code>define</code>-Befehls und muss separat mit <code>set &lt;name&gt; Password &lt;secret&gt;</code> gesetzt werden.
+    Das Passwort wird separat mit <code>set &lt;name&gt; password &lt;secret&gt;</code> gesetzt.
   </ul>
   <br>
 
   <a name="Wattpilot-set"></a>
   <b>Set</b>
   <ul>
-    <li><code>set &lt;name&gt; Password &lt;secret&gt;</code><br>
-        Speichert das Passwort und den abgeleiteten Authentifizierungswert ausschließlich unter stabilen FUUID-basierten Schlüsseln und startet einen Reconnect. Rename schreibt keine Zugangsdaten um. Passwortänderung und Gerätelöschung lesen zuerst Snapshots der beiden stabilen Werte und rollen bereits ausgeführte Änderungen nach einem Teilfehler zurück; ein unvollständiger Rollback wird ausdrücklich gemeldet. Credential-Lesezugriffe unterscheiden vorhanden, nicht vorhanden und Speicherfehler. Undefine, Rename, Reload, <code>rereadcfg</code> und Disable erhalten die Zugangsdaten. Veröffentlichte 1.6.x-Versionen sind die letzten Releases mit Unterstützung für namensbasierte Credential-Migration. Version 2.0 erfordert eine frische Definition und ein erneutes Setzen des Passworts; alte namensbasierte Schlüssel werden weder gelesen noch automatisch bereinigt.</li>
-
-    <li><code>set &lt;name&gt; Laden_starten &lt;Start|Stop&gt;</code><br>
-        Startet oder stoppt den Ladevorgang manuell (entspricht dem Parameter <code>frc</code>). Start sendet <code>2</code>, Stop sendet <code>1</code>; das Reading behält die kompatiblen Werte <code>Start</code>/<code>Stop</code> und ergänzt <code>Neutral</code> für Wert <code>0</code>.</li>
-
-    <li><code>set &lt;name&gt; Strom &lt;6-32&gt;</code><br>
-        Setzt den Ladestrom in Ampere. Werte außerhalb des öffentlichen Bereichs 6–32 werden vor dem Senden abgewiesen.</li>
-
-    <li><code>set &lt;name&gt; Modus &lt;Default|Eco|NextTrip&gt;</code><br>
-        Ändert den Lademodus:<br>
-        <ul>
-          <li><b>Default</b>: Standard-Laden</li>
-          <li><b>Eco</b>: Laden mit PV-Überschuss</li>
-          <li><b>NextTrip</b>: Geplantes Laden für die nächste Fahrt</li>
-        </ul>
-    </li>
-
-    <li><code>set &lt;name&gt; Zeit_NextTrip &lt;hh:mm&gt;</code><br>
-        Setzt die geplante Abfahrtszeit für den Modus NextTrip. Intern wird der Wert in Sekunden ab Mitternacht umgerechnet.</li>
+    <li><code>set &lt;name&gt; password &lt;secret&gt;</code><br>
+        Speichert das Passwort unter stabilen FUUID-basierten Schlüsseln und startet einen kontrollierten Reconnect. Rename schreibt Credentials nicht um. Passwortänderung und Löschung verwenden Zwei-Schlüssel-Transaktionen mit Rollback. Speicherfehler bleiben von einem fehlenden Passwort unterscheidbar.</li>
+    <li><code>set &lt;name&gt; chargingCurrent &lt;6-32&gt;</code><br>
+        Sendet den Protokollschlüssel <code>amp</code>. Akzeptiert werden nur ganze Werte von 6 bis 32.</li>
+    <li><code>set &lt;name&gt; forceState &lt;neutral|off|on&gt;</code><br>
+        Sendet <code>frc=0</code>, <code>frc=1</code> oder <code>frc=2</code>.</li>
+    <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
+        Sendet <code>lmo=3</code>, <code>lmo=4</code> oder <code>lmo=5</code>.</li>
+    <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
+        Erfordert exakt zweistelliges <code>HH:MM</code> und sendet <code>ftt</code> als Sekunden nach Mitternacht.</li>
   </ul>
   <br>
 
   <a name="Wattpilot-get"></a>
   <b>Get</b>
   <ul>
-    <li>Derzeit sind keine eigenen <code>get</code>-Befehle implementiert.</li>
+    <li>Es sind keine eigenen <code>get</code>-Befehle implementiert.</li>
   </ul>
   <br>
 
   <a name="Wattpilot-attr"></a>
   <b>Attribute</b>
   <ul>
-    <li><code>interval &lt;sekunden&gt;</code><br>
-        Intervall in Sekunden für die Aktualisierung hochfrequenter Messwerte wie Spannungen und Phasenströme. <code>0</code> bedeutet keine Begrenzung.</li>
-
+    <li><code>interval &lt;Sekunden&gt;</code><br>
+        Rate-Limit für die Gruppe der elektrischen Readings. <code>0</code> deaktiviert die Begrenzung.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt hochfrequente <code>nrg</code>-, Leistungs- und Strom-Readings im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte unter Berücksichtigung von <code>interval</code>. Beim Wechsel von Laden zu einem gültigen nicht ladenden <code>car</code>-Zustand umgeht ein echtes <code>nrg</code> in derselben Nachricht oder innerhalb von 30 Sekunden einmalig das Rate-Limit, damit vom Gerät gelieferte Nullwerte stale Readings korrigieren. Es wird kein Polling-Kommando gesendet: Es ist kein belegter Wattpilot-WebSocket-Request für alle Werte oder einen Full-Status bekannt. Kommt in diesem 30-Sekunden-Fenster kein gültiges <code>nrg</code>, schließt das Modul die Sitzung und plant höchstens einen kontrollierten Reconnect für diese Idle-Episode. Dieser begrenzte Fallback ist aus Drittclient-Verhalten abgeleitet, wonach nach Login ein initialer Status serverseitig gepusht wird; er ist kein offizielles Fronius-Refresh-Feature. Fehlende Felder, Timeouts, Disconnects und fehlgeschlagene Refreshes erzeugen niemals künstliche Nullwerte.</li>
-
-    <li><code>defaultAmp &lt;wert&gt;</code><br>
-        Standardwert für den Strom-Slider im Frontend.</li>
-
+        <code>0</code> belässt elektrische Readings im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
-        Deaktiviert das Modul vollständig. Bei <code>1</code> wird die Verbindung getrennt.</li>
-
+        Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
-        Standard: <code>0</code>. Exakte ein- und ausgehende JSON-Nachrichten werden nur protokolliert, wenn dieses Attribut <code>1</code> und gleichzeitig <code>verbose</code> auf <code>5</code> gesetzt ist. Dies umfasst Authentifizierungs- und <code>securedMsg</code>-Frames. Ein zentraler Schreibpfad unterdrückt DevIos eigenes Level-5-Payload-Logging, ohne <code>verbose</code> dauerhaft zu ändern. <code>DevIo_SimpleWrite(..., 2)</code> erhält ungepackten Text; DevIo bestimmt den WebSocket-Opcode anhand seiner Verbindung und von <code>$hash-&gt;{binary}</code>. Wattpilot-eigene normale Logs werden redigiert. Technische Grenze: Der interne HttpUtils-Verbindungshash von DevIo übernimmt weder <code>privacy</code> als <code>hideurl</code> noch <code>devioLoglevel</code>; FHEM-Core kann deshalb Endpoint-URLs, DNS/IP-Ergebnisse, Timeouts und Verbindungsfehler auf Level 4 oder 5 protokollieren, die außerhalb der Redaktionsgarantie des Moduls liegen. Beim Aktivieren erscheint eine Warnung, da Logs sensible Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten können. Diese Ausgabe niemals unbereinigt weitergeben.</li>
-
+        Exaktes JSON wird nur mit <code>rawJsonLog=1</code> und <code>verbose=5</code> protokolliert. Dabei können sensible Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten sichtbar werden. DevIo-/HttpUtils-Core-Logs können bei hohem Verbose weiterhin Endpoint-Details enthalten.</li>
     <li><code>authHash &lt;auto|pbkdf2|bcrypt&gt;</code><br>
-        Wählt das Verfahren zur Passwort-Hash-Bildung für die Authentifizierung.<br>
-        <ul>
-          <li><b>auto</b>: Akzeptiert angekündigtes PBKDF2 oder bcrypt. Ein fehlender Hash wählt nur beim belegten Legacy-Profil <code>devicetype=wattpilot</code>, Protokoll 2, PBKDF2; unbekannte Verfahren werden abgelehnt.</li>
-          <li><b>pbkdf2</b>: Erzwingt das ältere PBKDF2-Verfahren</li>
-          <li><b>bcrypt</b>: Erzwingt bcrypt (für neuere Wattpilot-Flex-Geräte)</li>
-        </ul>
-        Das Ändern oder Löschen dieses Attributs verwirft die aktuelle Authentifizierung sofort und trennt die Verbindung. Ist das Gerät aktiviert und das Passwort lesbar, wird genau eine neue Anmeldung geplant, bevor wieder gesicherte Befehle akzeptiert werden; andernfalls bleibt der passende Zustand disabled, credential error oder password missing bestehen.
-    </li>
+        Wählt das Authentifizierungsverfahren. <code>auto</code> akzeptiert angekündigtes PBKDF2 oder bcrypt; ein fehlender Hash wählt nur beim belegten Vorgängerprofil <code>devicetype=wattpilot</code>, Protokoll 2, PBKDF2. Eine Änderung verwirft die aktuelle Sitzung und plant nach Möglichkeit genau eine frische Anmeldung.</li>
     <li><code>authHashCost &lt;4-14&gt;</code><br>
-        bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes. Ändern oder Löschen ist authentifizierungsrelevant, trennt deshalb die aktuelle Sitzung und plant bei aktiviertem und konfiguriertem Gerät genau eine frische Anmeldung.</li>
+        bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes. Eine Änderung verwirft die aktuelle Sitzung.</li>
+    <li><code>debug &lt;0|1&gt;</code><br>
+        Beibehaltenes Attribut ohne eigene Runtime-Behandlung im aktuellen Stand.</li>
+    <li><code>defaultAmp &lt;6-32&gt;</code><br>
+        Beibehaltenes Attribut ohne eigene Runtime-Behandlung im aktuellen Stand.</li>
   </ul>
   <br>
 
@@ -1922,49 +1917,22 @@ sub Wattpilot_WriteJson($$) {
   <b>Readings</b>
   <ul>
     <li><code>state</code><br>
-        Aktueller Verbindungs-/Authentifizierungsstatus, z.B. <code>disabled</code>, <code>password missing</code>, <code>credential error</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connection failed</code>, <code>auth_failed</code>, <code>auth_timeout</code> oder <code>initialization_timeout</code>. <code>connected</code> setzt eine offene DevIo-Verbindung, erfolgreiche Authentifizierung und mindestens eine gültige Statusnachricht nach der Authentifizierung voraus; <code>authSuccess</code> allein reicht nicht.</li>
-
-    <li><code>version</code><br>
-        Vom Wattpilot gemeldete Firmware-/Protokollversion.</li>
-
-    <li><code>authHashMode</code><br>
-        Tatsächlich verwendetes Authentifizierungsverfahren (<code>pbkdf2</code> oder <code>bcrypt</code>).</li>
-
-    <li><code>CarState</code><br>
-        Fahrzeug-/Ladezustand, z.B. <code>Idle</code>, <code>Charging</code> oder <code>Complete</code>.</li>
-
-    <li><code>Laden_starten</code><br>
-        Force-State aus <code>frc</code>: <code>Neutral</code>, <code>Stop</code>, <code>Start</code> oder ein explizites <code>Unknown(value)</code>.</li>
-
-    <li><code>lastCommandStatus</code>, <code>lastCommandRequestId</code>, <code>lastCommandError</code><br>
-        Ergebnis des letzten gesicherten Befehls: pending, success, failed oder timeout. Geräte-Fehlerpayloads bleiben im normalen Logging unterdrückt.</li>
-
-    <li><code>Strom</code><br>
-        Eingestellter Ladestrom in Ampere.</li>
-
-    <li><code>Modus</code><br>
-        Aktueller Lademodus (<code>Default</code>, <code>Eco</code>, <code>NextTrip</code>).</li>
-
-    <li><code>Zeit_NextTrip</code><br>
-        Geplante Abfahrtszeit im Format <code>hh:mm</code>.</li>
-
-    <li><code>Energie_seit_Anstecken</code><br>
-        Geladene Energie in Wh seit dem Anstecken des Fahrzeugs.</li>
-
-    <li><code>EnergyTotal</code><br>
-        Gesamtenergiezähler in kWh.</li>
-
-    <li><code>power</code><br>
-        Aktuelle Gesamtleistung.</li>
-
-    <li><code>Voltage_L1</code>, <code>Voltage_L2</code>, <code>Voltage_L3</code><br>
-        Spannung pro Phase.</li>
-
-    <li><code>Current_L1</code>, <code>Current_L2</code>, <code>Current_L3</code><br>
-        Strom pro Phase.</li>
-
-    <li><code>Power_L1</code>, <code>Power_L2</code>, <code>Power_L3</code><br>
-        Leistung pro Phase.</li>
+        Lifecycle-Zustand: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code> oder <code>authNonceFailed</code>.</li>
+    <li><code>firmwareVersion</code><br>Firmware-/Versionsstring aus der <code>hello</code>-Nachricht des Geräts.</li>
+    <li><code>authHashMode</code><br>Tatsächlich verwendetes Verfahren: <code>pbkdf2</code> oder <code>bcrypt</code>.</li>
+    <li><code>carState</code><br><code>unknown</code>, <code>idle</code>, <code>charging</code>, <code>waitingForCar</code>, <code>complete</code>, <code>error</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
+    <li><code>forceState</code><br><code>neutral</code>, <code>off</code>, <code>on</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
+    <li><code>chargingCurrent</code><br>Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert.</li>
+    <li><code>chargingMode</code><br><code>default</code>, <code>eco</code>, <code>nextTrip</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
+    <li><code>nextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
+    <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
+    <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>
+    <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Werte aus <code>nrg[0..2]</code>, als Volt interpretiert.</li>
+    <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Werte aus <code>nrg[4..6]</code>, als Ampere interpretiert.</li>
+    <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>
+    <li><code>power</code><br>Wert aus <code>nrg[11]</code>, als Gesamtleistung in Watt interpretiert.</li>
+    <li><code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, <code>lastCommandError</code><br>
+        Korrelation und Ergebnis des letzten gesicherten Befehls. Statuswerte sind <code>pending</code>, <code>success</code>, <code>failed</code> oder <code>timeout</code>.</li>
   </ul>
 </ul>
 

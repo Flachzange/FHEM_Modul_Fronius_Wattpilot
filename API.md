@@ -2,6 +2,12 @@
 
 This file is the stable entry point for the repository's JSON/WebSocket API documentation.
 
+## Public FHEM interface
+
+The active public interface of the 2.0 development line is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands.
+
+Old 1.x public names appear only in explicit breaking-change or historical mapping sections. Version 2.0 provides no aliases or automatic migration for them.
+
 ## Protocol profiles
 
 The original Wattpilot generation is covered by [`docs/WATTPILOT-LEGACY-PROTOCOL2.md`](docs/WATTPILOT-LEGACY-PROTOCOL2.md) and the synthetic fixture [`t/fixtures/legacy-protocol2-session.json`](t/fixtures/legacy-protocol2-session.json). The Flex generation is documented separately below. Neither document is an official protocol specification.
