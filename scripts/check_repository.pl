@@ -13,11 +13,12 @@ my @required = qw(
     72_Wattpilot.pm AGENTS.md ARCHITECTURE.md CHANGELOG.md TESTING.md
     REVIEW-CHECKLIST.md .gitignore .github/pull_request_template.md
     .github/workflows/ci.yml t/72_Wattpilot.t t/lib/DevIo.pm
-    t/lib/FHEM/Meta.pm t/repository_text_check.t
+    t/lib/FHEM/Meta.pm t/repository_text_check.t t/architecture_guard.t
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
     t/fixtures/fullStatus-flex-observed.json t/fixtures/README.md
-    t/full_status_flex_observed.t
+    t/full_status_flex_observed.t t/public_interface_2_0.t
+    t/public_interface_guard.t
     scripts/check_commandref.pl scripts/check_repository.pl
     scripts/check_meta.pl scripts/build-release.sh scripts/verify-release.sh
     scripts/create_zip.pl scripts/check_reproducible_release.sh
@@ -75,11 +76,11 @@ close $api_fh;
 die "Missing known-evidence-conflicts section in authoritative reference\n"
     unless $api_reference =~ /^## Known evidence conflicts$/m;
 die "Missing frc conflict in authoritative field table\n"
-    unless $api_reference =~ /^\| `frc` \| number \| `0` \|[^\n]*Neutral[^\n]*Off[^\n]*On/m;
+    unless $api_reference =~ /^\| `frc` \| number \| `0` \|[^\n]*neutral[^\n]*off[^\n]*on/m;
 die "Missing amp conflict in authoritative field table\n"
     unless $api_reference =~ /^\| `amp` \| number \| `32` \|[^\n]*6.{0,3}16/m;
-die "Missing planned amp range in authoritative reference\n"
-    unless $api_reference =~ /Issue #8[^\n]*6.{0,3}32 A/;
+die "Missing current amp range in authoritative reference\n"
+    unless $api_reference =~ /current module[^\n]*6.{0,3}32/i;
 die "Missing pinned source revisions in authoritative reference\n"
     unless $api_reference =~ /4712ba3b[0-9a-f]{32}/
         && $api_reference =~ /498aa870[0-9a-f]{32}/;

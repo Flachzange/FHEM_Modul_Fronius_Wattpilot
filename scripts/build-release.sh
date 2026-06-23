@@ -26,12 +26,12 @@ sed -E 's/^(Files=[0-9]+, Tests=[0-9]+),.*$/\1/' "$ci_raw" > "$package_dir/valid
 rm "$ci_raw"
 cat "$package_dir/validation-ci.txt"
 
-for file in 72_Wattpilot.pm README.md README_en.md CHANGELOG.md TESTING.md REVIEW-CHECKLIST.md LICENSE; do
+for file in 72_Wattpilot.pm API.md ARCHITECTURE.md README.md README_en.md CHANGELOG.md TESTING.md REVIEW-CHECKLIST.md LICENSE; do
     cp "$file" "$package_dir/$file"
 done
 mkdir -p "$package_dir/docs" "$package_dir/t/fixtures"
-cp docs/PROTOCOL-SOURCES.md docs/PROTOCOL-CONFLICTS.md docs/WATTPILOT-FLEX-JSON-API.md "$package_dir/docs/"
-cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json "$package_dir/t/fixtures/"
+cp docs/*.md "$package_dir/docs/"
+cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json t/fixtures/legacy-protocol2-session.json "$package_dir/t/fixtures/"
 cp 72_Wattpilot.pm "$standalone"
 
 cat > "$package_dir/validation-build.txt" <<EOF

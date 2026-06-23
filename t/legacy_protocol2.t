@@ -82,12 +82,12 @@ is(main::Wattpilot_GetAuthHashMode($hash, { hash => 'pbkdf2' }), 'pbkdf2',
 
 $main::attr{legacyWallbox}{update_while_idle} = 1;
 main::Wattpilot_Parse($hash, encode_json($fixture->{fullStatus}[0]));
-is($hash->{READINGS}{Strom}{VAL}, 16, 'partial legacy fullStatus updates amp');
-is($hash->{READINGS}{CarState}{VAL}, 'Idle', 'partial legacy fullStatus updates car');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 16, 'partial legacy fullStatus updates amp');
+is($hash->{READINGS}{carState}{VAL}, 'idle', 'partial legacy fullStatus updates car');
 main::Wattpilot_Parse($hash, encode_json($fixture->{fullStatus}[1]));
-is($hash->{READINGS}{Strom}{VAL}, 16, 'completion keeps omitted amp unchanged');
-is($hash->{READINGS}{Voltage_L1}{VAL}, '230.00', 'legacy nrg updates voltage');
-is($hash->{READINGS}{Current_L3}{VAL}, '3.00', 'legacy nrg updates current');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 16, 'completion keeps omitted amp unchanged');
+is($hash->{READINGS}{voltageL1}{VAL}, '230.00', 'legacy nrg updates voltage');
+is($hash->{READINGS}{currentL3}{VAL}, '3.00', 'legacy nrg updates current');
 is($hash->{READINGS}{power}{VAL}, '1388.00', 'legacy nrg updates total power');
 
 main::Wattpilot_UpdateReadings($hash, {

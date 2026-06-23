@@ -119,26 +119,26 @@ is(main::Wattpilot_GetAuthHashMode($hash, { token1 => 'a', token2 => 'b' }), 'pb
 @DevIo::WRITES = ();
 main::Wattpilot_SendAuth($hash, { hash => 'future-hash', token1 => 'a', token2 => 'b' });
 is(scalar @DevIo::WRITES, 0, 'explicitly unknown hash algorithm is rejected');
-is($hash->{STATE}, 'auth_hash_unsupported', 'unknown hash reports unsupported authentication state');
+is($hash->{STATE}, 'authHashUnsupported', 'unknown hash reports unsupported authentication state');
 ok(auth_state_is_clear($hash), 'unknown hash clears transient authentication state');
 
 $hash = fresh_device();
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'example-password';
 main::Wattpilot_SendAuth($hash, { token1 => 'a', token2 => 'b' });
 is(scalar @DevIo::WRITES, 0, 'missing hash outside the evidenced legacy profile is rejected');
-is($hash->{STATE}, 'auth_hash_unsupported', 'non-legacy missing hash reports unsupported state');
+is($hash->{STATE}, 'authHashUnsupported', 'non-legacy missing hash reports unsupported state');
 
 $hash = fresh_device();
 main::Wattpilot_Parse($hash, '{"type":"authSuccess"}');
 ok(!$hash->{helper}{authenticated}, 'unsolicited authentication success cannot mark the connection authenticated');
-is($hash->{STATE}, 'auth_sequence_invalid', 'unsolicited authentication success fails closed');
+is($hash->{STATE}, 'authSequenceInvalid', 'unsolicited authentication success fails closed');
 
 $hash = fresh_device();
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'example-password';
 $DevIo::SET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic write failure';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'a', token2 => 'b' });
 is(scalar @DevIo::WRITES, 0, 'signing-key persistence failure aborts authentication');
-is($hash->{STATE}, 'auth_hash_store_failed', 'signing-key persistence failure remains distinguishable');
+is($hash->{STATE}, 'authHashStoreFailed', 'signing-key persistence failure remains distinguishable');
 ok(auth_state_is_clear($hash), 'persistence failure clears transient authentication state');
 
 $hash = fresh_device();
@@ -150,10 +150,10 @@ main::Wattpilot_Parse($hash, '{}');
 main::Wattpilot_Parse($hash, '{"type":[]}');
 like(logs(), qr/missing or invalid type/, 'missing and invalid type are rejected');
 
-$hash->{READINGS}{Strom}{VAL} = 16;
+$hash->{READINGS}{chargingCurrent}{VAL} = 16;
 main::Wattpilot_Parse($hash, '{"type":"deltaStatus"}');
 main::Wattpilot_Parse($hash, '{"type":"deltaStatus","status":[]}');
-is($hash->{READINGS}{Strom}{VAL}, 16, 'missing or invalid status leaves readings unchanged');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 16, 'missing or invalid status leaves readings unchanged');
 
 $hash->{READINGS}{power}{VAL} = '123.00';
 for my $bad_nrg (
@@ -166,35 +166,35 @@ for my $bad_nrg (
     }));
     is($hash->{READINGS}{power}{VAL}, '123.00', 'invalid nrg leaves existing electrical readings unchanged');
 }
-is($hash->{READINGS}{Strom}{VAL}, 17, 'another valid field survives invalid nrg in the same update');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 17, 'another valid field survives invalid nrg in the same update');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'deltaStatus', status => {
         car => [], frc => {}, ftt => '12:00', amp => 'sixteen', lmo => [],
         eto => 'many', wh => {},
     }
 }));
-is($hash->{READINGS}{Strom}{VAL}, 17, 'invalid known scalar values leave prior readings unchanged');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 17, 'invalid known scalar values leave prior readings unchanged');
 
 my $tricky = encode_json({
     type => 'deltaStatus', status => { amp => 18 },
     extra => "text }{ with braces { }, escaped quote \" and newline\nnext",
 });
 is(main::Wattpilot_Parse($hash, $tricky), 1, 'braces, escapes, and newlines inside strings remain one JSON document');
-is($hash->{READINGS}{Strom}{VAL}, 18, 'tricky JSON string does not disrupt status processing');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 18, 'tricky JSON string does not disrupt status processing');
 my $joined = encode_json({ type => 'deltaStatus', status => { amp => 19 } })
     . encode_json({ type => 'deltaStatus', status => { amp => 20 } });
 is(main::Wattpilot_Parse($hash, $joined), 2, 'multiple complete concatenated JSON objects are processed');
-is($hash->{READINGS}{Strom}{VAL}, 20, 'all concatenated objects are dispatched in order');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 20, 'all concatenated objects are dispatched in order');
 ok(!exists $hash->{buffer}, 'module does not duplicate DevIo WebSocket fragment buffering');
-$hash->{READINGS}{Strom}{VAL} = 20;
+$hash->{READINGS}{chargingCurrent}{VAL} = 20;
 is(main::Wattpilot_Parse($hash,
     encode_json({ type => 'deltaStatus', status => { amp => 21 } }) . '{broken}'), 0,
     'malformed suffix rejects the complete decoded batch');
-is($hash->{READINGS}{Strom}{VAL}, 20, 'malformed batch cannot apply a valid prefix partially');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 20, 'malformed batch cannot apply a valid prefix partially');
 is(main::Wattpilot_Parse($hash, '{"type":"deltaStatus"'), 0, 'incomplete decoded JSON is buffered within the limit');
 ok(exists $hash->{helper}{jsonBuffer}, 'incomplete JSON uses a distinct logical-message continuation buffer');
 is(main::Wattpilot_Parse($hash, ',"status":{"amp":22}}'), 1, 'later decoded payload completes buffered JSON');
-is($hash->{READINGS}{Strom}{VAL}, 22, 'completed fragmented JSON is dispatched once');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 22, 'completed fragmented JSON is dispatched once');
 ok(!exists $hash->{helper}{jsonBuffer}, 'logical JSON continuation buffer clears after completion');
 is(main::Wattpilot_Parse($hash, '{not-json}'), 0, 'malformed decoded JSON is rejected');
 is(main::Wattpilot_Parse($hash, ' ' x (1024 * 1024 + 1)), 0, 'oversized decoded input is rejected');
@@ -216,7 +216,7 @@ for my $case (
     [disable => sub { main::Wattpilot_Attr('set', $_[0]{NAME}, 'disable', '1') }],
     [password => sub {
         $DevIo::KEY_VALUES{'Wattpilot_' . $_[0]{FUUID} . '_password'} = 'old-example';
-        main::Wattpilot_Set($_[0], $_[0]{NAME}, 'Password', 'new-example')
+        main::Wattpilot_Set($_[0], $_[0]{NAME}, 'password', 'new-example')
     }],
     [auth_error => sub { main::Wattpilot_Parse($_[0], '{"type":"authError"}') }],
     [undefine => sub { main::Wattpilot_Undefine($_[0], $_[0]{NAME}) }],

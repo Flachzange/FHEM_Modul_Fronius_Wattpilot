@@ -24,10 +24,10 @@ No real protocol exchange was performed for this documentation change. The captu
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes what FHEM 1.x currently does, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.0 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Planned interface | Naming requested in Issue #13; documentation only, not active runtime behavior. |
+| Public FHEM interface contract | Names and values implemented by version 2.0.0; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
@@ -40,7 +40,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `hello`
 
 - Direction: device → client in the historical flow.
-- Observed/required fields: not present in the accepted capture. Current 1.x code handles `type`, reads `serial` if no serial is configured, and reads `version`.
+- Observed/required fields: not present in the accepted capture. Current code handles `type`, reads `serial` if no serial is configured, and exposes `version` as the FHEM reading `firmwareVersion`.
 - Example: `{"type":"hello","serial":"10000001","version":"43.4"}`
 - Evidence: current implementation behavior plus historical compilation; not observed in the Issue #11 dataset.
 - Open questions: actual Flex 43.4 field set, ordering, requiredness, `protocol`, `secured`, and relationship to status identity fields are unknown.
@@ -56,7 +56,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `auth`
 
 - Direction: client → device in the current implementation.
-- Fields emitted by 1.x: `type`, random hexadecimal `token3`, and derived `hash`.
+- Fields emitted by the current module: `type`, random hexadecimal `token3`, and derived `hash`.
 - Example: `{"type":"auth","token3":"<TOKEN3>","hash":"<AUTH_HASH>"}`
 - Evidence: current implementation behavior; not observed in the accepted capture.
 - Open questions: device-side validation rules and all protocol-version differences.
@@ -64,7 +64,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `authSuccess`
 
 - Direction: device → client in the current implementation.
-- Fields used by 1.x: only `type`.
+- Fields used by the current module: only `type`.
 - Example: `{"type":"authSuccess"}`
 - Evidence: current implementation behavior; not observed in the accepted capture.
 - Open questions: additional Flex fields and requiredness.
@@ -72,7 +72,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `authError`
 
 - Direction: device → client in the current implementation.
-- Fields used by 1.x: only `type`; the module marks authentication failed and closes DevIo.
+- Fields used by the current module: only `type`; the module marks authentication failed and closes DevIo.
 - Example: `{"type":"authError","message":"<SANITIZED_ERROR>"}`
 - Evidence: current implementation behavior; `message` is a historical candidate, not accepted as required.
 - Open questions: actual Flex error fields, codes, and retry semantics.
@@ -88,7 +88,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `deltaStatus`
 
 - Direction: device → client in the current implementation/historical flow.
-- Fields handled by 1.x: `type` and `status`.
+- Fields handled by the current module: `type` and `status`.
 - Example: `{"type":"deltaStatus","status":{"amp":16}}`
 - Evidence: current implementation behavior and an explicitly synthetic existing fixture; not observed in the accepted capture.
 - Repository invariant: an omitted key is an absent partial update and must not delete or reset an existing reading.
@@ -96,16 +96,16 @@ Examples in this section are minimal synthetic documentation values unless expli
 
 ### `setValue`
 
-- Direction: client → device, nested as text in `securedMsg.data` by current 1.x.
-- Fields emitted by 1.x: `type`, numeric `requestId`, `key`, and `value`.
+- Direction: client → device, nested as text in `securedMsg.data` by the current module.
+- Fields emitted by the current module: `type`, numeric `requestId`, `key`, and `value`.
 - Example: `{"type":"setValue","requestId":1,"key":"amp","value":16}`
 - Evidence: current implementation behavior only. This does not establish device acceptance or field writability.
 - Open questions: accepted keys, values, units, validation errors, and whether unsigned forms exist.
 
 ### `securedMsg`
 
-- Direction: client → device in current 1.x.
-- Fields emitted by 1.x: `type`, JSON-text `data`, string `requestId` suffixed with `sm`, and hexadecimal `hmac`.
+- Direction: client → device in the current module.
+- Fields emitted by the current module: `type`, JSON-text `data`, string `requestId` suffixed with `sm`, and hexadecimal `hmac`.
 - Example: `{"type":"securedMsg","data":"{\"type\":\"setValue\",\"requestId\":1,\"key\":\"amp\",\"value\":16}","requestId":"1sm","hmac":"<HMAC>"}`
 - Evidence: current implementation behavior; not observed in the accepted capture.
 - Open questions: canonical serialization requirements, response correlation, replay behavior, and protocol-version differences.
@@ -156,15 +156,15 @@ Every array below is present somewhere beneath `status`. Lengths, nesting, value
 
 ### `nrg` interpretation boundary
 
-The observed array has exactly 16 numeric elements: `[230,230.1,229.9,0,0,0,0,0,0,0,0,0,0,0,0,0]`. Current 1.x maps indices 0–2 to `Voltage_L1..3`, 4–6 to `Current_L1..3`, 7–9 to `Power_L1..3`, and 11 to `power`, formatting each to two decimals. Those index meanings and units are implementation interpretations, not confirmed by this capture. Indices 3, 10, and 12–15 remain unknown here.
+The observed array has exactly 16 numeric elements: `[230,230.1,229.9,0,0,0,0,0,0,0,0,0,0,0,0,0]`. The current module maps indices 0–2 to `voltageL1..3`, 4–6 to `currentL1..3`, 7–9 to `powerL1..3`, and 11 to `power`, formatting each to two decimals. Those index meanings and units are implementation interpretations, not confirmed by this capture. Indices 3, 10, and 12–15 remain unknown here.
 
 ## Enum candidates and phase state
 
 | Key | Observed value | Candidate mapping | Evidence/confidence |
 | --- | --- | --- | --- |
-| `car` | `3` | Current 1.x candidates: 0 Unknown, 1 Idle, 2 Charging, 3 WaitCar, 4 Complete, 5 Error | Current implementation only; capture directly observes only numeric 3. |
-| `frc` | `0` | Current 1.x: 0 Start, 1 Stop. Pinned Wattpilot-specific sources: 0 Neutral, 1 Off, 2 On. | The capture proves only numeric value 0. Current 1.x conflicts with the two pinned third-party sources; the actual Flex 43.4 enum and writability remain unverified. |
-| `lmo` | `4` | Current 1.x candidates: 3 Default, 4 Eco, 5 NextTrip | Current implementation only; capture directly observes only numeric 4; writability unverified. |
+| `car` | `3` | Current module mapping: 0 unknown, 1 idle, 2 charging, 3 waitingForCar, 4 complete, 5 error | Current implementation only; capture directly observes only numeric 3. |
+| `frc` | `0` | Current module and pinned Wattpilot-specific sources use 0 neutral, 1 off, 2 on. | The capture proves only numeric value 0. The enum and writability remain unverified for the captured Flex 43.4 device. |
+| `lmo` | `4` | Current module mapping: 3 default, 4 eco, 5 nextTrip | Current implementation only; capture directly observes only numeric 4; writability unverified. |
 | `modelStatus` | `23` | unknown | Numeric value directly observed; no enum meaning accepted. |
 | `pha` | `[false,false,false,true,true,true]` | unknown phase-status flags | Shape and booleans observed; index meanings and phase-state semantics unknown. |
 
@@ -172,46 +172,44 @@ No go-e enum is promoted to Wattpilot fact here. Historical or third-party candi
 
 ## Known evidence conflicts
 
-The following conflicts are deliberately retained rather than silently resolved. They identify where the observed Flex 43.4 payload, current FHEM 1.x behavior, pinned Wattpilot-specific third-party implementations, and planned fixes do not yet form one verified specification.
+The following conflicts remain visible because the observed Flex 43.4 payload, pinned third-party implementations, and current module behavior still do not form an official or fully verified device specification.
 
 ### `frc` force-state enum and writability
 
-- **Observed Flex 43.4 capture:** `frc` is a JSON number and the sanitized sample contains `0`. This proves neither the enum meaning nor writability.
-- **Current FHEM 1.x behavior:** reads `0` as `Start`, `1` as `Stop`, and sends `0` for Start and `1` for Stop.
-- **Pinned Wattpilot-specific third-party evidence:** both `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` and `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9` describe `0=Neutral`, `1=Off`, `2=On` and mark the field R/W.
-- **Repository issue state:** Issue #8 records the current FHEM mapping as a confirmed functional defect and plans Start→`2`, Stop→`1`.
-- **Remaining uncertainty:** the two pinned implementations are not official Fronius documentation, and the enum plus write behavior have not been reproduced on the captured Flex Home 22 C6 with firmware 43.4/protocol 4.
+- **Observed Flex 43.4 capture:** `frc` is numeric and the sanitized sample contains `0`. This proves neither the enum meaning nor writability.
+- **Current module behavior:** maps `0=neutral`, `1=off`, and `2=on`; the matching Set command sends those values.
+- **Pinned Wattpilot-specific third-party evidence:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` and `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9` also describe `0=Neutral`, `1=Off`, and `2=On`, and mark the field R/W.
+- **Remaining uncertainty:** these sources are not official Fronius documentation, and the enum plus write behavior have not been reproduced on the captured Flex Home 22 C6 with firmware 43.4/protocol 4.
 
 ### `amp` range, unit, and writability
 
-- **Observed Flex 43.4 capture:** `amp` is numeric with sanitized value `32`; `cll.currentLimitMax` and `cll.requestedCurrent` are also `32`. These observations support neither a complete accepted range nor writability by themselves.
-- **Current FHEM 1.x behavior:** interprets `amp` as amperes, displays it directly, accepts every unsigned integer, and sends it through `setValue`.
-- **Pinned older Wattpilot-specific evidence:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` describes `amp` as R/W amperes with range 6–16. Its older and incompletely established device/firmware scope conflicts with the observed Flex value 32 and must not be generalized to this Flex model.
-- **Repository issue state:** Issue #8 targets validation of the current public command to 6–32 A.
-- **Remaining uncertainty:** the actual accepted Flex 43.4 write range, validation behavior, and error response still require applicable documentation or a reproducible device test.
+- **Observed Flex 43.4 capture:** `amp`, `cll.currentLimitMax`, and `cll.requestedCurrent` contain numeric value `32`. This alone proves neither the complete accepted range nor writability.
+- **Current module behavior:** interprets `amp` as amperes, exposes it as `chargingCurrent`, accepts only integer Set values 6–32, and sends them through `setValue`.
+- **Pinned older Wattpilot-specific evidence:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` describes R/W amperes with range 6–16. Its older and incompletely established device/firmware scope conflicts with the observed Flex value 32.
+- **Remaining uncertainty:** actual Flex 43.4 device-side write validation and error behavior still require applicable documentation or a reproducible device test.
 
-## Current FHEM mapping and planned 2.0 names
+## Current FHEM 2.0 mapping
 
-The current columns describe root `72_Wattpilot.pm` at the branch baseline. Planned names are copied from the Issue #11 comment that references Issue #13 and are not implemented by this change.
+The names below are implemented by version 2.0.0. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
-| Protocol key/path | Meaning/unit at supported confidence | Current 1.x FHEM name | Planned 2.0 FHEM name | Conversion/enum/rate limiting | Confidence |
-| --- | --- | --- | --- | --- | --- |
-| hello `version` | version string used by module | `version` | `firmwareVersion` | copied immediately | current implementation; actual Flex hello unobserved |
-| `car` | inferred vehicle state | `CarState` | `carState` | 0 Unknown, 1 Idle, 2 Charging, 3 WaitCar, 4 Complete, 5 Error; immediate; also gates high-frequency updates | current implementation inference |
-| `frc` | forced-state candidate; semantics conflict | `Laden_starten` | `forceState` | current 1.x reads 0 Start, 1 Stop and writes Start→0, Stop→1; pinned Wattpilot-specific sources instead state 0 Neutral, 1 Off, 2 On | observed value 0 only; current implementation conflicts with pinned commits `4712ba3b8409fda55303870c047038b1b221d7ff` and `498aa8709f198fcde2b41159ad99dc02e57accc9`; actual Flex 43.4 enum/writability unverified |
-| `amp` | charging-current candidate in A; accepted range conflicts by source/scope | `Strom` | `chargingCurrent` | current 1.x copies immediately and sends any unsigned integer; observed Flex value and `cll.currentLimitMax` are 32; pinned older Wattpilot source states 6–16; Issue #8 targets 6–32 | observed Flex structure/value plus conflicting older third-party evidence; actual Flex 43.4 write range and writability unverified |
-| `lmo` | inferred charging mode | `Modus` | `chargingMode` | 3 Default, 4 Eco, 5 NextTrip; immediate; same candidates sent | current implementation; device writability unverified |
-| `ftt` | inferred seconds after midnight | `Zeit_NextTrip` | `nextTripTime` | read seconds→HH:MM; write HH:MM→seconds; immediate | current implementation; unit/writability unverified |
-| `eto` | inferred total energy | `EnergyTotal` | `energyTotal` | divides by 1000 and formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `wh` | inferred energy since plug-in | `Energie_seit_Anstecken` | `energySincePlugIn` | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `nrg[0..2]` | inferred phase voltages | `Voltage_L1..3` | `voltageL1..3` | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `nrg[4..6]` | inferred phase currents | `Current_L1..3` | `currentL1..3` | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `nrg[7..9]` | inferred phase powers | `Power_L1..3` | `powerL1..3` | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `nrg[11]` | inferred total power | `power` | not specified in Issue #13 comment | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `authRequired.hash` / status `authhash` | authentication mode candidate | `authHashMode` plus `authHash` attribute | not specified | auto accepts announced `bcrypt` or `pbkdf2`; missing hash selects PBKDF2 only for the evidenced legacy `wattpilot` protocol-2 profile; unknown modes are rejected; status `authhash` is not consumed | current implementation plus separate observed status value; equivalence unknown |
-| outbound `setValue` in `securedMsg` | authenticated command envelope | internal only | internal only | numeric request ID, JSON text, HMAC-SHA256, outer request ID with `sm` suffix | current implementation; protocol acceptance unverified |
+| Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
+| --- | --- | --- | --- |
+| hello `version` | `firmwareVersion` | copied immediately | current implementation; actual Flex hello unobserved |
+| `car` | `carState` | 0 `unknown`, 1 `idle`, 2 `charging`, 3 `waitingForCar`, 4 `complete`, 5 `error`; other values become `unknown:<raw-value>` | current implementation inference |
+| `frc` | `forceState` | 0 `neutral`, 1 `off`, 2 `on`; Set uses the same numeric values | current implementation plus pinned third-party evidence; Flex writability unverified |
+| `amp` | `chargingCurrent` | copied immediately; Set accepts integers 6–32 | implementation plus conflicting historical range evidence |
+| `lmo` | `chargingMode` | 3 `default`, 4 `eco`, 5 `nextTrip`; other values become `unknown:<raw-value>` | current implementation; writability unverified |
+| `ftt` | `nextTripTime` | seconds after midnight rendered as `HH:MM`; Set requires exact `HH:MM` and converts back to seconds | current implementation; unit/writability unverified |
+| `eto` | `energyTotal` | divides by 1000 and formats two decimals; electrical gate applies | current implementation inference |
+| `wh` | `energySincePlugIn` | formats two decimals; electrical gate applies | current implementation inference |
+| `nrg[0..2]` | `voltageL1..3` | formats two decimals; interpreted as volts | current implementation inference |
+| `nrg[4..6]` | `currentL1..3` | formats two decimals; interpreted as amperes | current implementation inference |
+| `nrg[7..9]` | `powerL1..3` | formats two decimals; interpreted as watts | current implementation inference |
+| `nrg[11]` | `power` | formats two decimals; interpreted as total watts | current implementation inference |
+| `authRequired.hash` | `authHashMode` | `auto` accepts announced `bcrypt` or `pbkdf2`; missing hash selects PBKDF2 only for the evidenced predecessor protocol-2 profile | current implementation; relation to observed status `authhash` remains unverified |
+| outbound `setValue` in `securedMsg` | `lastCommandRequestId`, `lastCommandStatus`, `lastCommandError` | request correlation, HMAC-SHA256 envelope, pending/success/failed/timeout result readings | current implementation; device acceptance unverified |
 
-The current module applies `interval` only to `eto`, `wh`, and `nrg`-derived readings. They update only after the interval and while the cached `car` state is Charging, unless `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, and `lmo` are updated immediately when present and valid. Known scalar values and the first twelve `nrg` positions are type-checked before use. Missing `deltaStatus` keys are untouched.
+The module applies `interval` only to the electrical group (`eto`, `wh`, and `nrg`-derived readings). Those values update after the interval while charging, or under the documented idle policy when `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, and `lmo` are immediate. Known scalar values and the first twelve `nrg` positions are type-checked before use. Missing partial-update keys remain untouched.
 
 ## Complete observed status-key reference
 
@@ -234,7 +232,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `alw` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `alwt` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ama` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `amp` | number | `32` | Current 1.x interprets this as configured charging current. The observed Flex value and `cll.currentLimitMax` are 32, while a pinned older Wattpilot-specific source states a 6–16 range. | A (current implementation and older third-party interpretation) | current 1.x reads and writes the field; pinned older source marks it R/W; actual Flex 43.4 writability and accepted range are unverified | observed value 32; conflicting older third-party 6–16 candidate; Issue #8 target 6–32 | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; Issue #8. Model/firmware scope conflict remains explicit. |
+| `amp` | number | `32` | The current module exposes this as `chargingCurrent`. The observed Flex value and `cll.currentLimitMax` are 32, while a pinned older Wattpilot-specific source states a 6–16 range. | A (current implementation and older third-party interpretation) | the current module reads the field and accepts Set values 6–32; the pinned older source marks it R/W; actual Flex 43.4 writability and accepted range are unverified | observed value 32; conflicting older third-party 6–16 candidate; current module range 6–32 | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; Issue #8. Model/firmware scope conflict remains explicit. |
 | `amt` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ana` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `apd` | object | `{"project_name":"wattpilot_flex-secure-release","version":"43.4","secure_version":0,"timestamp":"Apr 28 2026 12:58:50","idf_ver":"43.4","sha256":"8154f5f8ffcfc41f428b355625604c86ffd158ac"}` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -288,7 +286,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `c9n` | string | `"n/a"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cae` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cak` | string | `""` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `car` | number | `3` | Current 1.x implementation interprets this as vehicle/charging state. | unknown | read by 1.x; no write path | inferred from current implementation; only value `3` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `car` | number | `3` | The current module exposes this as `carState` using the documented 2.0 value mapping. | unknown | read by the current module; no write path | inferred from current implementation; only value `3` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cbdt` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cble` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cbm` | string | `"00:00:00:00:00:00"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -394,7 +392,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `esi` | string | `"192.0.2.33"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `esk` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ess` | string | `"255.255.255.0"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `eto` | number | `123456` | Current 1.x implementation interprets this as total energy and divides by 1000. | Wh raw / kWh displayed (implementation interpretation) | read by current 1.x implementation | inferred from current implementation; value `123456` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `eto` | number | `123456` | The current module exposes this as `energyTotal` and divides the raw value by 1000. | Wh raw / kWh displayed (implementation interpretation) | read by the current module | inferred from current implementation; value `123456` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `eto_mid` | number | `123456` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `etop` | number | `123456` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `eusd` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -436,7 +434,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `fntp` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `forsch` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fot` | number | `20` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `frc` | number | `0` | Current 1.x interprets 0 as Start and 1 as Stop. Two pinned Wattpilot-specific sources instead state 0 Neutral, 1 Off, 2 On. | unknown | current 1.x reads/writes it; both pinned third-party sources mark it R/W; actual Flex 43.4 writability is unverified | observed numeric 0 only; current implementation conflicts with pinned third-party enum | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9`; Issue #8. |
+| `frc` | number | `0` | Current module and two pinned Wattpilot-specific sources use 0 neutral, 1 off, 2 on. | unknown | current module reads/writes it; both pinned third-party sources mark it R/W; actual Flex 43.4 writability is unverified | observed numeric 0 only; enum agreement is implementation/third-party evidence, not official specification | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9`. |
 | `frci` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fre` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `frm` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -447,7 +445,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `fte` | number | `22000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ftlf` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ftls` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `ftt` | number | `42600` | Current 1.x implementation interprets this as next-trip time from midnight. | s from midnight (implementation interpretation) | read and written by current 1.x implementation; device writability not established by this capture | inferred from current implementation; value `42600` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `ftt` | number | `42600` | The current module exposes this as `nextTripTime`, rendering seconds after midnight as `HH:MM`. | s from midnight (implementation interpretation) | read and written by the current module; device writability not established by this capture | inferred from current implementation; value `42600` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ful` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fup` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fuzz` | array | `[]` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -495,7 +493,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `ledo` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `lfspt` | number | `62056514` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `llr` | number | `481` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `lmo` | number | `4` | Current 1.x implementation interprets this as charging mode. | unknown | read and written by current 1.x implementation; device writability not established by this capture | inferred from current implementation; only value `4` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `lmo` | number | `4` | The current module exposes this as `chargingMode` using 3 default, 4 eco, and 5 nextTrip. | unknown | read and written by the current module; device writability not established by this capture | inferred from current implementation; only value `4` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `lmsc` | number | `62056514` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `loa` | number | `30` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `loc` | string | `"2026-01-01T12:59:58.000 +01:00"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -547,7 +545,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `nld` | number | `64` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `nmo` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `npd` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `nrg` | array | `[230,230.1,229.9,0,0,0,0,0,0,0,0,0,0,0,0,0]` | Current 1.x implementation interprets selected array positions as voltage, current and power. | mixed; see array section | read by current 1.x implementation | array shape observed; index semantics inferred from current implementation | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `nrg` | array | `[230,230.1,229.9,0,0,0,0,0,0,0,0,0,0,0,0,0]` | The current module exposes selected array positions as `voltageL1..3`, `currentL1..3`, `powerL1..3`, and `power`. | mixed; see array section | read by the current module | array shape observed; index semantics inferred from current implementation | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `obm` | string | `"02:00:00:00:00:58"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `oca` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ocl` | number | `100` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -750,7 +748,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `wda` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `wen` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `wg` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `wh` | number | `0` | Current 1.x implementation interprets this as energy since plug-in. | Wh (implementation interpretation) | read by current 1.x implementation | inferred from current implementation; value `0` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `wh` | number | `0` | The current module exposes this as `energySincePlugIn`. | Wh (implementation interpretation) | read by the current module | inferred from current implementation; value `0` observed | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `wh_mid` | number | `1234` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `whb` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `whg` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |

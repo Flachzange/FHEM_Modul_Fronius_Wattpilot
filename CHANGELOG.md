@@ -2,7 +2,26 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
-## [Unreleased]
+## [v2.0.0] - 2026-06-23
+
+### Inkompatible öffentliche Schnittstelle
+
+- Die öffentliche FHEM-Schnittstelle verwendet ausschließlich englische `lowerCamelCase`-Namen: 23 definierte Readings und die fünf Set-Befehle `password`, `chargingCurrent`, `forceState`, `chargingMode` und `nextTripTime`.
+- Alte Reading-, Befehls-, Enum- und Lifecycle-Namen werden nicht parallel erzeugt und nicht als Aliase akzeptiert. Version 2.0.0 erfordert eine frische Definition; vorhandene alte Readings werden nicht automatisch gelöscht und Verbraucher müssen manuell angepasst werden.
+- Enum-Werte und Lifecycle-Zustände sind stabil englisch benannt. Unbekannte `car`, `frc`- und `lmo`-Werte bleiben als `unknown:<Rohwert>` sichtbar. `nextTripTime` verlangt exakt `HH:MM`.
+
+### Architektur und Persistenz
+
+- Das Modul verwendet ausschließlich die beiden stabilen FUUID-basierten Credential-Schlüssel. Die namensbasierte Migration, Owner-Marker und Pending-Listen wurden aus dem Runtime-Code entfernt. Alte namensbasierte Schlüssel bleiben unangetastet; die veröffentlichten 1.6.x-Versionen sind die letzten Releases mit Upgrade-Unterstützung für diese Ressourcen.
+- Passwortänderung und Gerätelöschung sind transaktionale Zwei-Schlüssel-Operationen mit vollständigem Snapshot, Rollback in umgekehrter Reihenfolge und ausdrücklicher Meldung eines unvollständigen Rollbacks.
+- Gemeinsame Session-Invalidierung und die Ermittlung des konfigurierten Runtime-Zustands sind zentralisiert, ohne die bewährte Timer-, DevIo- und Reconnect-Eigentumslogik zu ersetzen.
+- Statusdaten werden genau einmal in einer Kopie normalisiert. Die Reading-Verarbeitung ist in unmittelbare Werte, Fahrzeugübergänge, Electrical-Gating, Energiewerte und `nrg`-Readings aufgeteilt.
+
+### Dokumentation und Tests
+
+- Deutsche und englische Commandref, beide READMEs, API-Einstieg, Feldkatalog und Protokollmapping dokumentieren denselben aktiven 2.0-Vertrag. Alte 1.x-Namen bleiben nur in ausdrücklich markierten Umstellungs- oder Historienabschnitten.
+- Vertragstests verlangen exakt die 23 öffentlichen Readings, prüfen bekannte und unbekannte Enum-Abbildungen, lehnen alle alten Set-Befehle ab und verhindern alte öffentliche Strings außerhalb ausdrücklich markierter Negativ-, Umstellungs- oder Historienbereiche.
+- Legacy-Wattpilot-Protokoll 2, Parserhärtung, Authentifizierung, Command-Korrelation, Idle-Refresh, Lifecycle-Rennen und Credential-Rollback bleiben deterministisch abgesichert.
 
 ## [v1.6.0] - 2026-06-23
 
