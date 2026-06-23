@@ -96,6 +96,9 @@ main::Wattpilot_UpdateReadings($hash, {
 is($hash->{READINGS}{power}{VAL}, '1388.00', 'Flex sixteen-element nrg remains compatible');
 
 main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
+is($hash->{STATE}, 'initializing', 'authSuccess alone starts initialization');
+main::Wattpilot_Parse($hash, encode_json({ type => 'deltaStatus', status => { amp => 16 } }));
+is($hash->{STATE}, 'connected', 'first post-auth status completes initialization');
 $hash->{msg_id} = 0;
 @DevIo::WRITES = ();
 is(main::Wattpilot_SendSecure($hash, 'amp', 16), undef, 'legacy secured command is accepted');

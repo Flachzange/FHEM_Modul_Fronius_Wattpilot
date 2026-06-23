@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **1.5.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Aktuelle Modulversion: **1.6.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## 1. Voraussetzungen (System & Perl Module)
 
@@ -146,10 +146,12 @@ Legt fest, wie oft **hochfrequente Messwerte** (Spannung, Leistung, aktueller St
 
 ### `update_while_idle` (0 oder 1)
 
-Steuert, ob Messwerte aktualisiert werden, wenn das Auto **nicht** lädt.
+Steuert, wie hochfrequente elektrische Messwerte verarbeitet werden, wenn das Auto **nicht** lädt.
 
-* `0` (Standard): Wenn nicht geladen wird, werden Spannung/Leistung nicht aktualisiert, um Systemlast zu sparen (da meistens eh 0).
-* `1`: Aktualisiert Werte auch im Leerlauf (z.B. zur Fehlersuche oder um Netzspannung zu überwachen). Greift nur in Kombination mit dem `interval`.
+* `0` (Standard): Idle-`nrg`-, Leistungs- und Stromwerte bleiben passiv und können weiter durch `interval` begrenzt oder übersprungen werden.
+* `1`: Echte eingehende Idle-Werte werden verarbeitet, weiterhin unter Beachtung von `interval`. Beim Wechsel von `car=2` zu einem gültigen nicht ladenden Zustand darf ein echtes `nrg` in derselben Nachricht oder innerhalb von 30 Sekunden einmalig das Rate-Limit umgehen, damit vom Gerät gelieferte Nullwerte stale Readings korrigieren.
+* Es gibt keinen belegten expliziten Wattpilot-WebSocket-Status-Request; das Modul sendet deshalb kein `getAllValues` und erfindet kein Polling-Kommando. Wenn in dem 30-Sekunden-Fenster kein gültiges `nrg` kommt, wird höchstens ein kontrollierter Reconnect für diese Idle-Episode geplant. Dieser Reconnect ist ein begrenzter, aus Drittquellen abgeleiteter Fallback und kein offizielles Fronius-Protokollfeature.
+* Fehlende Werte werden niemals als null interpretiert. Echte Nullwerte werden nur verarbeitet, wenn das Gerät sie in einem gültigen `nrg` liefert.
 
 ### `disable` (0 oder 1)
 
@@ -174,7 +176,7 @@ Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden auss
 
 Das Modul verwendet für ausgehende JSON-Nachrichten einen zentralen Schreibpfad. Dieser unterdrückt den DevIo-eigenen Level-5-Payload-Logeintrag nur während des synchronen Schreibaufrufs, ohne das FHEM-Attribut `verbose` dauerhaft oder global zu verändern. `DevIo_SimpleWrite(..., 2)` erhält dabei ungepackten Text; den WebSocket-Opcode bestimmt DevIo anhand seiner Verbindung und von `$hash->{binary}`. Ein vollständiger Klartext-Logeintrag aus dem Wattpilot-Modul entsteht ausschließlich über den oben beschriebenen Raw-Modus.
 
-Technische Grenze: In der geprüften FHEM-Revision `6a920121204142b435c7b05cd9e9e2dd754879f6` maskiert DevIo `privacy=1` nur die initiale Öffnungszeile. Für WebSockets erzeugt `DevIo_OpenDev` intern einen neuen HttpUtils-Hash ohne `hideurl` und ohne übernommenes `devioLoglevel`; HttpUtils kann URL, DNS/IP, Timeout- und Verbindungsfehler auf Level 4 oder 5 protokollieren. Wattpilot bewahrt die korrekte DevIo-Bedeutung von Initialverbindung (`reopen=0`) und Reconnect (`reopen=1`) und redigiert seine eigenen Meldungen, kann diese transitiven Core-Logs über die öffentliche DevIo-Schnittstelle aber nicht zuverlässig verhindern. Eine belastbare Vollunterdrückung erfordert eine FHEM-Core-Erweiterung, die `privacy` an HttpUtils als `hideurl` und ein geeignetes Log-/Fehler-Redaktionsverhalten weiterreicht. Bis dahin dürfen Logs bei hohem `verbose` nicht als endpointfrei betrachtet werden und müssen entsprechend geschützt und vor Weitergabe bereinigt werden.
+Technische Grenze: In der geprüften FHEM-Revision `b2bc07a6ef698a5d836c9d5d5250600951b1638d` maskiert DevIo `privacy=1` nur die initiale Öffnungszeile. Für WebSockets erzeugt `DevIo_OpenDev` intern einen neuen HttpUtils-Hash ohne `hideurl` und ohne übernommenes `devioLoglevel`; HttpUtils kann URL, DNS/IP, Timeout- und Verbindungsfehler auf Level 4 oder 5 protokollieren. Wattpilot bewahrt die korrekte DevIo-Bedeutung von Initialverbindung (`reopen=0`) und Reconnect (`reopen=1`) und redigiert seine eigenen Meldungen, kann diese transitiven Core-Logs über die öffentliche DevIo-Schnittstelle aber nicht zuverlässig verhindern. Eine belastbare Vollunterdrückung erfordert eine FHEM-Core-Erweiterung, die `privacy` an HttpUtils als `hideurl` und ein geeignetes Log-/Fehler-Redaktionsverhalten weiterreicht. Bis dahin dürfen Logs bei hohem `verbose` nicht als endpointfrei betrachtet werden und müssen entsprechend geschützt und vor Weitergabe bereinigt werden.
 
 `DevIo_DecodeWS` puffert auf dieser Revision unvollständige rohe WebSocket-Frames selbst in `.WSBUF`, wertet das `FIN`-Bit aber nicht als logische Nachrichtenbegrenzung aus. Wattpilot führt deshalb keinen zweiten Rohframe-Puffer, sondern nur einen separaten, auf insgesamt 1 MiB begrenzten JSON-Fortsetzungspuffer. Es verarbeitet mehrere vollständige, direkt verkettete JSON-Werte strukturell, wartet bei einem syntaktisch unvollständigen Top-Level-Objekt auf die nächste decodierte Nutzlast und lehnt fehlerhafte oder übergroße Folgen atomar ab. Statusnachrichten benötigen ein Objekt; bekannte skalare Felder und die ersten zwölf `nrg`-Elemente werden vor der Verwendung typgeprüft. Ausgelassene `deltaStatus`-Felder bleiben unverändert.
 
@@ -192,7 +194,7 @@ Das Modul stellt folgende Werte ("Readings") zur Verfügung:
 
 | Reading | Beschreibung |
 | :--- | :--- |
-| `state` | Verbindungsstatus (initialized, connected, auth_failed, password missing, disabled). |
+| `state` | Verbindungsstatus (`disabled`, `password missing`, `credential error`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connection failed`, `auth_failed`, `auth_timeout`, `initialization_timeout`). `connected` wird erst nach erfolgreicher Authentifizierung und einer gültigen Statusnachricht gesetzt. |
 | `version` | Firmware-/Protokollversion des Geräts. |
 | `authHashMode` | Verwendetes Authentifizierungsverfahren (pbkdf2 oder bcrypt). |
 | `CarState` | Status des Autos (Idle, Charging, WaitCar, Complete). |
@@ -209,7 +211,7 @@ Das Modul stellt folgende Werte ("Readings") zur Verfügung:
 
 ## 7. Fehlerbehebung
 
-* **Status bleibt auf `initialized` oder `disconnected`**:
+* **Status bleibt auf `disconnected`, `connecting`, `connection failed`, `auth_timeout` oder `initialization_timeout`**:
   * Prüfen Sie die IP-Adresse. Kann der FHEM-Server die IP anpingen?
   * Sind FHEM und Wattpilot im gleichen Netzwerk? (Oft Probleme bei Gast-Netzwerken).
 * **Log zeigt "Authentication Failed"**:
