@@ -44,6 +44,93 @@ my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
 
+
+my %WATTPILOT_READING_NAME = (
+    state                   => 'state',
+    firmware_version        => 'version',
+    auth_hash_mode          => 'authHashMode',
+    car_state               => 'CarState',
+    force_state             => 'Laden_starten',
+    charging_current        => 'Strom',
+    charging_mode           => 'Modus',
+    next_trip_time          => 'Zeit_NextTrip',
+    energy_total            => 'EnergyTotal',
+    energy_since_plug_in    => 'Energie_seit_Anstecken',
+    voltage_l1              => 'Voltage_L1',
+    voltage_l2              => 'Voltage_L2',
+    voltage_l3              => 'Voltage_L3',
+    current_l1              => 'Current_L1',
+    current_l2              => 'Current_L2',
+    current_l3              => 'Current_L3',
+    power_l1                => 'Power_L1',
+    power_l2                => 'Power_L2',
+    power_l3                => 'Power_L3',
+    power                   => 'power',
+    last_command_request_id => 'lastCommandRequestId',
+    last_command_status     => 'lastCommandStatus',
+    last_command_error      => 'lastCommandError',
+);
+
+my %WATTPILOT_COMMAND_NAME = (
+    password         => 'Password',
+    force_state      => 'Laden_starten',
+    charging_current => 'Strom',
+    charging_mode    => 'Modus',
+    next_trip_time   => 'Zeit_NextTrip',
+);
+
+my %WATTPILOT_CAR_STATE = (
+    0 => 'Unknown',
+    1 => 'Idle',
+    2 => 'Charging',
+    3 => 'WaitCar',
+    4 => 'Complete',
+    5 => 'Error',
+);
+
+my %WATTPILOT_FORCE_STATE = (
+    0 => 'Neutral',
+    1 => 'Stop',
+    2 => 'Start',
+);
+
+my %WATTPILOT_CHARGING_MODE = (
+    3 => 'Default',
+    4 => 'Eco',
+    5 => 'NextTrip',
+);
+
+my %WATTPILOT_FORCE_COMMAND_VALUE = (
+    Start => 2,
+    Stop  => 1,
+);
+
+my %WATTPILOT_CHARGING_MODE_VALUE = reverse %WATTPILOT_CHARGING_MODE;
+
+my %WATTPILOT_LIFECYCLE_STATE = (
+    initialized            => 'Initialized',
+    disabled               => 'disabled',
+    credential_error       => 'credential error',
+    password_missing       => 'password missing',
+    password_stored        => 'password stored',
+    disconnected           => 'disconnected',
+    connecting             => 'connecting',
+    connection_failed      => 'connection failed',
+    authenticating         => 'authenticating',
+    initializing           => 'initializing',
+    connected              => 'connected',
+    auth_failed            => 'auth_failed',
+    auth_timeout           => 'auth_timeout',
+    initialization_timeout => 'initialization_timeout',
+    auth_sequence_invalid  => 'auth_sequence_invalid',
+    auth_config_missing    => 'auth_config_missing',
+    auth_challenge_invalid => 'auth_challenge_invalid',
+    auth_hash_unsupported  => 'auth_hash_unsupported',
+    auth_hash_failed       => 'auth_hash_failed',
+    auth_hash_store_failed => 'auth_hash_store_failed',
+    auth_nonce_failed      => 'auth_nonce_failed',
+);
+
 eval {
     require Crypt::Bcrypt;
     Crypt::Bcrypt->import(qw(bcrypt));
@@ -73,6 +160,17 @@ sub Wattpilot_Initialize($) {
 	$readingFnAttributes;
 
     return FHEM::Meta::InitMod(__FILE__, $hash);
+}
+
+sub Wattpilot_InterfaceSnapshot() {
+    return {
+        readings       => { %WATTPILOT_READING_NAME },
+        commands       => { %WATTPILOT_COMMAND_NAME },
+        carStates      => { %WATTPILOT_CAR_STATE },
+        forceStates    => { %WATTPILOT_FORCE_STATE },
+        chargingModes => { %WATTPILOT_CHARGING_MODE },
+        lifecycle      => { %WATTPILOT_LIFECYCLE_STATE },
+    };
 }
 
 sub Wattpilot_NextLifecycleGeneration($) {
@@ -195,33 +293,33 @@ sub Wattpilot_ApplyConfiguredState($;$$$) {
         : Wattpilot_IsDisabled($hash->{NAME});
     if ($disabled) {
         delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, "state", "disabled", 1);
-        return "disabled";
+        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disabled}, 1);
+        return $WATTPILOT_LIFECYCLE_STATE{disabled};
     }
 
     my $password_result = Wattpilot_GetPassword($hash);
     if ($password_result->{status} eq "error") {
         delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, "state", "credential error", 1);
-        return "credential error";
+        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{credential_error}, 1);
+        return $WATTPILOT_LIFECYCLE_STATE{credential_error};
     }
     if ($password_result->{status} ne "value"
         || $password_result->{value} eq "") {
         delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, "state", "password missing", 1);
-        return "password missing";
+        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{password_missing}, 1);
+        return $WATTPILOT_LIFECYCLE_STATE{password_missing};
     }
 
     return "configured" if !$connect;
 
-    readingsSingleUpdate($hash, "state", "disconnected", 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
     if ($hash->{helper}{openInFlight}) {
         $hash->{helper}{pendingReconnectAfterOpen} = 1;
     } else {
         delete $hash->{helper}{pendingReconnectAfterOpen};
         Wattpilot_ScheduleConnect($hash, $delay, $disable_override);
     }
-    return "disconnected";
+    return $WATTPILOT_LIFECYCLE_STATE{disconnected};
 }
 
 sub Wattpilot_FinishTimer($$) {
@@ -256,7 +354,7 @@ sub Wattpilot_Define($$) {
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
 
-    $hash->{STATE} = "Initialized";
+    $hash->{STATE} = $WATTPILOT_LIFECYCLE_STATE{initialized};
 
     # WebSocket spezifische Header
     $hash->{header}{'User-Agent'} = 'FHEM';
@@ -304,7 +402,7 @@ sub Wattpilot_Shutdown($) {
     my ($hash) = @_;
     $hash->{helper}{shuttingDown} = 1;
     Wattpilot_InvalidateSession($hash);
-    readingsSingleUpdate($hash, "state", "disconnected", 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
     RemoveInternalTimer($hash);
     return undef;
 }
@@ -350,7 +448,7 @@ sub Wattpilot_StartOpen($$) {
     Wattpilot_ClearConnectionState($hash);
     
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
-    readingsSingleUpdate($hash, "state", "connecting", 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connecting}, 1);
     my $generation = Wattpilot_CurrentLifecycleGeneration($hash);
     my $open_ctx = {
         generation => $generation,
@@ -383,7 +481,7 @@ sub Wattpilot_StartOpen($$) {
         delete $hash->{helper}{openInFlight};
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
-            readingsSingleUpdate($hash, "state", "connection failed", 1);
+            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connection_failed}, 1);
             Wattpilot_ScheduleConnect($hash, 60)
                 if !defined($hash->{NEXT_OPEN}) || $hash->{NEXT_OPEN} <= gettimeofday();
             return;
@@ -406,7 +504,7 @@ sub Wattpilot_OpenDev($$$) {
 sub Wattpilot_DoInit($) {
     my ($hash) = @_;
     return if !Wattpilot_IsRuntimeActive($hash);
-    readingsSingleUpdate($hash, "state", "authenticating", 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{authenticating}, 1);
     Wattpilot_ScheduleTimer(
         $hash, 'lifecycle_timeout', $WATTPILOT_AUTH_TIMEOUT,
         'Wattpilot_LifecycleTimeout', { phase => 'auth' });
@@ -422,10 +520,10 @@ sub Wattpilot_LifecycleTimeout($) {
 
     my $phase = $ctx->{phase} // 'auth';
     my $state = $phase eq 'initialization'
-        ? 'initialization_timeout'
-        : 'auth_timeout';
+        ? $WATTPILOT_LIFECYCLE_STATE{initialization_timeout}
+        : $WATTPILOT_LIFECYCLE_STATE{auth_timeout};
     Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - $state";
-    readingsSingleUpdate($hash, "state", $state, 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $state, 1);
 
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
@@ -642,7 +740,7 @@ sub Wattpilot_DispatchMessage($$) {
             if (!$hash->{SERIAL} && Wattpilot_IsScalarString($json->{serial}) && $json->{serial} =~ /^\d+$/);
         if (Wattpilot_IsScalarString($json->{version})) {
             $hash->{VERSION} = $json->{version};
-            readingsSingleUpdate($hash, "version", $json->{version}, 1);
+            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{firmware_version}, $json->{version}, 1);
         }
         Log3 $name, 4, "Wattpilot ($name) - Hello received";
     } elsif ($type eq 'authRequired') {
@@ -652,7 +750,7 @@ sub Wattpilot_DispatchMessage($$) {
     } elsif ($type eq 'authSuccess') {
         if (!$hash->{helper}{authPending}) {
             Log3 $name, 1, "Wattpilot ($name) - Authentication success arrived outside an active challenge";
-            Wattpilot_AbortAuthentication($hash, "auth_sequence_invalid");
+            Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_sequence_invalid});
             return 0;
         }
         Log3 $name, 2, "Wattpilot ($name) - Authentication Successful";
@@ -660,13 +758,13 @@ sub Wattpilot_DispatchMessage($$) {
         delete $hash->{helper}{authPending};
         delete $hash->{helper}{authHashMode};
         Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
-        readingsSingleUpdate($hash, "state", "initializing", 1);
+        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{initializing}, 1);
         Wattpilot_ScheduleTimer(
             $hash, 'lifecycle_timeout', $WATTPILOT_INITIALIZATION_TIMEOUT,
             'Wattpilot_LifecycleTimeout', { phase => 'initialization' });
     } elsif ($type eq 'authError') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication failed";
-        Wattpilot_AbortAuthentication($hash, "auth_failed");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_failed});
     } elsif ($type eq 'fullStatus' || $type eq 'deltaStatus') {
         if (ref($json->{status}) ne 'HASH') {
             Log3 $name, 2, "Wattpilot ($name) - Ignoring status message with missing or invalid status";
@@ -676,7 +774,7 @@ sub Wattpilot_DispatchMessage($$) {
         Wattpilot_UpdateReadings($hash, $status, $type);
         Wattpilot_MarkInitialized($hash)
             if $hash->{helper}{authenticated}
-            && ($hash->{STATE} // '') eq 'initializing';
+            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{initializing};
     } elsif ($type eq 'response') {
         if (exists($json->{success}) && !Wattpilot_IsBoolean($json->{success})) {
             Log3 $name, 2, "Wattpilot ($name) - Ignoring response with invalid success value";
@@ -704,12 +802,16 @@ sub Wattpilot_MarkInitialized($) {
     my ($hash) = @_;
     Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
     delete $hash->{helper}{timeoutRetryUsed};
-    readingsSingleUpdate($hash, "state", "connected", 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connected}, 1);
 }
 
 sub Wattpilot_NrgReadingsNeedIdleRefresh($) {
     my ($hash) = @_;
-    for my $reading (qw(power Current_L1 Current_L2 Current_L3 Power_L1 Power_L2 Power_L3)) {
+    for my $reading (
+        @WATTPILOT_READING_NAME{qw(
+            power current_l1 current_l2 current_l3
+            power_l1 power_l2 power_l3
+        )}) {
         return 1 if !exists($hash->{READINGS}{$reading}{VAL});
         my $value = $hash->{READINGS}{$reading}{VAL};
         return 1 if defined($value) && $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ && $value != 0;
@@ -760,7 +862,7 @@ sub Wattpilot_IdleRefreshTimeout($) {
     Wattpilot_ClearConnectionState($hash);
     delete $hash->{helper}{openInFlight};
     DevIo_CloseDev($hash);
-    readingsSingleUpdate($hash, "state", "disconnected", 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
     Wattpilot_ScheduleConnect($hash, 1);
 }
 
@@ -768,23 +870,19 @@ sub Wattpilot_UpdateImmediateReadings($$) {
     my ($hash, $status) = @_;
 
     if (defined $status->{car}) {
-        my %car_state_map = (
-            0 => 'Unknown', 1 => 'Idle', 2 => 'Charging',
-            3 => 'WaitCar', 4 => 'Complete', 5 => 'Error',
-        );
         my $car_value = int($status->{car});
         readingsBulkUpdate(
-            $hash, "CarState", $car_state_map{$car_value} // "Unknown");
+            $hash, $WATTPILOT_READING_NAME{car_state},
+            $WATTPILOT_CAR_STATE{$car_value} // $WATTPILOT_CAR_STATE{0});
         $hash->{helper}{car_state} = $car_value;
     }
 
     if (defined $status->{frc}) {
-        my %force_state_map = (0 => 'Neutral', 1 => 'Stop', 2 => 'Start');
         my $force_value = int($status->{frc});
-        my $force_state = exists($force_state_map{$force_value})
-            ? $force_state_map{$force_value}
+        my $force_state = exists($WATTPILOT_FORCE_STATE{$force_value})
+            ? $WATTPILOT_FORCE_STATE{$force_value}
             : 'Unknown(' . $status->{frc} . ')';
-        readingsBulkUpdate($hash, "Laden_starten", $force_state);
+        readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{force_state}, $force_state);
     }
 
     if (defined $status->{ftt}) {
@@ -792,17 +890,18 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my $h = int($secs / 3600);
         my $m = int(($secs % 3600) / 60);
         readingsBulkUpdate(
-            $hash, "Zeit_NextTrip", sprintf("%02d:%02d", $h, $m));
+            $hash, $WATTPILOT_READING_NAME{next_trip_time},
+            sprintf("%02d:%02d", $h, $m));
     }
 
-    readingsBulkUpdate($hash, "Strom", $status->{amp})
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{charging_current}, $status->{amp})
         if defined $status->{amp};
 
     if (defined $status->{lmo}) {
-        my %mode_map = (3 => 'Default', 4 => 'Eco', 5 => 'NextTrip');
         my $mode_value = int($status->{lmo});
         readingsBulkUpdate(
-            $hash, "Modus", $mode_map{$mode_value} // $status->{lmo});
+            $hash, $WATTPILOT_READING_NAME{charging_mode},
+            $WATTPILOT_CHARGING_MODE{$mode_value} // $status->{lmo});
     }
 }
 
@@ -863,10 +962,12 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
 sub Wattpilot_UpdateEnergyReadings($$) {
     my ($hash, $status) = @_;
     readingsBulkUpdate(
-        $hash, "EnergyTotal", sprintf("%.2f", $status->{eto} / 1000))
+        $hash, $WATTPILOT_READING_NAME{energy_total},
+        sprintf("%.2f", $status->{eto} / 1000))
         if defined $status->{eto};
     readingsBulkUpdate(
-        $hash, "Energie_seit_Anstecken", sprintf("%.2f", $status->{wh}))
+        $hash, $WATTPILOT_READING_NAME{energy_since_plug_in},
+        sprintf("%.2f", $status->{wh}))
         if defined $status->{wh};
 }
 
@@ -876,16 +977,16 @@ sub Wattpilot_UpdateNrgReadings($$) {
     my @nrg = @{$status->{nrg}};
     return if @nrg <= 11;
 
-    readingsBulkUpdate($hash, "Voltage_L1", sprintf("%.2f", $nrg[0]));
-    readingsBulkUpdate($hash, "Voltage_L2", sprintf("%.2f", $nrg[1]));
-    readingsBulkUpdate($hash, "Voltage_L3", sprintf("%.2f", $nrg[2]));
-    readingsBulkUpdate($hash, "Current_L1", sprintf("%.2f", $nrg[4]));
-    readingsBulkUpdate($hash, "Current_L2", sprintf("%.2f", $nrg[5]));
-    readingsBulkUpdate($hash, "Current_L3", sprintf("%.2f", $nrg[6]));
-    readingsBulkUpdate($hash, "Power_L1", sprintf("%.2f", $nrg[7]));
-    readingsBulkUpdate($hash, "Power_L2", sprintf("%.2f", $nrg[8]));
-    readingsBulkUpdate($hash, "Power_L3", sprintf("%.2f", $nrg[9]));
-    readingsBulkUpdate($hash, "power", sprintf("%.2f", $nrg[11]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l1}, sprintf("%.2f", $nrg[0]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l2}, sprintf("%.2f", $nrg[1]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l3}, sprintf("%.2f", $nrg[2]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l1}, sprintf("%.2f", $nrg[4]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l2}, sprintf("%.2f", $nrg[5]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l3}, sprintf("%.2f", $nrg[6]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l1}, sprintf("%.2f", $nrg[7]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l2}, sprintf("%.2f", $nrg[8]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l3}, sprintf("%.2f", $nrg[9]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power}, sprintf("%.2f", $nrg[11]));
 }
 
 sub Wattpilot_UpdateReadings($$;$) {
@@ -915,27 +1016,27 @@ sub Wattpilot_SendAuth($$) {
 
     if ($password_result->{status} eq "error") {
         Log3 $name, 1, "Wattpilot ($name) - Cannot authenticate because credential storage is unavailable";
-        Wattpilot_AbortAuthentication($hash, "credential error");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{credential_error});
         return;
     }
     my $password = $password_result->{status} eq "value" ? $password_result->{value} : undef;
     if (!$password || !defined($serial) || $serial !~ /^\d+$/) {
         Log3 $name, 1, "Wattpilot ($name) - Missing Password or Serial for authentication";
-        Wattpilot_AbortAuthentication($hash, "auth_config_missing");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_config_missing});
         return;
     }
 
     if (!Wattpilot_IsScalarString($json->{token1}) || $json->{token1} eq ''
         || !Wattpilot_IsScalarString($json->{token2}) || $json->{token2} eq '') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication challenge has invalid tokens";
-        Wattpilot_AbortAuthentication($hash, "auth_challenge_invalid");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_challenge_invalid});
         return;
     }
 
     my $mode = eval { Wattpilot_GetAuthHashMode($hash, $json) };
     if ($@) {
         Log3 $name, 1, "Wattpilot ($name) - Authentication hash mode is unsupported";
-        Wattpilot_AbortAuthentication($hash, "auth_hash_unsupported");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_hash_unsupported});
         return;
     }
     $hash->{helper}{authHashMode} = $mode;
@@ -945,12 +1046,12 @@ sub Wattpilot_SendAuth($$) {
     };
     if ($@) {
         Log3 $name, 1, "Wattpilot ($name) - Password hash derivation failed for mode=$mode";
-        Wattpilot_AbortAuthentication($hash, "auth_hash_failed");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_hash_failed});
         return;
     }
 
     if (!Wattpilot_SetStoredPasswordHash($hash, $password_hash)) {
-        Wattpilot_AbortAuthentication($hash, "auth_hash_store_failed");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_hash_store_failed});
         return;
     }
 
@@ -960,7 +1061,7 @@ sub Wattpilot_SendAuth($$) {
     my $random_bytes = eval { Wattpilot_SecureRandomBytes(16) };
     if ($@ || !defined($random_bytes) || length($random_bytes) != 16) {
         Log3 $name, 1, "Wattpilot ($name) - Secure authentication nonce generation failed";
-        Wattpilot_AbortAuthentication($hash, "auth_nonce_failed");
+        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_nonce_failed});
         return;
     }
     my $token3 = unpack 'H*', $random_bytes;
@@ -981,7 +1082,7 @@ sub Wattpilot_SendAuth($$) {
     Log3 $name, 3, "Wattpilot ($name) - Sending Auth Response using mode=$mode";
     Wattpilot_WriteJson($hash, $msg);
 	$hash->{helper}{authPending} = 1;
-	readingsSingleUpdate($hash, "authHashMode", $mode, 1);
+	readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{auth_hash_mode}, $mode, 1);
 }
 
 sub Wattpilot_SecureRandomBytes($) {
@@ -1059,43 +1160,52 @@ sub Wattpilot_Set($@) {
     my $val = $a[2];
 
     return "Device is disabled" if(Wattpilot_IsDisabled($name));
-    
-    if($cmd eq 'Laden_starten') {
-        return "Usage: set $name Laden_starten <Start|Stop>" if (!defined $val || $val !~ /^(Start|Stop)$/);
-        my $frc_val = ($val eq 'Start') ? 2 : 1;
-        return Wattpilot_SendSecure($hash, "frc", int($frc_val));
-    } elsif ($cmd eq 'Strom') {
-        return "Usage: set $name Strom <6-32>" if (!defined $val || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/);
+
+    if($cmd eq $WATTPILOT_COMMAND_NAME{force_state}) {
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{force_state} <Start|Stop>"
+            if !defined($val) || !exists($WATTPILOT_FORCE_COMMAND_VALUE{$val});
+        return Wattpilot_SendSecure(
+            $hash, "frc", int($WATTPILOT_FORCE_COMMAND_VALUE{$val}));
+    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_current}) {
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_current} <6-32>"
+            if !defined($val) || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/;
         return Wattpilot_SendSecure($hash, "amp", int($val));
-    } elsif ($cmd eq 'Modus') {
-        return "Usage: set $name Modus <Default|Eco|NextTrip>" if (!defined $val);
-        my %mode_map = ( 'Default' => 3, 'Eco' => 4, 'NextTrip' => 5 );
-        return "Unknown mode $val" if (!exists $mode_map{$val});
-        return Wattpilot_SendSecure($hash, "lmo", $mode_map{$val});
-    } elsif ($cmd eq 'Zeit_NextTrip') {
-        return "Usage: set $name Zeit_NextTrip <hh:mm>" if (!defined $val || $val !~ /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/);
+    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_mode}) {
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_mode} <Default|Eco|NextTrip>"
+            if !defined $val;
+        return "Unknown mode $val"
+            if !exists $WATTPILOT_CHARGING_MODE_VALUE{$val};
+        return Wattpilot_SendSecure(
+            $hash, "lmo", $WATTPILOT_CHARGING_MODE_VALUE{$val});
+    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{next_trip_time}) {
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{next_trip_time} <hh:mm>"
+            if !defined($val)
+            || $val !~ /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
         my ($h, $m) = split(':', $val);
         my $seconds = ($h * 3600) + ($m * 60);
         return Wattpilot_SendSecure($hash, "ftt", int($seconds));
-	} elsif ($cmd eq 'Password') {
-		return "Usage: set $name Password <secret>" if (!defined($a[2]) || $a[2] eq "");
+    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{password}) {
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{password} <secret>"
+            if !defined($a[2]) || $a[2] eq "";
 
-		my $password_err = Wattpilot_StoreNewPassword($hash, $a[2]);
-		return $password_err if defined $password_err;
-		
-	
-		readingsSingleUpdate($hash, "state", "password stored", 1);
+        my $password_err = Wattpilot_StoreNewPassword($hash, $a[2]);
+        return $password_err if defined $password_err;
+
+        readingsSingleUpdate(
+            $hash, $WATTPILOT_READING_NAME{state},
+            $WATTPILOT_LIFECYCLE_STATE{password_stored}, 1);
         delete $hash->{helper}{timeoutRetryUsed};
         Wattpilot_InvalidateSession($hash);
         Wattpilot_ApplyConfiguredState($hash, 1);
-		
-		return undef;
-	} 
-	else {
-        return "Unknown argument $cmd, choose one of Password Laden_starten:Start,Stop Strom:slider,6,1,32 Modus:Default,Eco,NextTrip Zeit_NextTrip";
+        return undef;
     }
-    
-    return undef;
+
+    return "Unknown argument $cmd, choose one of "
+        . "$WATTPILOT_COMMAND_NAME{password} "
+        . "$WATTPILOT_COMMAND_NAME{force_state}:Start,Stop "
+        . "$WATTPILOT_COMMAND_NAME{charging_current}:slider,6,1,32 "
+        . "$WATTPILOT_COMMAND_NAME{charging_mode}:Default,Eco,NextTrip "
+        . "$WATTPILOT_COMMAND_NAME{next_trip_time}";
 }
 
 sub Wattpilot_SendSecure($$$) {
@@ -1105,13 +1215,13 @@ sub Wattpilot_SendSecure($$$) {
     return "Device is disabled" if Wattpilot_IsDisabled($name);
     return "Wattpilot is disconnected" if !DevIo_IsOpen($hash);
     return "Wattpilot is not authenticated" if !$hash->{helper}{authenticated}
-        || (($hash->{STATE} // '') ne 'connected'
-            && (($hash->{READINGS}{state}{VAL} // '') ne 'connected'));
+        || (($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{connected}
+            && (($hash->{READINGS}{$WATTPILOT_READING_NAME{state}}{VAL} // '') ne $WATTPILOT_LIFECYCLE_STATE{connected}));
 
     my $stored_hash_result = Wattpilot_GetPasswordHash($hash);
     if ($stored_hash_result->{status} eq "error") {
         Log3 $name, 1, "Wattpilot ($name) - Cannot send command because credential storage is unavailable";
-        readingsSingleUpdate($hash, "state", "credential error", 1);
+        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{credential_error}, 1);
         return "Wattpilot credential storage is unavailable";
     }
     my $stored_hash = $stored_hash_result->{status} eq "value" ? $stored_hash_result->{value} : undef;
@@ -1160,9 +1270,9 @@ sub Wattpilot_SendSecure($$$) {
 sub Wattpilot_SetCommandReadings($$$$) {
     my ($hash, $request_id, $status, $error) = @_;
     readingsBeginUpdate($hash);
-    readingsBulkUpdate($hash, 'lastCommandRequestId', $request_id);
-    readingsBulkUpdate($hash, 'lastCommandStatus', $status);
-    readingsBulkUpdate($hash, 'lastCommandError', $error);
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{last_command_request_id}, $request_id);
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{last_command_status}, $status);
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{last_command_error}, $error);
     readingsEndUpdate($hash, 1);
 }
 
@@ -1199,7 +1309,7 @@ sub Wattpilot_AbortAuthentication($$) {
     Wattpilot_CancelAllTimers($hash);
     Wattpilot_ClearConnectionState($hash);
     delete $hash->{helper}{openInFlight};
-    readingsSingleUpdate($hash, "state", $state, 1);
+    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $state, 1);
     DevIo_CloseDev($hash);
 }
 
@@ -1284,8 +1394,8 @@ sub Wattpilot_Get($@) {
 sub Wattpilot_Ready($) {
     my ($hash) = @_;
     return 0 if !Wattpilot_IsRuntimeActive($hash);
-    return 0 if ($hash->{STATE} // '') ne "disconnected"
-        && ($hash->{STATE} // '') ne "connection failed";
+    return 0 if ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected}
+        && ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{connection_failed};
     Wattpilot_ClearConnectionState($hash);
     return 0 if defined($hash->{helper}{timers}{connect});
     return Wattpilot_StartOpen($hash, 1) ? 1 : 0;
@@ -1301,7 +1411,7 @@ sub Wattpilot_Attr(@) {
             RemoveInternalTimer($hash, 'Wattpilot_Connect');
             RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
             delete $hash->{helper}{pendingReconnectAfterOpen};
-            readingsSingleUpdate($hash, "state", "disabled", 1);
+            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disabled}, 1);
         } elsif($cmd eq "del" || $attrVal eq "0") {
             delete $hash->{helper}{timeoutRetryUsed};
             Wattpilot_InvalidateSession($hash);
@@ -1319,7 +1429,7 @@ sub Wattpilot_Attr(@) {
 
         if (defined $hash_error) {
             delete $hash->{helper}{pendingReconnectAfterOpen};
-            readingsSingleUpdate($hash, "state", "credential error", 1);
+            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{credential_error}, 1);
         } else {
             Wattpilot_ApplyConfiguredState($hash, 1);
         }

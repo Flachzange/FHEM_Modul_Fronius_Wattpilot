@@ -34,6 +34,33 @@ sub stable_key {
     return 'Wattpilot_' . $hash->{FUUID} . '_' . $suffix;
 }
 
+my $interface = main::Wattpilot_InterfaceSnapshot();
+is_deeply(
+    $interface->{commands},
+    {
+        password => 'Password',
+        force_state => 'Laden_starten',
+        charging_current => 'Strom',
+        charging_mode => 'Modus',
+        next_trip_time => 'Zeit_NextTrip',
+    },
+    'current public Set command names have one central definition');
+is(scalar(keys %{$interface->{readings}}), 23,
+    'central reading definition contains all 23 public readings');
+is($interface->{readings}{car_state}, 'CarState',
+    'central reading definition preserves the 1.6 car-state name');
+is_deeply($interface->{carStates},
+    { 0 => 'Unknown', 1 => 'Idle', 2 => 'Charging', 3 => 'WaitCar', 4 => 'Complete', 5 => 'Error' },
+    'central car-state labels preserve the 1.6 contract');
+is_deeply($interface->{forceStates},
+    { 0 => 'Neutral', 1 => 'Stop', 2 => 'Start' },
+    'central force-state labels preserve the 1.6 contract');
+is_deeply($interface->{chargingModes},
+    { 3 => 'Default', 4 => 'Eco', 5 => 'NextTrip' },
+    'central charging-mode labels preserve the 1.6 contract');
+is($interface->{lifecycle}{credential_error}, 'credential error',
+    'central lifecycle definition preserves the 1.6 credential error value');
+
 my $normalizer_hash = fresh_device();
 my $original_status = {
     amp => 'invalid',
