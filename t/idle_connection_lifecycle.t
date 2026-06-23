@@ -321,18 +321,17 @@ is(timer_count('command_timeout'), 0, 'rename cancels command timeout context');
 is(timer_count('connect'), 1, 'rename restarts lifecycle after command timeout cancellation');
 
 $hash = fresh_device();
-$DevIo::KEY_VALUES{'Wattpilot_lifeWallbox_password'} = 'legacy-password';
-$DevIo::SET_KEY_ERRORS{stable_password_key($hash)} = 'synthetic write failure';
+$DevIo::GET_KEY_ERRORS{stable_password_key($hash)} = 'synthetic read failure';
 $DevIo::OPEN_MODE = 'deferred';
 main::Wattpilot_Connect($hash);
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
 is($hash->{STATE}, 'credential error',
-    'rename migration failure leaves the device in credential error');
+    'rename credential read failure leaves the device in credential error');
 is(timer_count('connect'), 0,
-    'rename migration failure schedules no immediate reconnect');
+    'rename credential read failure schedules no immediate reconnect');
 DevIo::complete_deferred_open(0);
 is(timer_count('connect'), 0,
-    'stale deferred open after rename migration failure schedules no delayed reconnect');
+    'stale deferred open after rename credential failure schedules no delayed reconnect');
 
 $hash = fresh_device();
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');

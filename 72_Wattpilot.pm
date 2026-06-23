@@ -192,42 +192,38 @@ sub Wattpilot_Define($$) {
     my $name = $a[0];
     my $ip = $a[2];
     my $serial = $a[3] if (defined $a[3]);
-	
+
     delete $hash->{helper}{undefined};
     delete $hash->{helper}{deleting};
     delete $hash->{helper}{shuttingDown};
     delete $hash->{helper}{timeoutRetryUsed};
     Wattpilot_NextLifecycleGeneration($hash);
-	
+
     # DevIo WebSocket URL Format: ws:host:port/path
     $hash->{DeviceName} = "ws:$ip:80/ws";
     $hash->{SERIAL} = $serial;
     # DevIo privacy masks only its initial opening line. devioLoglevel reduces
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
-    
-	my $password_result = Wattpilot_GetStoredSecret($hash, "password", { include_owned_current => 1 });
-	my $password_hash_result = Wattpilot_GetStoredSecret($hash, "passwordhash", { include_owned_current => 1 });
-	
+
+    my $password_result = Wattpilot_GetPassword($hash);
+
     $hash->{STATE} = "Initialized";
-    
+
     # WebSocket spezifische Header
     $hash->{header}{'User-Agent'} = 'FHEM';
-    
+
     $modules{Wattpilot}{defptr}{$name} = $hash;
-    
+
     # Starte Verbindungs-Timer (verzögerter Start) falls password verfügbar
-	if ($password_result->{status} eq "error") {
-		readingsSingleUpdate($hash, "state", "credential error", 1);
-	} elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
-		Log3 $name, 1,
-		  "Wattpilot ($name) - optional password hash migration or cleanup deferred"
-		  if $password_hash_result->{status} eq "error";
+    if ($password_result->{status} eq "error") {
+        readingsSingleUpdate($hash, "state", "credential error", 1);
+    } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
         readingsSingleUpdate($hash, "state", "disconnected", 1);
-		Wattpilot_ScheduleConnect($hash, 2);
-	} else {
-		readingsSingleUpdate($hash, "state", "password missing", 1);
-	}
+        Wattpilot_ScheduleConnect($hash, 2);
+    } else {
+        readingsSingleUpdate($hash, "state", "password missing", 1);
+    }
     return undef;
 }
 
@@ -276,8 +272,7 @@ sub Wattpilot_RestoreAfterFailedDelete($$) {
         return;
     }
 
-    my $password_result = Wattpilot_GetStoredSecret(
-        $hash, "password", { migrate => 0, include_owned_current => 1 });
+    my $password_result = Wattpilot_GetPassword($hash);
     if ($password_result->{status} eq "error") {
         readingsSingleUpdate($hash, "state", "credential error", 1);
     } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
@@ -323,12 +318,7 @@ sub Wattpilot_Rename($$) {
 
     delete $modules{Wattpilot}{defptr}{$old_name};
     $modules{Wattpilot}{defptr}{$new_name} = $hash;
-    my $migration_error = Wattpilot_MigrateLegacySecrets($hash, $old_name);
-    if (defined $migration_error) {
-        delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, "state", "credential error", 1);
-        return undef;
-    }
+
     my $password_result = Wattpilot_GetPassword($hash);
     if ($password_result->{status} eq "error") {
         delete $hash->{helper}{pendingReconnectAfterOpen};
@@ -1449,12 +1439,12 @@ sub Wattpilot_GetAuthHashMode($$) {
 
 sub Wattpilot_GetPassword {
     my ($hash) = @_;
-    return Wattpilot_GetStoredSecret($hash, "password", { include_owned_current => 1 });
+    return Wattpilot_GetStoredSecret($hash, "password");
 }
 
 sub Wattpilot_GetPasswordHash {
     my ($hash) = @_;
-    return Wattpilot_GetStoredSecret($hash, "passwordhash", { include_owned_current => 1 });
+    return Wattpilot_GetStoredSecret($hash, "passwordhash");
 }
 
 sub Wattpilot_SetStoredPasswordHash {
@@ -1493,28 +1483,19 @@ sub Wattpilot_InvalidateStoredPasswordHash {
 sub Wattpilot_DeleteStoredSecrets {
     my ($hash) = @_;
     my $name = $hash->{NAME};
-
-    my @metadata_keys;
-    my @legacy_keys;
-    for my $suffix (qw(password passwordhash)) {
-        my ($pending_error, $pending_names) = Wattpilot_ReadPendingLegacyNames($hash, $suffix);
-        return "Wattpilot credential deletion failed before changes were made" if defined $pending_error;
-        my %legacy_names = ($name => 1, map { $_ => 1 } @$pending_names);
-        my ($ownership_error, $owned_keys) = Wattpilot_GetOwnedLegacyResourceKeys(
-            $hash, $suffix, [sort keys %legacy_names]);
-        return "Wattpilot credential deletion failed before changes were made" if defined $ownership_error;
-        push @legacy_keys, @$owned_keys;
-        push @metadata_keys, Wattpilot_PendingLegacyKey($hash, $suffix);
+    my @keys = eval {
+        map { Wattpilot_SecretKey($hash, $_) } qw(password passwordhash);
+    };
+    if ($@) {
+        Log3 $name, 1, "Wattpilot ($name) - failed to determine stable credential keys before deletion";
+        return "Wattpilot credential deletion failed before changes were made";
     }
-    my (%snapshot, %seen);
-    my @keys = (map { Wattpilot_SecretKey($hash, $_) } qw(password passwordhash));
-    push @keys, @legacy_keys, @metadata_keys;
-    @keys = grep { !$seen{$_}++ } @keys;
 
+    my %snapshot;
     for my $key (@keys) {
         my ($err, $value) = getKeyValue($key);
         if (defined $err) {
-            Log3 $name, 1, "Wattpilot ($name) - failed to snapshot credentials before deletion";
+            Log3 $name, 1, "Wattpilot ($name) - failed to snapshot stable credentials before deletion";
             return "Wattpilot credential deletion failed before changes were made";
         }
         $snapshot{$key} = $value;
@@ -1530,7 +1511,7 @@ sub Wattpilot_DeleteStoredSecrets {
                 my $rollback_err = setKeyValue($deleted_key, $snapshot{$deleted_key});
                 push @rollback_failures, $deleted_key if defined $rollback_err;
             }
-            Log3 $name, 1, "Wattpilot ($name) - credential deletion failed; rollback " .
+            Log3 $name, 1, "Wattpilot ($name) - stable credential deletion failed; rollback " .
                 (@rollback_failures ? "incomplete" : "completed");
             return "Wattpilot credential deletion failed" .
                 (@rollback_failures
@@ -1545,40 +1526,20 @@ sub Wattpilot_DeleteStoredSecrets {
 sub Wattpilot_StoreNewPassword($$) {
     my ($hash, $new_password) = @_;
     my $name = $hash->{NAME};
-    my %legacy_password_names = ($name => 1);
-    my %legacy_hash_names = ($name => 1);
-    my ($password_pending_error, $password_pending) = Wattpilot_ReadPendingLegacyNames($hash, "password");
-    my ($hash_pending_error, $hash_pending) = Wattpilot_ReadPendingLegacyNames($hash, "passwordhash");
-    if (defined($password_pending_error) || defined($hash_pending_error)) {
-        Log3 $name, 1, "Wattpilot ($name) - could not inspect pending credential metadata before password update";
-        return "failed to inspect existing credentials; password unchanged";
+    my ($stable_password, $stable_hash) = eval {
+        (Wattpilot_SecretKey($hash, "password"),
+         Wattpilot_SecretKey($hash, "passwordhash"));
+    };
+    if ($@) {
+        Log3 $name, 1, "Wattpilot ($name) - failed to determine stable credential keys";
+        return "failed to determine stable credential key";
     }
-    $legacy_password_names{$_} = 1 for @$password_pending;
-    $legacy_hash_names{$_} = 1 for @$hash_pending;
 
-    my $stable_password = eval { Wattpilot_SecretKey($hash, "password") };
-    return "failed to determine stable credential key" if $@;
-    my $stable_hash = Wattpilot_SecretKey($hash, "passwordhash");
-    my ($password_owner_error, $legacy_password_resources) = Wattpilot_GetOwnedLegacyResourceKeys(
-        $hash, "password", [sort keys %legacy_password_names]);
-    my ($hash_owner_error, $legacy_hash_resources) = Wattpilot_GetOwnedLegacyResourceKeys(
-        $hash, "passwordhash", [sort keys %legacy_hash_names]);
-    if (defined($password_owner_error) || defined($hash_owner_error)) {
-        return "failed to verify legacy credential ownership; password unchanged";
-    }
-    my @legacy_passwords = grep { $_ !~ /_owner$/ } @$legacy_password_resources;
-    my @legacy_password_owners = grep { $_ =~ /_owner$/ } @$legacy_password_resources;
-    my @legacy_hashes = grep { $_ !~ /_owner$/ } @$legacy_hash_resources;
-    my @legacy_hash_owners = grep { $_ =~ /_owner$/ } @$legacy_hash_resources;
-    my @pending_keys = map { Wattpilot_PendingLegacyKey($hash, $_) } qw(password passwordhash);
-    my @all_keys = ($stable_password, $stable_hash, @legacy_passwords, @legacy_password_owners,
-                    @legacy_hashes, @legacy_hash_owners, @pending_keys);
-    my (%old_value, %seen);
-
-    for my $key (grep { !$seen{$_}++ } @all_keys) {
+    my %old_value;
+    for my $key ($stable_password, $stable_hash) {
         my ($err, $value) = getKeyValue($key);
         if (defined $err) {
-            Log3 $name, 1, "Wattpilot ($name) - could not inspect credential storage before password update";
+            Log3 $name, 1, "Wattpilot ($name) - could not inspect stable credential storage before password update";
             return "failed to inspect existing credentials; password unchanged";
         }
         $old_value{$key} = $value;
@@ -1594,45 +1555,20 @@ sub Wattpilot_StoreNewPassword($$) {
         return @rollback_failures ? "; credential rollback incomplete" : "";
     };
 
-    for my $key ($stable_hash, @legacy_hashes, @legacy_hash_owners) {
-        next if !defined $old_value{$key};
-        my $err = setKeyValue($key, undef);
-        if (defined $err) {
-            my $rollback_error = $rollback->();
-            Log3 $name, 1, "Wattpilot ($name) - failed to invalidate password hashes; password unchanged";
-            return "failed to invalidate stored password hashes; password unchanged$rollback_error";
+    if (defined $old_value{$stable_hash}) {
+        my $delete_err = setKeyValue($stable_hash, undef);
+        if (defined $delete_err) {
+            Log3 $name, 1, "Wattpilot ($name) - failed to invalidate stable password hash; password unchanged";
+            return "failed to invalidate stored password hash; password unchanged";
         }
-        push @changed, $key;
+        push @changed, $stable_hash;
     }
 
     my $store_err = setKeyValue($stable_password, $new_password);
     if (defined $store_err) {
         my $rollback_error = $rollback->();
-        Log3 $name, 1, "Wattpilot ($name) - failed to store new password";
+        Log3 $name, 1, "Wattpilot ($name) - failed to store new stable password";
         return "failed to store new password; previous credentials restored$rollback_error";
-    }
-    push @changed, $stable_password;
-
-    for my $key (@legacy_passwords, @legacy_password_owners) {
-        next if !defined $old_value{$key};
-        my $err = setKeyValue($key, undef);
-        if (defined $err) {
-            my $rollback_error = $rollback->();
-            Log3 $name, 1, "Wattpilot ($name) - failed to remove legacy password; password update rolled back";
-            return "failed to remove legacy password; previous credentials restored$rollback_error";
-        }
-        push @changed, $key;
-    }
-
-    for my $key (@pending_keys) {
-        next if !defined $old_value{$key};
-        my $err = setKeyValue($key, undef);
-        if (defined $err) {
-            my $rollback_error = $rollback->();
-            Log3 $name, 1, "Wattpilot ($name) - failed to clear pending credential metadata; password update rolled back";
-            return "failed to clear pending credential metadata; previous credentials restored$rollback_error";
-        }
-        push @changed, $key;
     }
     return undef;
 }
@@ -1642,16 +1578,6 @@ sub Wattpilot_SecretKey($$) {
     my $fuuid = $hash->{FUUID};
     die "Wattpilot credential storage requires FUUID" if !defined($fuuid) || $fuuid eq "";
     return "Wattpilot_" . $fuuid . "_" . $suffix;
-}
-
-sub Wattpilot_LegacySecretKey($$) {
-    my ($name, $suffix) = @_;
-    return "Wattpilot_" . $name . "_" . $suffix;
-}
-
-sub Wattpilot_LegacyOwnerKey($$) {
-    my ($name, $suffix) = @_;
-    return Wattpilot_LegacySecretKey($name, $suffix) . "_owner";
 }
 
 sub Wattpilot_CredentialValue($) {
@@ -1666,154 +1592,8 @@ sub Wattpilot_CredentialError($) {
     return { status => "error", error => $_[0] };
 }
 
-sub Wattpilot_ReadOwnedLegacySecret($$$$) {
-    my ($hash, $legacy_name, $suffix, $allow_claim) = @_;
-    my $name = $hash->{NAME};
-    my $fuuid = $hash->{FUUID};
-    my $owner_key = Wattpilot_LegacyOwnerKey($legacy_name, $suffix);
-    my ($owner_error, $owner) = getKeyValue($owner_key);
-    if (defined $owner_error) {
-        Log3 $name, 1, "Wattpilot ($name) - could not verify legacy credential ownership";
-        return Wattpilot_CredentialError("legacy ownership read failed");
-    }
-    if (defined $owner && $owner ne $fuuid) {
-        Log3 $name, 1, "Wattpilot ($name) - legacy credential belongs to a different device; resource preserved";
-        return Wattpilot_CredentialError("legacy ownership conflict");
-    }
-    if (!defined $owner && !$allow_claim) {
-        Log3 $name, 1, "Wattpilot ($name) - legacy credential ownership is unverifiable; resource preserved";
-        return Wattpilot_CredentialError("legacy ownership unverifiable");
-    }
-
-    if (!defined $owner) {
-        my ($pending_error, $pending_names) =
-          Wattpilot_ReadPendingLegacyNames($hash, $suffix);
-        return Wattpilot_CredentialError($pending_error)
-          if defined $pending_error;
-        my %pending = map { $_ => 1 } @$pending_names;
-        if (!$pending{$legacy_name}) {
-            Log3 $name, 1,
-              "Wattpilot ($name) - legacy ownership claim is not authorized by persistent pending metadata";
-            return Wattpilot_CredentialError("legacy ownership claim not authorized");
-        }
-        my $claim_error = setKeyValue($owner_key, $fuuid);
-        if (defined $claim_error) {
-            Log3 $name, 1, "Wattpilot ($name) - could not persist legacy credential ownership";
-            return Wattpilot_CredentialError("legacy ownership write failed");
-        }
-        $owner = $fuuid;
-    }
-
-    my $legacy_key = Wattpilot_LegacySecretKey($legacy_name, $suffix);
-    my ($read_error, $value) = getKeyValue($legacy_key);
-    if (defined $read_error) {
-        Log3 $name, 1, "Wattpilot ($name) - could not read owned legacy credential";
-        return Wattpilot_CredentialError("legacy credential read failed");
-    }
-    if (!defined $value) {
-        my $owner_cleanup_error = setKeyValue($owner_key, undef);
-        if (defined $owner_cleanup_error) {
-            Log3 $name, 1, "Wattpilot ($name) - could not remove stale legacy ownership metadata";
-            return Wattpilot_CredentialError("legacy ownership cleanup failed");
-        }
-        return Wattpilot_CredentialAbsent();
-    }
-    return Wattpilot_CredentialValue($value);
-}
-
-sub Wattpilot_GetOwnedLegacyResourceKeys($$$) {
-    my ($hash, $suffix, $legacy_names) = @_;
-    my @keys;
-    my %seen;
-    my ($pending_error, $pending_names) =
-      Wattpilot_ReadPendingLegacyNames($hash, $suffix);
-    return ($pending_error, []) if defined $pending_error;
-    my %pending = map { $_ => 1 } @$pending_names;
-
-    for my $legacy_name (@$legacy_names) {
-        next if $seen{$legacy_name}++;
-        my $owner_key = Wattpilot_LegacyOwnerKey($legacy_name, $suffix);
-        my ($owner_error, $owner) = getKeyValue($owner_key);
-        if (defined $owner_error) {
-            Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - could not verify legacy credential ownership";
-            return ("legacy ownership read failed", []);
-        }
-        if (!defined($owner) && $pending{$legacy_name}) {
-            # The persistent FUUID pending locator is sufficient proof for
-            # transactional enumeration. Do not create an owner marker before
-            # the caller has completed its snapshot.
-            $owner = $hash->{FUUID};
-        }
-        if (!defined($owner) || $owner ne $hash->{FUUID}) {
-            Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - unowned or foreign legacy credential preserved";
-            next;
-        }
-        push @keys, Wattpilot_LegacySecretKey($legacy_name, $suffix), $owner_key;
-    }
-    return (undef, \@keys);
-}
-
-sub Wattpilot_PendingLegacyKey($$) {
-    my ($hash, $suffix) = @_;
-    return Wattpilot_SecretKey($hash, "pending_legacy_${suffix}_names");
-}
-
-sub Wattpilot_ReadPendingLegacyNames($$) {
-    my ($hash, $suffix) = @_;
-    my $name = $hash->{NAME};
-    my $key = eval { Wattpilot_PendingLegacyKey($hash, $suffix) };
-    if ($@) {
-        Log3 $name, 1, "Wattpilot ($name) - pending credential metadata key is unavailable";
-        return ("metadata key unavailable", []);
-    }
-    my ($error, $encoded) = getKeyValue($key);
-    if (defined $error) {
-        Log3 $name, 1, "Wattpilot ($name) - could not read pending credential metadata";
-        return ("metadata read failed", []);
-    }
-    return (undef, []) if !defined($encoded) || $encoded eq "";
-    my $names = eval { decode_json($encoded) };
-    if ($@ || ref($names) ne "ARRAY" || grep { !defined($_) || ref($_) || $_ eq "" } @$names) {
-        Log3 $name, 1, "Wattpilot ($name) - pending credential metadata is invalid";
-        return ("metadata invalid", []);
-    }
-    my %seen;
-    return (undef, [grep { !$seen{$_}++ } @$names]);
-}
-
-sub Wattpilot_WritePendingLegacyNames($$$) {
-    my ($hash, $suffix, $names) = @_;
-    my %seen;
-    my @names = sort grep { defined($_) && $_ ne "" && !$seen{$_}++ } @$names;
-    my $key = eval { Wattpilot_PendingLegacyKey($hash, $suffix) };
-    return "metadata key unavailable" if $@;
-    my $value = @names ? encode_json(\@names) : undef;
-    my $error = setKeyValue($key, $value);
-    if (defined $error) {
-        Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - could not update pending credential metadata";
-        return "metadata write failed";
-    }
-    return undef;
-}
-
-sub Wattpilot_AddPendingLegacyName($$$) {
-    my ($hash, $suffix, $legacy_name) = @_;
-    my ($error, $names) = Wattpilot_ReadPendingLegacyNames($hash, $suffix);
-    return $error if defined $error;
-    push @$names, $legacy_name;
-    return Wattpilot_WritePendingLegacyNames($hash, $suffix, $names);
-}
-
-sub Wattpilot_RemovePendingLegacyName($$$) {
-    my ($hash, $suffix, $legacy_name) = @_;
-    my ($error, $names) = Wattpilot_ReadPendingLegacyNames($hash, $suffix);
-    return $error if defined $error;
-    return Wattpilot_WritePendingLegacyNames($hash, $suffix, [grep { $_ ne $legacy_name } @$names]);
-}
-
 sub Wattpilot_GetStoredSecret {
-    my ($hash, $suffix, $options) = @_;
-    $options //= {};
+    my ($hash, $suffix) = @_;
     my $name = $hash->{NAME};
     my $key = eval { Wattpilot_SecretKey($hash, $suffix) };
     if ($@) {
@@ -1826,177 +1606,9 @@ sub Wattpilot_GetStoredSecret {
         Log3 $name, 1, "Wattpilot ($name) - could not read stored $suffix";
         return Wattpilot_CredentialError("stable credential read failed");
     }
-    my ($pending_error, $pending_names) = Wattpilot_ReadPendingLegacyNames($hash, $suffix);
-    return Wattpilot_CredentialError($pending_error) if defined $pending_error;
-
-    if (defined $value) {
-        if (!exists($options->{migrate}) || $options->{migrate}) {
-            Wattpilot_CleanupPendingLegacySecrets($hash, $suffix, $pending_names);
-        }
-        return Wattpilot_CredentialValue($value);
-    }
-
-    for my $legacy_name (sort @$pending_names) {
-        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 1);
-        return $legacy_result if $legacy_result->{status} eq "error";
-        if ($legacy_result->{status} eq "absent") {
-            Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
-            next;
-        }
-        return $legacy_result if exists($options->{migrate}) && !$options->{migrate};
-        return Wattpilot_MigrateLegacySecret($hash, $legacy_name, $suffix, $legacy_result->{value}, 1);
-    }
-
-    if ($options->{include_owned_current}) {
-        my $legacy_result =
-          Wattpilot_ReadCurrentOwnedLegacySecret($hash, $name, $suffix);
-        return $legacy_result if $legacy_result->{status} eq "error";
-        if ($legacy_result->{status} eq "value") {
-            return $legacy_result
-              if exists($options->{migrate}) && !$options->{migrate};
-            my $pending_error =
-              Wattpilot_AddPendingLegacyName($hash, $suffix, $name);
-            if (defined $pending_error) {
-                Log3 $name, 1,
-                  "Wattpilot ($name) - could not persist current-name legacy recovery metadata";
-                return Wattpilot_CredentialError($pending_error);
-            }
-            return Wattpilot_MigrateLegacySecret(
-                $hash, $name, $suffix, $legacy_result->{value}, 1);
-        }
-    }
-    return Wattpilot_CredentialAbsent();
-}
-
-sub Wattpilot_ReadCurrentOwnedLegacySecret($$$) {
-    my ($hash, $legacy_name, $suffix) = @_;
-    my $name = $hash->{NAME};
-    my $owner_key = Wattpilot_LegacyOwnerKey($legacy_name, $suffix);
-    my ($owner_error, $owner) = getKeyValue($owner_key);
-    if (defined $owner_error) {
-        Log3 $name, 1,
-          "Wattpilot ($name) - could not inspect current-name legacy ownership";
-        return Wattpilot_CredentialError("legacy ownership read failed");
-    }
-    return Wattpilot_CredentialAbsent() if !defined $owner;
-    if ($owner ne $hash->{FUUID}) {
-        Log3 $name, 1,
-          "Wattpilot ($name) - current-name legacy credential belongs to a different device";
-        return Wattpilot_CredentialError("legacy ownership conflict");
-    }
-    return Wattpilot_ReadOwnedLegacySecret(
-        $hash, $legacy_name, $suffix, 0);
-}
-
-sub Wattpilot_CleanupLegacyLocator {
-    my ($hash, $legacy_name, $suffix, $skip_pending) = @_;
-    my $owner_key = Wattpilot_LegacyOwnerKey($legacy_name, $suffix);
-    my $owner_error = setKeyValue($owner_key, undef);
-    return "legacy cleanup failed" if defined $owner_error;
-    return undef if $skip_pending;
-    my $pending_error = Wattpilot_RemovePendingLegacyName($hash, $suffix, $legacy_name);
-    if (defined $pending_error) {
-        my $restore_error = setKeyValue($owner_key, $hash->{FUUID});
-        Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - legacy cleanup metadata rollback failed"
-          if defined $restore_error;
-        return "legacy cleanup failed";
-    }
-    return undef;
-}
-
-sub Wattpilot_MigrateLegacySecret {
-    my ($hash, $legacy_name, $suffix, $legacy_value, $pending_was_stored) = @_;
-    my $name = $hash->{NAME};
-    my $legacy_key = Wattpilot_LegacySecretKey($legacy_name, $suffix);
-    my $key = eval { Wattpilot_SecretKey($hash, $suffix) };
-    if ($@) {
-        Log3 $name, 1, "Wattpilot ($name) - stable credential key is unavailable; legacy $suffix retained";
-        return Wattpilot_CredentialError("stable credential key unavailable");
-    }
-    my $write_err = setKeyValue($key, $legacy_value);
-    if (defined $write_err) {
-        Wattpilot_AddPendingLegacyName($hash, $suffix, $legacy_name) if !$pending_was_stored;
-        Log3 $name, 1, "Wattpilot ($name) - credential migration failed to store $suffix; legacy value retained";
-        return Wattpilot_CredentialError("stable credential write failed");
-    }
-
-    my $delete_err = setKeyValue($legacy_key, undef);
-    if (defined $delete_err) {
-        Wattpilot_AddPendingLegacyName($hash, $suffix, $legacy_name);
-        Log3 $name, 1, "Wattpilot ($name) - credential migration stored $suffix but could not remove legacy key";
-    } else {
-        Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix, !$pending_was_stored);
-    }
-    Log3 $name, 3, "Wattpilot ($name) - migrated legacy $suffix to stable credential storage";
-    return Wattpilot_CredentialValue($legacy_value);
-}
-
-sub Wattpilot_CleanupPendingLegacySecrets($$$) {
-    my ($hash, $suffix, $pending_names) = @_;
-    for my $legacy_name (sort @$pending_names) {
-        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 1);
-        next if $legacy_result->{status} eq "error";
-        if ($legacy_result->{status} eq "absent") {
-            Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
-            next;
-        }
-        my $delete_error = setKeyValue(Wattpilot_LegacySecretKey($legacy_name, $suffix), undef);
-        if (defined $delete_error) {
-            Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - stable credential exists but owned legacy cleanup is pending";
-            next;
-        }
-        Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
-    }
-}
-
-sub Wattpilot_MigrateLegacySecrets($$) {
-    my ($hash, $legacy_name) = @_;
-    my @errors;
-    for my $suffix (qw(password passwordhash)) {
-        my $pending_error = Wattpilot_AddPendingLegacyName($hash, $suffix, $legacy_name);
-        if (defined $pending_error) {
-            push @errors, $suffix;
-            next;
-        }
-        my $legacy_result = Wattpilot_ReadOwnedLegacySecret($hash, $legacy_name, $suffix, 1);
-        if ($legacy_result->{status} eq "error") {
-            push @errors, $suffix;
-            next;
-        }
-        if ($legacy_result->{status} eq "absent") {
-            my $cleanup_error =
-              Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
-            push @errors, $suffix if defined $cleanup_error;
-            next;
-        }
-
-        my $stable_key = eval { Wattpilot_SecretKey($hash, $suffix) };
-        if ($@) {
-            push @errors, $suffix;
-            next;
-        }
-        my ($stable_error, $stable_value) = getKeyValue($stable_key);
-        if (defined $stable_error) {
-            Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - could not inspect stable credential during rename";
-            push @errors, $suffix;
-            next;
-        }
-        if (!defined $stable_value) {
-            my $migration_result = Wattpilot_MigrateLegacySecret(
-                $hash, $legacy_name, $suffix, $legacy_result->{value}, 1);
-            push @errors, $suffix if $migration_result->{status} eq "error";
-        } else {
-            my $delete_error = setKeyValue(Wattpilot_LegacySecretKey($legacy_name, $suffix), undef);
-            if (defined $delete_error) {
-                push @errors, $suffix;
-            } else {
-                my $cleanup_error =
-                  Wattpilot_CleanupLegacyLocator($hash, $legacy_name, $suffix);
-                push @errors, $suffix if defined $cleanup_error;
-            }
-        }
-    }
-    return @errors ? "Wattpilot rename credential migration requires retry" : undef;
+    return defined($value)
+        ? Wattpilot_CredentialValue($value)
+        : Wattpilot_CredentialAbsent();
 }
 
 sub Wattpilot_LogRawJson($$$) {
