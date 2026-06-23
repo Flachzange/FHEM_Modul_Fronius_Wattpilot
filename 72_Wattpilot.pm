@@ -174,6 +174,56 @@ sub Wattpilot_CloseDevIoForContext($;$) {
     }
 }
 
+sub Wattpilot_InvalidateSession($;$) {
+    my ($hash, $close_ctx) = @_;
+    my $open_ctx = $hash->{helper}{openInFlight};
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
+    Wattpilot_ClearConnectionState($hash);
+    Wattpilot_CloseDevIoForContext(
+        $hash, defined($close_ctx) ? $close_ctx : $open_ctx);
+    return $open_ctx;
+}
+
+sub Wattpilot_ApplyConfiguredState($;$$$) {
+    my ($hash, $delay, $disable_override, $connect) = @_;
+    $delay //= 1;
+    $connect = 1 if !defined $connect;
+
+    my $disabled = defined($disable_override)
+        ? $disable_override
+        : Wattpilot_IsDisabled($hash->{NAME});
+    if ($disabled) {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        readingsSingleUpdate($hash, "state", "disabled", 1);
+        return "disabled";
+    }
+
+    my $password_result = Wattpilot_GetPassword($hash);
+    if ($password_result->{status} eq "error") {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        readingsSingleUpdate($hash, "state", "credential error", 1);
+        return "credential error";
+    }
+    if ($password_result->{status} ne "value"
+        || $password_result->{value} eq "") {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        readingsSingleUpdate($hash, "state", "password missing", 1);
+        return "password missing";
+    }
+
+    return "configured" if !$connect;
+
+    readingsSingleUpdate($hash, "state", "disconnected", 1);
+    if ($hash->{helper}{openInFlight}) {
+        $hash->{helper}{pendingReconnectAfterOpen} = 1;
+    } else {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        Wattpilot_ScheduleConnect($hash, $delay, $disable_override);
+    }
+    return "disconnected";
+}
+
 sub Wattpilot_FinishTimer($$) {
     my ($hash, $ctx) = @_;
     delete $hash->{helper}{timers}{$ctx->{kind}}
@@ -206,24 +256,13 @@ sub Wattpilot_Define($$) {
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
 
-    my $password_result = Wattpilot_GetPassword($hash);
-
     $hash->{STATE} = "Initialized";
 
     # WebSocket spezifische Header
     $hash->{header}{'User-Agent'} = 'FHEM';
 
     $modules{Wattpilot}{defptr}{$name} = $hash;
-
-    # Starte Verbindungs-Timer (verzögerter Start) falls password verfügbar
-    if ($password_result->{status} eq "error") {
-        readingsSingleUpdate($hash, "state", "credential error", 1);
-    } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
-        readingsSingleUpdate($hash, "state", "disconnected", 1);
-        Wattpilot_ScheduleConnect($hash, 2);
-    } else {
-        readingsSingleUpdate($hash, "state", "password missing", 1);
-    }
+    Wattpilot_ApplyConfiguredState($hash, 2);
     return undef;
 }
 
@@ -231,12 +270,9 @@ sub Wattpilot_Undefine($$) {
     my ($hash, $name) = @_;
 
     $hash->{helper}{undefined} = 1;
-    Wattpilot_NextLifecycleGeneration($hash);
-    Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
-    Wattpilot_CloseDevIoForContext($hash, $hash->{helper}{openInFlight});
+    Wattpilot_InvalidateSession($hash);
     RemoveInternalTimer($hash);
-    
+
     delete $modules{Wattpilot}{defptr}{$name};
     return undef;
 }
@@ -245,10 +281,7 @@ sub Wattpilot_Delete($$) {
     my ($hash, $name) = @_;
 
     $hash->{helper}{deleting} = 1;
-    Wattpilot_NextLifecycleGeneration($hash);
-    Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
-    Wattpilot_CloseDevIoForContext($hash, $hash->{helper}{openInFlight});
+    Wattpilot_InvalidateSession($hash);
     RemoveInternalTimer($hash);
     my $error = Wattpilot_DeleteStoredSecrets($hash);
     Wattpilot_RestoreAfterFailedDelete($hash, $name) if defined $error;
@@ -263,37 +296,14 @@ sub Wattpilot_RestoreAfterFailedDelete($$) {
     delete $hash->{helper}{deleting};
     delete $hash->{helper}{shuttingDown};
     delete $hash->{helper}{timeoutRetryUsed};
-    Wattpilot_NextLifecycleGeneration($hash);
-    Wattpilot_CancelAllTimers($hash);
-    DevIo_CloseDev($hash) if DevIo_IsOpen($hash);
-
-    if (Wattpilot_IsDisabled($name)) {
-        readingsSingleUpdate($hash, "state", "disabled", 1);
-        return;
-    }
-
-    my $password_result = Wattpilot_GetPassword($hash);
-    if ($password_result->{status} eq "error") {
-        readingsSingleUpdate($hash, "state", "credential error", 1);
-    } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
-        readingsSingleUpdate($hash, "state", "disconnected", 1);
-        if ($hash->{helper}{openInFlight}) {
-            $hash->{helper}{pendingReconnectAfterOpen} = 1;
-        } else {
-            Wattpilot_ScheduleConnect($hash, 2);
-        }
-    } else {
-        readingsSingleUpdate($hash, "state", "password missing", 1);
-    }
+    Wattpilot_InvalidateSession($hash);
+    Wattpilot_ApplyConfiguredState($hash, 2);
 }
 
 sub Wattpilot_Shutdown($) {
     my ($hash) = @_;
     $hash->{helper}{shuttingDown} = 1;
-    Wattpilot_NextLifecycleGeneration($hash);
-    Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
-    Wattpilot_CloseDevIoForContext($hash, $hash->{helper}{openInFlight});
+    Wattpilot_InvalidateSession($hash);
     readingsSingleUpdate($hash, "state", "disconnected", 1);
     RemoveInternalTimer($hash);
     return undef;
@@ -306,10 +316,7 @@ sub Wattpilot_Rename($$) {
 
     my $was_active = Wattpilot_IsRuntimeActive($hash);
     my $open_ctx = $hash->{helper}{openInFlight};
-    Wattpilot_NextLifecycleGeneration($hash);
-    Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
-    Wattpilot_CloseDevIoForContext($hash, {
+    Wattpilot_InvalidateSession($hash, {
         devioName => $old_name,
         devioDevice => ref($open_ctx) eq 'HASH'
             ? ($open_ctx->{devioDevice} // $hash->{DeviceName})
@@ -318,24 +325,7 @@ sub Wattpilot_Rename($$) {
 
     delete $modules{Wattpilot}{defptr}{$old_name};
     $modules{Wattpilot}{defptr}{$new_name} = $hash;
-
-    my $password_result = Wattpilot_GetPassword($hash);
-    if ($password_result->{status} eq "error") {
-        delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, "state", "credential error", 1);
-    } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
-        readingsSingleUpdate($hash, "state", "disconnected", 1) if $was_active;
-        if ($was_active) {
-            if ($hash->{helper}{openInFlight}) {
-                $hash->{helper}{pendingReconnectAfterOpen} = 1;
-            } else {
-                Wattpilot_ScheduleConnect($hash, 1);
-            }
-        }
-    } else {
-        delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, "state", "password missing", 1);
-    }
+    Wattpilot_ApplyConfiguredState($hash, 1, undef, $was_active);
     return undef; # CommandRename ignores RenameFn replies in the audited FHEM revision.
 }
 
@@ -1101,14 +1091,8 @@ sub Wattpilot_Set($@) {
 	
 		readingsSingleUpdate($hash, "state", "password stored", 1);
         delete $hash->{helper}{timeoutRetryUsed};
-        Wattpilot_NextLifecycleGeneration($hash);
-        Wattpilot_CancelAllTimers($hash);
-		Wattpilot_ClearConnectionState($hash);
-        my $had_open_in_flight = $hash->{helper}{openInFlight};
-        $hash->{helper}{pendingReconnectAfterOpen} = 1 if $had_open_in_flight;
-		DevIo_CloseDev($hash);
-        readingsSingleUpdate($hash, "state", "disconnected", 1);
-		Wattpilot_ScheduleConnect($hash, 1) if !$had_open_in_flight;
+        Wattpilot_InvalidateSession($hash);
+        Wattpilot_ApplyConfiguredState($hash, 1);
 		
 		return undef;
 	} 
@@ -1314,70 +1298,34 @@ sub Wattpilot_Ready($) {
 sub Wattpilot_Attr(@) {
     my ($cmd, $name, $attrName, $attrVal) = @_;
     my $hash = $defs{$name};
-    
-    # $cmd kann "set" oder "del" sein
-    # $name ist der Gerätename, $attrName das Attribut, $attrVal der Wert
-    
+
     if($attrName eq "disable") {
         if($cmd eq "set" && $attrVal eq "1") {
-             Wattpilot_NextLifecycleGeneration($hash);
-             Wattpilot_CancelAllTimers($hash);
-             RemoveInternalTimer($hash, 'Wattpilot_Connect');
-             RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
-             Wattpilot_ClearConnectionState($hash);
-             Wattpilot_CloseDevIoForContext($hash, $hash->{helper}{openInFlight});
-             readingsSingleUpdate($hash, "state", "disabled", 1);
-		} elsif($cmd eq "del" || $attrVal eq "0") {
-             delete $hash->{helper}{timeoutRetryUsed};
-             Wattpilot_NextLifecycleGeneration($hash);
-             Wattpilot_CancelAllTimers($hash);
-             Wattpilot_ClearConnectionState($hash);
-             my $had_open_in_flight = $hash->{helper}{openInFlight};
-             $hash->{helper}{pendingReconnectAfterOpen} = 1 if $had_open_in_flight;
-			 my $password_result = Wattpilot_GetPassword($hash);
-			 if ($password_result->{status} eq "error") {
-				 readingsSingleUpdate($hash, "state", "credential error", 1);
-                 delete $hash->{helper}{pendingReconnectAfterOpen};
-			 } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
-				 readingsSingleUpdate($hash, "state", "disconnected", 1);
-				 Wattpilot_ScheduleConnect($hash, 1, 0) if !$had_open_in_flight;
-			 } else {
-				 readingsSingleUpdate($hash, "state", "password missing", 1);
-                 delete $hash->{helper}{pendingReconnectAfterOpen};
-			 }
-		}
+            Wattpilot_InvalidateSession($hash);
+            RemoveInternalTimer($hash, 'Wattpilot_Connect');
+            RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
+            delete $hash->{helper}{pendingReconnectAfterOpen};
+            readingsSingleUpdate($hash, "state", "disabled", 1);
+        } elsif($cmd eq "del" || $attrVal eq "0") {
+            delete $hash->{helper}{timeoutRetryUsed};
+            Wattpilot_InvalidateSession($hash);
+            Wattpilot_ApplyConfiguredState($hash, 1, 0);
+        }
     }
 
-    if (($attrName eq "authHash" || $attrName eq "authHashCost") && ($cmd eq "set" || $cmd eq "del")) {
+    if (($attrName eq "authHash" || $attrName eq "authHashCost")
+        && ($cmd eq "set" || $cmd eq "del")) {
         delete $hash->{helper}{timeoutRetryUsed};
-        Wattpilot_NextLifecycleGeneration($hash);
-        Wattpilot_CancelAllTimers($hash);
+        Wattpilot_InvalidateSession($hash);
         RemoveInternalTimer($hash, 'Wattpilot_Connect');
         RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
-        Wattpilot_ClearConnectionState($hash);
-        my $had_open_in_flight = $hash->{helper}{openInFlight};
-        $hash->{helper}{pendingReconnectAfterOpen} = 1 if $had_open_in_flight;
-        Wattpilot_CloseDevIoForContext($hash, $hash->{helper}{openInFlight});
         my $hash_error = Wattpilot_InvalidateStoredPasswordHash($hash);
 
         if (defined $hash_error) {
+            delete $hash->{helper}{pendingReconnectAfterOpen};
             readingsSingleUpdate($hash, "state", "credential error", 1);
-            delete $hash->{helper}{pendingReconnectAfterOpen};
-        } elsif (Wattpilot_IsDisabled($name)) {
-            readingsSingleUpdate($hash, "state", "disabled", 1);
-            delete $hash->{helper}{pendingReconnectAfterOpen};
         } else {
-            my $password_result = Wattpilot_GetPassword($hash);
-            if ($password_result->{status} eq "error") {
-                readingsSingleUpdate($hash, "state", "credential error", 1);
-                delete $hash->{helper}{pendingReconnectAfterOpen};
-            } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
-                readingsSingleUpdate($hash, "state", "disconnected", 1);
-                Wattpilot_ScheduleConnect($hash, 1);
-            } else {
-                readingsSingleUpdate($hash, "state", "password missing", 1);
-                delete $hash->{helper}{pendingReconnectAfterOpen};
-            }
+            Wattpilot_ApplyConfiguredState($hash, 1);
         }
     }
 
@@ -1392,7 +1340,7 @@ sub Wattpilot_Attr(@) {
     if($attrName eq "interval") {
         # Hier könnte Logik stehen, falls das Intervall sofortige Aktionen erfordert
     }
-    
+
     if ($attrName eq "update_while_idle") {
         my $enabled = $cmd eq "set" && defined($attrVal) && $attrVal eq "1";
         if ($enabled) {
