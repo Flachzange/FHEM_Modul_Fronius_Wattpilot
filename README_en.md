@@ -10,24 +10,36 @@ Version 2.0 supports only a fresh definition. There are no aliases and no automa
 
 <!-- BEGIN 2.0 migration names -->
 
-| 1.x | 2.0 |
-| :--- | :--- |
-| `version` | `firmwareVersion` |
-| `CarState` | `carState` |
-| `Laden_starten` | `forceState` |
-| `Strom` | `chargingCurrent` |
-| `Modus` | `chargingMode` |
-| `Zeit_NextTrip` | `nextTripTime` |
-| `EnergyTotal` | `energyTotal` |
-| `Energie_seit_Anstecken` | `energySincePlugIn` |
-| `Voltage_L1..3` | `voltageL1..3` |
-| `Current_L1..3` | `currentL1..3` |
-| `Power_L1..3` | `powerL1..3` |
-| `Password` | `password` |
-| `Laden_starten Start|Stop` | `forceState neutral|off|on` |
-| `Strom` | `chargingCurrent` |
-| `Modus Default|Eco|NextTrip` | `chargingMode default|eco|nextTrip` |
-| `Zeit_NextTrip` | `nextTripTime` |
+| Type | 1.x | 2.0 |
+| :--- | :--- | :--- |
+| Reading | `state` | `state` |
+| Reading | `version` | `firmwareVersion` |
+| Reading | `authHashMode` | `authHashMode` |
+| Reading | `CarState` | `carState` |
+| Reading | `Laden_starten` | `forceState` |
+| Reading | `Strom` | `chargingCurrent` |
+| Reading | `Modus` | `chargingMode` |
+| Reading | `Zeit_NextTrip` | `nextTripTime` |
+| Reading | `EnergyTotal` | `energyTotal` |
+| Reading | `Energie_seit_Anstecken` | `energySincePlugIn` |
+| Reading | `Voltage_L1` | `voltageL1` |
+| Reading | `Voltage_L2` | `voltageL2` |
+| Reading | `Voltage_L3` | `voltageL3` |
+| Reading | `Current_L1` | `currentL1` |
+| Reading | `Current_L2` | `currentL2` |
+| Reading | `Current_L3` | `currentL3` |
+| Reading | `Power_L1` | `powerL1` |
+| Reading | `Power_L2` | `powerL2` |
+| Reading | `Power_L3` | `powerL3` |
+| Reading | `power` | `power` |
+| Reading | `lastCommandRequestId` | `lastCommandRequestId` |
+| Reading | `lastCommandStatus` | `lastCommandStatus` |
+| Reading | `lastCommandError` | `lastCommandError` |
+| Set | `Password <secret>` | `password <secret>` |
+| Set | `Strom <6..32>` | `chargingCurrent <6..32>` |
+| Set | `Laden_starten Start|Stop` | `forceState neutral|off|on` |
+| Set | `Modus Default|Eco|NextTrip` | `chargingMode default|eco|nextTrip` |
+| Set | `Zeit_NextTrip HH:MM` | `nextTripTime HH:MM` |
 
 <!-- END 2.0 migration names -->
 

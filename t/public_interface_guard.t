@@ -17,10 +17,47 @@ sub read_utf8 {
     return $text;
 }
 
+sub migration_names_section {
+    my ($text) = @_;
+    my ($section) = $text =~ /<!-- BEGIN 2\.0 migration names -->(.*?)<!-- END 2\.0 migration names -->/s;
+    return $section;
+}
+
 sub strip_migration_names {
     my ($text) = @_;
     $text =~ s/<!-- BEGIN 2\.0 migration names -->.*?<!-- END 2\.0 migration names -->//gs;
     return $text;
+}
+
+sub decode_html_code {
+    my ($value) = @_;
+    $value =~ s/&lt;/</g;
+    $value =~ s/&gt;/>/g;
+    $value =~ s/&amp;/&/g;
+    return $value;
+}
+
+sub migration_pairs {
+    my ($section) = @_;
+    my %pairs;
+
+    if ($section =~ /<tr>/) {
+        while ($section =~ m{<tr>(.*?)</tr>}gs) {
+            my @tokens = map { decode_html_code($_) }
+                ($1 =~ m{<code>(.*?)</code>}g);
+            next if @tokens != 2;
+            $pairs{$tokens[0] . "\0" . $tokens[1]}++;
+        }
+    }
+    else {
+        for my $line (split /\n/, $section) {
+            my @tokens = $line =~ /`([^`]*)`/g;
+            next if @tokens != 2;
+            $pairs{$tokens[0] . "\0" . $tokens[1]}++;
+        }
+    }
+
+    return \%pairs;
 }
 
 my $module = File::Spec->catfile($root, '72_Wattpilot.pm');
@@ -72,6 +109,37 @@ my @public_commands = qw(
     password chargingCurrent forceState chargingMode nextTripTime
 );
 
+my @migration_pairs = (
+    [ 'state', 'state' ],
+    [ 'version', 'firmwareVersion' ],
+    [ 'authHashMode', 'authHashMode' ],
+    [ 'CarState', 'carState' ],
+    [ 'Laden_starten', 'forceState' ],
+    [ 'Strom', 'chargingCurrent' ],
+    [ 'Modus', 'chargingMode' ],
+    [ 'Zeit_NextTrip', 'nextTripTime' ],
+    [ 'EnergyTotal', 'energyTotal' ],
+    [ 'Energie_seit_Anstecken', 'energySincePlugIn' ],
+    [ 'Voltage_L1', 'voltageL1' ],
+    [ 'Voltage_L2', 'voltageL2' ],
+    [ 'Voltage_L3', 'voltageL3' ],
+    [ 'Current_L1', 'currentL1' ],
+    [ 'Current_L2', 'currentL2' ],
+    [ 'Current_L3', 'currentL3' ],
+    [ 'Power_L1', 'powerL1' ],
+    [ 'Power_L2', 'powerL2' ],
+    [ 'Power_L3', 'powerL3' ],
+    [ 'power', 'power' ],
+    [ 'lastCommandRequestId', 'lastCommandRequestId' ],
+    [ 'lastCommandStatus', 'lastCommandStatus' ],
+    [ 'lastCommandError', 'lastCommandError' ],
+    [ 'Password <secret>', 'password <secret>' ],
+    [ 'Strom <6..32>', 'chargingCurrent <6..32>' ],
+    [ 'Laden_starten Start|Stop', 'forceState neutral|off|on' ],
+    [ 'Modus Default|Eco|NextTrip', 'chargingMode default|eco|nextTrip' ],
+    [ 'Zeit_NextTrip HH:MM', 'nextTripTime HH:MM' ],
+);
+
 my @active_docs = (
     [ 'README.md', read_utf8(File::Spec->catfile($root, 'README.md')) ],
     [ 'README_en.md', read_utf8(File::Spec->catfile($root, 'README_en.md')) ],
@@ -92,6 +160,17 @@ for my $entry (@active_docs) {
     my $end_count = () = $original =~ /<!-- END 2\.0 migration names -->/g;
     is($begin_count, $end_count, "$label has balanced migration-name markers");
     ok($begin_count >= 1, "$label marks its historical 1.x names explicitly");
+
+    my $migration = migration_names_section($original);
+    ok(defined($migration), "$label migration matrix is extractable");
+    my $pairs = migration_pairs($migration // '');
+    is(scalar keys %$pairs, scalar @migration_pairs,
+        "$label migration matrix contains exactly the complete 23-reading and five-command contract");
+    for my $pair (@migration_pairs) {
+        my ($old, $new) = @$pair;
+        is($pairs->{$old . "\0" . $new}, 1,
+            "$label maps $old to $new exactly once");
+    }
 
     my $active = strip_migration_names($original);
     unlike($active, $markdown_old,

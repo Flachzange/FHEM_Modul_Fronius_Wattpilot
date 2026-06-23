@@ -1709,23 +1709,35 @@ sub Wattpilot_WriteJson($$) {
   </ul>
   <!-- BEGIN 2.0 migration names -->
   <table class="block wide">
-    <tr><th>1.x name</th><th>2.0 name</th></tr>
-    <tr><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
-    <tr><td><code>CarState</code></td><td><code>carState</code></td></tr>
-    <tr><td><code>Laden_starten</code></td><td><code>forceState</code></td></tr>
-    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
-    <tr><td><code>Modus</code></td><td><code>chargingMode</code></td></tr>
-    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
-    <tr><td><code>EnergyTotal</code></td><td><code>energyTotal</code></td></tr>
-    <tr><td><code>Energie_seit_Anstecken</code></td><td><code>energySincePlugIn</code></td></tr>
-    <tr><td><code>Voltage_L1..3</code></td><td><code>voltageL1..3</code></td></tr>
-    <tr><td><code>Current_L1..3</code></td><td><code>currentL1..3</code></td></tr>
-    <tr><td><code>Power_L1..3</code></td><td><code>powerL1..3</code></td></tr>
-    <tr><td><code>Password</code></td><td><code>password</code></td></tr>
-    <tr><td><code>Laden_starten Start|Stop</code></td><td><code>forceState neutral|off|on</code></td></tr>
-    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
-    <tr><td><code>Modus Default|Eco|NextTrip</code></td><td><code>chargingMode default|eco|nextTrip</code></td></tr>
-    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+    <tr><th>Type</th><th>1.x name</th><th>2.0 name</th></tr>
+    <tr><td>Reading</td><td><code>state</code></td><td><code>state</code></td></tr>
+    <tr><td>Reading</td><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
+    <tr><td>Reading</td><td><code>authHashMode</code></td><td><code>authHashMode</code></td></tr>
+    <tr><td>Reading</td><td><code>CarState</code></td><td><code>carState</code></td></tr>
+    <tr><td>Reading</td><td><code>Laden_starten</code></td><td><code>forceState</code></td></tr>
+    <tr><td>Reading</td><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
+    <tr><td>Reading</td><td><code>Modus</code></td><td><code>chargingMode</code></td></tr>
+    <tr><td>Reading</td><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+    <tr><td>Reading</td><td><code>EnergyTotal</code></td><td><code>energyTotal</code></td></tr>
+    <tr><td>Reading</td><td><code>Energie_seit_Anstecken</code></td><td><code>energySincePlugIn</code></td></tr>
+    <tr><td>Reading</td><td><code>Voltage_L1</code></td><td><code>voltageL1</code></td></tr>
+    <tr><td>Reading</td><td><code>Voltage_L2</code></td><td><code>voltageL2</code></td></tr>
+    <tr><td>Reading</td><td><code>Voltage_L3</code></td><td><code>voltageL3</code></td></tr>
+    <tr><td>Reading</td><td><code>Current_L1</code></td><td><code>currentL1</code></td></tr>
+    <tr><td>Reading</td><td><code>Current_L2</code></td><td><code>currentL2</code></td></tr>
+    <tr><td>Reading</td><td><code>Current_L3</code></td><td><code>currentL3</code></td></tr>
+    <tr><td>Reading</td><td><code>Power_L1</code></td><td><code>powerL1</code></td></tr>
+    <tr><td>Reading</td><td><code>Power_L2</code></td><td><code>powerL2</code></td></tr>
+    <tr><td>Reading</td><td><code>Power_L3</code></td><td><code>powerL3</code></td></tr>
+    <tr><td>Reading</td><td><code>power</code></td><td><code>power</code></td></tr>
+    <tr><td>Reading</td><td><code>lastCommandRequestId</code></td><td><code>lastCommandRequestId</code></td></tr>
+    <tr><td>Reading</td><td><code>lastCommandStatus</code></td><td><code>lastCommandStatus</code></td></tr>
+    <tr><td>Reading</td><td><code>lastCommandError</code></td><td><code>lastCommandError</code></td></tr>
+    <tr><td>Set</td><td><code>Password &lt;secret&gt;</code></td><td><code>password &lt;secret&gt;</code></td></tr>
+    <tr><td>Set</td><td><code>Strom &lt;6..32&gt;</code></td><td><code>chargingCurrent &lt;6..32&gt;</code></td></tr>
+    <tr><td>Set</td><td><code>Laden_starten Start|Stop</code></td><td><code>forceState neutral|off|on</code></td></tr>
+    <tr><td>Set</td><td><code>Modus Default|Eco|NextTrip</code></td><td><code>chargingMode default|eco|nextTrip</code></td></tr>
+    <tr><td>Set</td><td><code>Zeit_NextTrip HH:MM</code></td><td><code>nextTripTime HH:MM</code></td></tr>
   </table>
   <!-- END 2.0 migration names -->
   <br>
@@ -1833,23 +1845,35 @@ sub Wattpilot_WriteJson($$) {
   </ul>
   <!-- BEGIN 2.0 migration names -->
   <table class="block wide">
-    <tr><th>1.x-Name</th><th>2.0-Name</th></tr>
-    <tr><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
-    <tr><td><code>CarState</code></td><td><code>carState</code></td></tr>
-    <tr><td><code>Laden_starten</code></td><td><code>forceState</code></td></tr>
-    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
-    <tr><td><code>Modus</code></td><td><code>chargingMode</code></td></tr>
-    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
-    <tr><td><code>EnergyTotal</code></td><td><code>energyTotal</code></td></tr>
-    <tr><td><code>Energie_seit_Anstecken</code></td><td><code>energySincePlugIn</code></td></tr>
-    <tr><td><code>Voltage_L1..3</code></td><td><code>voltageL1..3</code></td></tr>
-    <tr><td><code>Current_L1..3</code></td><td><code>currentL1..3</code></td></tr>
-    <tr><td><code>Power_L1..3</code></td><td><code>powerL1..3</code></td></tr>
-    <tr><td><code>Password</code></td><td><code>password</code></td></tr>
-    <tr><td><code>Laden_starten Start|Stop</code></td><td><code>forceState neutral|off|on</code></td></tr>
-    <tr><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
-    <tr><td><code>Modus Default|Eco|NextTrip</code></td><td><code>chargingMode default|eco|nextTrip</code></td></tr>
-    <tr><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+    <tr><th>Typ</th><th>1.x-Name</th><th>2.0-Name</th></tr>
+    <tr><td>Reading</td><td><code>state</code></td><td><code>state</code></td></tr>
+    <tr><td>Reading</td><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
+    <tr><td>Reading</td><td><code>authHashMode</code></td><td><code>authHashMode</code></td></tr>
+    <tr><td>Reading</td><td><code>CarState</code></td><td><code>carState</code></td></tr>
+    <tr><td>Reading</td><td><code>Laden_starten</code></td><td><code>forceState</code></td></tr>
+    <tr><td>Reading</td><td><code>Strom</code></td><td><code>chargingCurrent</code></td></tr>
+    <tr><td>Reading</td><td><code>Modus</code></td><td><code>chargingMode</code></td></tr>
+    <tr><td>Reading</td><td><code>Zeit_NextTrip</code></td><td><code>nextTripTime</code></td></tr>
+    <tr><td>Reading</td><td><code>EnergyTotal</code></td><td><code>energyTotal</code></td></tr>
+    <tr><td>Reading</td><td><code>Energie_seit_Anstecken</code></td><td><code>energySincePlugIn</code></td></tr>
+    <tr><td>Reading</td><td><code>Voltage_L1</code></td><td><code>voltageL1</code></td></tr>
+    <tr><td>Reading</td><td><code>Voltage_L2</code></td><td><code>voltageL2</code></td></tr>
+    <tr><td>Reading</td><td><code>Voltage_L3</code></td><td><code>voltageL3</code></td></tr>
+    <tr><td>Reading</td><td><code>Current_L1</code></td><td><code>currentL1</code></td></tr>
+    <tr><td>Reading</td><td><code>Current_L2</code></td><td><code>currentL2</code></td></tr>
+    <tr><td>Reading</td><td><code>Current_L3</code></td><td><code>currentL3</code></td></tr>
+    <tr><td>Reading</td><td><code>Power_L1</code></td><td><code>powerL1</code></td></tr>
+    <tr><td>Reading</td><td><code>Power_L2</code></td><td><code>powerL2</code></td></tr>
+    <tr><td>Reading</td><td><code>Power_L3</code></td><td><code>powerL3</code></td></tr>
+    <tr><td>Reading</td><td><code>power</code></td><td><code>power</code></td></tr>
+    <tr><td>Reading</td><td><code>lastCommandRequestId</code></td><td><code>lastCommandRequestId</code></td></tr>
+    <tr><td>Reading</td><td><code>lastCommandStatus</code></td><td><code>lastCommandStatus</code></td></tr>
+    <tr><td>Reading</td><td><code>lastCommandError</code></td><td><code>lastCommandError</code></td></tr>
+    <tr><td>Set</td><td><code>Password &lt;secret&gt;</code></td><td><code>password &lt;secret&gt;</code></td></tr>
+    <tr><td>Set</td><td><code>Strom &lt;6..32&gt;</code></td><td><code>chargingCurrent &lt;6..32&gt;</code></td></tr>
+    <tr><td>Set</td><td><code>Laden_starten Start|Stop</code></td><td><code>forceState neutral|off|on</code></td></tr>
+    <tr><td>Set</td><td><code>Modus Default|Eco|NextTrip</code></td><td><code>chargingMode default|eco|nextTrip</code></td></tr>
+    <tr><td>Set</td><td><code>Zeit_NextTrip HH:MM</code></td><td><code>nextTripTime HH:MM</code></td></tr>
   </table>
   <!-- END 2.0 migration names -->
   <br>
