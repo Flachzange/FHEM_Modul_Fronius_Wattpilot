@@ -34,6 +34,23 @@ sub stable_key {
     return 'Wattpilot_' . $hash->{FUUID} . '_' . $suffix;
 }
 
+my $normalizer_hash = fresh_device();
+my $original_status = {
+    amp => 'invalid',
+    car => 2,
+    customField => { preserved => 1 },
+};
+my $normalized_status = main::Wattpilot_NormalizeStatus(
+    $normalizer_hash, $original_status);
+ok(exists $original_status->{amp},
+    'status normalization does not mutate the caller input');
+ok(!exists $normalized_status->{amp},
+    'status normalization removes an invalid known field from its copy');
+is($normalized_status->{car}, 2,
+    'status normalization preserves a valid known field');
+is_deeply($normalized_status->{customField}, { preserved => 1 },
+    'status normalization preserves unknown fields');
+
 my $hash = fresh_device();
 main::Wattpilot_UpdateReadings($hash, {
     car => 2,

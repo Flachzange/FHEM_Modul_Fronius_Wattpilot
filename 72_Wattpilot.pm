@@ -580,39 +580,40 @@ sub Wattpilot_IsBoolean($) {
     return Wattpilot_IsScalarString($value) && $value =~ /^(?:0|1)$/;
 }
 
-sub Wattpilot_ValidateStatus($$) {
-    my ($hash, $status) = @_;
-    return 0 if ref($status) ne 'HASH';
+sub Wattpilot_NormalizeStatus($$) {
+    my ($hash, $input_status) = @_;
+    return undef if ref($input_status) ne 'HASH';
 
+    my %status = %$input_status;
     my %integer = map { $_ => 1 } qw(car frc ftt amp lmo);
     my %number = map { $_ => 1 } qw(eto wh);
     for my $key (keys %integer) {
-        next if !exists($status->{$key}) || !defined($status->{$key});
-        if (!Wattpilot_IsInteger($status->{$key})) {
+        next if !exists($status{$key}) || !defined($status{$key});
+        if (!Wattpilot_IsInteger($status{$key})) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status->{$key};
+            delete $status{$key};
         }
     }
     for my $key (keys %number) {
-        next if !exists($status->{$key}) || !defined($status->{$key});
-        if (!Wattpilot_IsNumber($status->{$key})) {
+        next if !exists($status{$key}) || !defined($status{$key});
+        if (!Wattpilot_IsNumber($status{$key})) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status->{$key};
+            delete $status{$key};
         }
     }
-    if (exists($status->{nrg}) && defined($status->{nrg})) {
-        my $valid = ref($status->{nrg}) eq 'ARRAY'
-            && @{$status->{nrg}} >= 12
-            && !grep { !defined($_) || !Wattpilot_IsNumber($_) } @{$status->{nrg}}[0..11];
+    if (exists($status{nrg}) && defined($status{nrg})) {
+        my $valid = ref($status{nrg}) eq 'ARRAY'
+            && @{$status{nrg}} >= 12
+            && !grep { !defined($_) || !Wattpilot_IsNumber($_) } @{$status{nrg}}[0..11];
         if (!$valid) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=nrg";
-            delete $status->{nrg};
+            delete $status{nrg};
         }
     }
-    return 1;
+    return \%status;
 }
 
 sub Wattpilot_DispatchMessage($$) {
@@ -671,11 +672,8 @@ sub Wattpilot_DispatchMessage($$) {
             Log3 $name, 2, "Wattpilot ($name) - Ignoring status message with missing or invalid status";
             return 0;
         }
-        my %status = %{$json->{status}};
-        Wattpilot_ValidateStatus($hash, \%status);
-        $hash->{helper}{statusMessageType} = $type;
-        Wattpilot_UpdateReadings($hash, \%status);
-        delete $hash->{helper}{statusMessageType};
+        my $status = Wattpilot_NormalizeStatus($hash, $json->{status});
+        Wattpilot_UpdateReadings($hash, $status, $type);
         Wattpilot_MarkInitialized($hash)
             if $hash->{helper}{authenticated}
             && ($hash->{STATE} // '') eq 'initializing';
@@ -690,9 +688,10 @@ sub Wattpilot_DispatchMessage($$) {
             return 0;
         }
         if (ref($json->{status}) eq 'HASH') {
-            my %status = %{$json->{status}};
-            Wattpilot_ValidateStatus($hash, \%status);
-            $json = { %$json, status => \%status };
+            $json = {
+                %$json,
+                status => Wattpilot_NormalizeStatus($hash, $json->{status}),
+            };
         }
         Wattpilot_HandleResponse($hash, $json);
     } else {
@@ -765,150 +764,146 @@ sub Wattpilot_IdleRefreshTimeout($) {
     Wattpilot_ScheduleConnect($hash, 1);
 }
 
-sub Wattpilot_UpdateReadings($$) {
+sub Wattpilot_UpdateImmediateReadings($$) {
     my ($hash, $status) = @_;
-    my $name = $hash->{NAME};
-    return if ref($status) ne 'HASH';
-    my %validated_status = %$status;
-    $status = \%validated_status;
-    Wattpilot_ValidateStatus($hash, $status);
-    my $previous_car_state = $hash->{helper}{car_state};
-    my $has_valid_nrg = ref($status->{nrg}) eq 'ARRAY' && @{$status->{nrg}} >= 12;
-    
-    # Rate-Limiting Logik:
-    # Einige Werte (wie 'nrg' - Spannung/Strom) aktualisieren sehr häufig (hochfrequent).
-    # Andere (wie 'amp', 'car', 'frc') sind niederfrequent und kritisch für die UI.
-    # Das Intervall wird NUR auf die hochfrequenten "Spam"-Werte angewendet.
-    
-    my $interval = AttrVal($name, "interval", 0);
-    my $now = gettimeofday();
-    my $last_update = $hash->{LAST_UPDATE} // 0;
-    
-    # Unterdrücke Spam-Werte, wenn Intervall noch nicht abgelaufen
-    my $suppress_spammy = ($interval > 0 && ($now - $last_update < $interval));
-    
-    readingsBeginUpdate($hash);
-    
-    # --- KRITISCHE / NIEDERFREQUENTE UPDATES (Immer aktualisieren) ---
-    
-    # Fahrzeug Status (Car State)
-    if (defined $status->{car} && Wattpilot_IsInteger($status->{car})) {
-        my %CarStateMap = (0 => 'Unknown', 1 => 'Idle', 2 => 'Charging', 3 => 'WaitCar', 4 => 'Complete', 5 => 'Error');
-        my $state = $CarStateMap{int($status->{car})} // "Unknown";
-        readingsBulkUpdate($hash, "CarState", $state);
-        
-        # Speichere internen Status für Logik (Charging vs Not Charging)
-        $hash->{helper}{car_state} = int($status->{car});
+
+    if (defined $status->{car}) {
+        my %car_state_map = (
+            0 => 'Unknown', 1 => 'Idle', 2 => 'Charging',
+            3 => 'WaitCar', 4 => 'Complete', 5 => 'Error',
+        );
+        my $car_value = int($status->{car});
+        readingsBulkUpdate(
+            $hash, "CarState", $car_state_map{$car_value} // "Unknown");
+        $hash->{helper}{car_state} = $car_value;
     }
-    
-    # Prüfe ob geladen wird (Status 2)
+
+    if (defined $status->{frc}) {
+        my %force_state_map = (0 => 'Neutral', 1 => 'Stop', 2 => 'Start');
+        my $force_value = int($status->{frc});
+        my $force_state = exists($force_state_map{$force_value})
+            ? $force_state_map{$force_value}
+            : 'Unknown(' . $status->{frc} . ')';
+        readingsBulkUpdate($hash, "Laden_starten", $force_state);
+    }
+
+    if (defined $status->{ftt}) {
+        my $secs = $status->{ftt};
+        my $h = int($secs / 3600);
+        my $m = int(($secs % 3600) / 60);
+        readingsBulkUpdate(
+            $hash, "Zeit_NextTrip", sprintf("%02d:%02d", $h, $m));
+    }
+
+    readingsBulkUpdate($hash, "Strom", $status->{amp})
+        if defined $status->{amp};
+
+    if (defined $status->{lmo}) {
+        my %mode_map = (3 => 'Default', 4 => 'Eco', 5 => 'NextTrip');
+        my $mode_value = int($status->{lmo});
+        readingsBulkUpdate(
+            $hash, "Modus", $mode_map{$mode_value} // $status->{lmo});
+    }
+}
+
+sub Wattpilot_HandleCarTransition($$) {
+    my ($hash, $previous_car_state) = @_;
     my $is_charging = ($hash->{helper}{car_state} // 0) == 2;
-    my $car_transitioned_to_idle =
+    my $transitioned_from_charging =
         defined($previous_car_state)
         && $previous_car_state == 2
         && defined($hash->{helper}{car_state})
         && $hash->{helper}{car_state} != 2;
+
     if ($is_charging) {
         $hash->{helper}{idleRefreshAttempted} = 0;
         Wattpilot_StopIdleRefresh($hash);
-    } elsif ($car_transitioned_to_idle) {
+    } elsif ($transitioned_from_charging) {
         Wattpilot_StartIdleRefreshWindow($hash);
     }
-    
-    # Force state (frc): compatibility labels Start/Stop plus explicit Neutral.
-    if (defined $status->{frc} && Wattpilot_IsInteger($status->{frc})) {
-        my $frc_val = $status->{frc};
-        my %frc_map = (0 => 'Neutral', 1 => 'Stop', 2 => 'Start');
-        my $state = (defined($frc_val) && !ref($frc_val) && $frc_val =~ /^-?\d+$/
-            && exists $frc_map{int($frc_val)})
-          ? $frc_map{int($frc_val)}
-          : 'Unknown(' . $frc_val . ')';
-        readingsBulkUpdate($hash, "Laden_starten", $state);
-    }
-    
-    # Nächste Fahrt Zeit (ftt)
-    if (defined $status->{ftt} && Wattpilot_IsInteger($status->{ftt})) {
-        # Sekunden ab Mitternacht in hh:mm umrechnen
-        my $secs = $status->{ftt};
-        my $h = int($secs / 3600);
-        my $m = int(($secs % 3600) / 60);
-        readingsBulkUpdate($hash, "Zeit_NextTrip", sprintf("%02d:%02d", $h, $m));
-    }
-    
-    # Stromstärke (amp) - Sollte immer sofort aktualisiert werden
-    if (defined $status->{amp} && Wattpilot_IsInteger($status->{amp})) {
-        readingsBulkUpdate($hash, "Strom", $status->{amp});
-    }
-	
-	if (defined $status->{lmo} && Wattpilot_IsInteger($status->{lmo})) {
-    my %mode_rev = (
-        3 => 'Default',
-        4 => 'Eco',
-        5 => 'NextTrip',
-    );
+    return $is_charging;
+}
 
-    my $mode_num  = $status->{lmo};
-    my $mode_text = $mode_rev{$mode_num} // $mode_num;
-
-    readingsBulkUpdate($hash, "Modus", $mode_text);
-	}
-    
-    # --- RATENLIMITIERTE UPDATES (Hochfrequent) ---
-    # Nur wenn NICHT unterdrückt UND (Ladung aktiv ODER update_while_idle gesetzt)
-    
+sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
+    my ($hash, $status, $message_type, $now) = @_;
+    my $name = $hash->{NAME};
+    my $has_valid_nrg = ref($status->{nrg}) eq 'ARRAY'
+        && @{$status->{nrg}} >= 12;
+    my $interval = AttrVal($name, "interval", 0);
+    my $last_update = $hash->{LAST_UPDATE} // 0;
+    my $suppress_electrical =
+        $interval > 0 && ($now - $last_update < $interval);
+    my $is_charging = ($hash->{helper}{car_state} // 0) == 2;
     my $update_while_idle = AttrVal($name, "update_while_idle", 0);
     my $idle_bypass = ($hash->{helper}{idleRefreshPending}
-        || $hash->{helper}{idleRefreshAwaitingReconnectNrg}) && $has_valid_nrg ? 1 : 0;
-    
-    my $process_nrg = 0;
+        || $hash->{helper}{idleRefreshAwaitingReconnectNrg})
+        && $has_valid_nrg;
+
+    my $process_electrical = 0;
     if ($idle_bypass) {
-        $process_nrg = 1;
+        $process_electrical = 1;
         Wattpilot_StopIdleRefresh($hash);
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
-    } elsif (!$suppress_spammy) {
-        if ($is_charging || $update_while_idle) {
-             $process_nrg = 1;
-        }
+    } elsif (!$suppress_electrical
+        && ($is_charging || $update_while_idle)) {
+        $process_electrical = 1;
     }
+
     if ($hash->{helper}{idleRefreshAwaitingReconnectNrg}
         && !$has_valid_nrg
-        && ($hash->{helper}{statusMessageType} // '') eq 'fullStatus'
+        && $message_type eq 'fullStatus'
         && !$status->{partial}) {
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     }
-    $hash->{LAST_UPDATE} = $now if $process_nrg;
-    
-    if ($process_nrg) {
-        
-        # Energie Gesamt (eto)
-        if (defined $status->{eto} && Wattpilot_IsNumber($status->{eto})) {
-             # Rundung auf 2 Nachkommastellen, Umrechnung Wh -> kWh wenn nötig (Hier Annahme: Rohwert durch 1000)
-             readingsBulkUpdate($hash, "EnergyTotal", sprintf("%.2f", $status->{eto} / 1000));
-        }
 
-        # Energie seit Anstecken (wh)
-        if (defined $status->{wh} && Wattpilot_IsNumber($status->{wh})) {
-             readingsBulkUpdate($hash, "Energie_seit_Anstecken", sprintf("%.2f", $status->{wh}));
-        }
-        
-        # Energie Details (nrg Array)
-        if (ref($status->{nrg}) eq 'ARRAY') {
-            my @nrg = @{$status->{nrg}};
-            if (@nrg > 11) {
-                readingsBulkUpdate($hash, "Voltage_L1", sprintf("%.2f", $nrg[0]));
-                readingsBulkUpdate($hash, "Voltage_L2", sprintf("%.2f", $nrg[1]));
-                readingsBulkUpdate($hash, "Voltage_L3", sprintf("%.2f", $nrg[2]));
-                readingsBulkUpdate($hash, "Current_L1", sprintf("%.2f", $nrg[4]));
-                readingsBulkUpdate($hash, "Current_L2", sprintf("%.2f", $nrg[5]));
-                readingsBulkUpdate($hash, "Current_L3", sprintf("%.2f", $nrg[6]));
-                readingsBulkUpdate($hash, "Power_L1", sprintf("%.2f", $nrg[7]));
-                readingsBulkUpdate($hash, "Power_L2", sprintf("%.2f", $nrg[8]));
-                readingsBulkUpdate($hash, "Power_L3", sprintf("%.2f", $nrg[9]));
-                readingsBulkUpdate($hash, "power", sprintf("%.2f", $nrg[11])); # Gesamtleistung
-            }
-        }
+    $hash->{LAST_UPDATE} = $now if $process_electrical;
+    return $process_electrical;
+}
+
+sub Wattpilot_UpdateEnergyReadings($$) {
+    my ($hash, $status) = @_;
+    readingsBulkUpdate(
+        $hash, "EnergyTotal", sprintf("%.2f", $status->{eto} / 1000))
+        if defined $status->{eto};
+    readingsBulkUpdate(
+        $hash, "Energie_seit_Anstecken", sprintf("%.2f", $status->{wh}))
+        if defined $status->{wh};
+}
+
+sub Wattpilot_UpdateNrgReadings($$) {
+    my ($hash, $status) = @_;
+    return if ref($status->{nrg}) ne 'ARRAY';
+    my @nrg = @{$status->{nrg}};
+    return if @nrg <= 11;
+
+    readingsBulkUpdate($hash, "Voltage_L1", sprintf("%.2f", $nrg[0]));
+    readingsBulkUpdate($hash, "Voltage_L2", sprintf("%.2f", $nrg[1]));
+    readingsBulkUpdate($hash, "Voltage_L3", sprintf("%.2f", $nrg[2]));
+    readingsBulkUpdate($hash, "Current_L1", sprintf("%.2f", $nrg[4]));
+    readingsBulkUpdate($hash, "Current_L2", sprintf("%.2f", $nrg[5]));
+    readingsBulkUpdate($hash, "Current_L3", sprintf("%.2f", $nrg[6]));
+    readingsBulkUpdate($hash, "Power_L1", sprintf("%.2f", $nrg[7]));
+    readingsBulkUpdate($hash, "Power_L2", sprintf("%.2f", $nrg[8]));
+    readingsBulkUpdate($hash, "Power_L3", sprintf("%.2f", $nrg[9]));
+    readingsBulkUpdate($hash, "power", sprintf("%.2f", $nrg[11]));
+}
+
+sub Wattpilot_UpdateReadings($$;$) {
+    my ($hash, $status, $message_type) = @_;
+    return if ref($status) ne 'HASH';
+    $message_type //= 'deltaStatus';
+
+    my $previous_car_state = $hash->{helper}{car_state};
+    my $now = gettimeofday();
+
+    readingsBeginUpdate($hash);
+    Wattpilot_UpdateImmediateReadings($hash, $status);
+    Wattpilot_HandleCarTransition($hash, $previous_car_state);
+    if (Wattpilot_ShouldProcessElectricalReadings(
+            $hash, $status, $message_type, $now)) {
+        Wattpilot_UpdateEnergyReadings($hash, $status);
+        Wattpilot_UpdateNrgReadings($hash, $status);
     }
-
     readingsEndUpdate($hash, 1);
 }
 
@@ -1270,7 +1265,8 @@ sub Wattpilot_HandleResponse($$) {
     }
 
     if ($json->{success}) {
-        Wattpilot_UpdateReadings($hash, $json->{status}) if ref($json->{status}) eq 'HASH';
+        Wattpilot_UpdateReadings($hash, $json->{status}, 'response')
+            if ref($json->{status}) eq 'HASH';
         Wattpilot_SetCommandReadings($hash, $request_id, 'success', 'none');
         return;
     }
