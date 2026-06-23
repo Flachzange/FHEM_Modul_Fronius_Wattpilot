@@ -3,13 +3,13 @@ package DevIo;
 use strict;
 use warnings;
 
-our $FHEM_SOURCE_REVISION = '5354e001b55c323f457bd907434e46f284d9582c';
+our $FHEM_SOURCE_REVISION = '6a920121204142b435c7b05cd9e9e2dd754879f6';
 our $FHEM_TIMER_SOURCE_REVISION = '72a81ea2b3836953fd52afbbd3f1ced034e3baeb';
 our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
 our ($OPEN_ERROR, $OPEN_MODE);
-our (@LOGS, @WRITES, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @RENAMES, @IGNORED_RENAME_REPLIES);
+our (@LOGS, @WRITES, @READS, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @RENAMES, @IGNORED_RENAME_REPLIES);
 
 sub reset_test_state {
     %KEY_VALUES = ();
@@ -23,6 +23,7 @@ sub reset_test_state {
     $OPEN_MODE = 'success';
     @LOGS = ();
     @WRITES = ();
+    @READS = ();
     @OPENS = ();
     @OPEN_CALLBACKS = ();
     @TRIGGERS = ();
@@ -135,7 +136,19 @@ sub DevIo_OpenDev {
     $callback->($hash, undef) if $callback;
     return;
 }
-sub DevIo_SimpleRead { return undef }
+# DevIo_DecodeWS at the pinned revision owns raw-frame buffering in .WSBUF and
+# DevIo_SimpleRead returns decoded payload bytes, possibly concatenated from
+# complete frames. FIN is logged but not used to accumulate a logical message,
+# so tests may queue JSON continuations across decoded return values here.
+sub DevIo_SimpleRead {
+    my $value = shift @READS;
+    if (!defined $value) {
+        DevIo_CloseDev($_[0]);
+        readingsSingleUpdate($_[0], 'state', 'disconnected', 1);
+        push @TRIGGERS, 'DISCONNECTED';
+    }
+    return $value;
+}
 sub DevIo_SimpleWrite {
     my ($hash, $msg, $type, $addnl) = @_;
     my $shown = $type ? $msg : unpack('H*', $msg);

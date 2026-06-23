@@ -4,11 +4,14 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
-### Dokumentation und Tests
+## [v1.5.0] - 2026-06-22
 
-- Die bereits vorhandene Kompatibilität zu den ursprünglichen Wattpilot Home/Go 11 J und 22 J 2.0 wird als Legacy-Protokoll-2-Vertrag dokumentiert und durch synthetische Regressionstests für PBKDF2 ohne angekündigtes Hashverfahren, partielle `fullStatus`-Nachrichten, 12-elementige `nrg`-Daten und gesicherte Befehle geschützt.
-- Issue #10 darf die fehlende `authRequired.hash`-Angabe des belegten Legacy-Protokoll-2-Ablaufs nicht als unbekanntes Verfahren ablehnen. Unbekannte explizite Hashverfahren bleiben davon unberührt und werden erst in #10 gehärtet.
-- Das Laufzeitverhalten und die Modulversion bleiben unverändert; dieser Stand macht die vorhandene Kompatibilität reproduzierbar prüfbar.
+### Sicherheit und Robustheit
+
+- JSON-Rückgaben werden bis insgesamt 1 MiB und höchstens 256 verkettete Dokumente strukturell und atomar verarbeitet. Mehrere vollständige Objekte sind zulässig; syntaktisch unvollständige Top-Level-Objekte werden in einem eigenen begrenzten JSON-Fortsetzungspuffer gehalten, während fehlerhafte, übergroße sowie skalare oder Array-Top-Level-Werte sicher abgewiesen werden. Das Modul verlässt sich für rohe WebSocket-Frame-Pufferung auf DevIos `.WSBUF` und führt keinen zweiten Rohframe-Puffer.
+- Der Nachrichtentyp muss ein echter JSON-String sein; Statusobjekte, bekannte skalare Felder und die ersten zwölf `nrg`-Positionen werden vor der Verwendung validiert. Ungültige Felder verändern keine bestehenden Readings; ausgelassene `deltaStatus`-Felder bleiben unverändert. Unbekannte Nachrichtentypen und Zusatzfelder bleiben nicht fatal und werden normal nur redigiert protokolliert.
+- `token3` verwendet 16 Bytes aus `Crypt::URandom`. Unbekannte ausdrücklich angekündigte Hashverfahren werden abgewiesen; der belegte Legacy-Fall `devicetype=wattpilot`, Protokoll 2, ohne `authRequired.hash` bleibt PBKDF2-kompatibel. Fehler bei der Signaturschlüssel-Speicherung brechen die Authentifizierung ab, und temporärer Auth-Zustand wird auf allen Disconnect-, Disable-, Passwort-, Fehler-, Undefine-, Delete- und Reconnect-Pfaden sowie beim Ändern oder Löschen von `authHash` bereinigt. Bei aktiviertem Gerät und lesbarem Passwort wird anschließend genau eine frische Anmeldung geplant; andernfalls bleibt der zutreffende Fehler- oder Disabled-Zustand erhalten.
+- Gesicherte Nachrichten werden kanonisch serialisiert und behalten numerische innere Request-IDs, `sm`-Korrelation und HMAC-Vertrag. Deterministische synthetische PBKDF2-, bcrypt-, Auth-Antwort-, JSON- und HMAC-Vektoren sowie adversariale Parser- und Lifecycle-Tests schützen Legacy-Protokoll 2 und Flex.
 
 ## [v1.4.0] - 2026-06-22
 

@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **1.4.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Aktuelle Modulversion: **1.5.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## 1. Voraussetzungen (System & Perl Module)
 
@@ -12,6 +12,7 @@ Damit das Modul funktioniert, müssen auf dem Server (Raspberry Pi, PC, etc.), a
 
 * `JSON`
 * `Crypt::PBKDF2`
+* `Crypt::URandom`
 * `Crypt::Bcrypt`
 * `Digest::SHA`
 * `MIME::Base64`
@@ -25,11 +26,11 @@ sudo apt-get update
 sudo apt-get install libjson-perl libdigest-sha-perl libmime-base64-perl
 ```
 
-Für `Crypt::PBKDF2` und `Crypt::Bcrypt` (oft nicht als apt-Paket verfügbar) nutzen Sie am besten cpanminus:
+Für `Crypt::PBKDF2`, `Crypt::URandom` und `Crypt::Bcrypt` (oft nicht als apt-Paket verfügbar) nutzen Sie am besten cpanminus:
 
 ```bash
 sudo apt-get install cpanminus
-sudo cpanm Crypt::PBKDF2 Crypt::Bcrypt
+sudo cpanm Crypt::PBKDF2 Crypt::URandom Crypt::Bcrypt
 ```
 
 ## 2. Installation des Moduls
@@ -173,13 +174,15 @@ Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden auss
 
 Das Modul verwendet für ausgehende JSON-Nachrichten einen zentralen Schreibpfad. Dieser unterdrückt den DevIo-eigenen Level-5-Payload-Logeintrag nur während des synchronen Schreibaufrufs, ohne das FHEM-Attribut `verbose` dauerhaft oder global zu verändern. `DevIo_SimpleWrite(..., 2)` erhält dabei ungepackten Text; den WebSocket-Opcode bestimmt DevIo anhand seiner Verbindung und von `$hash->{binary}`. Ein vollständiger Klartext-Logeintrag aus dem Wattpilot-Modul entsteht ausschließlich über den oben beschriebenen Raw-Modus.
 
-Technische Grenze: In der geprüften FHEM-Revision `5354e001b55c323f457bd907434e46f284d9582c` maskiert DevIo `privacy=1` nur die initiale Öffnungszeile. Für WebSockets erzeugt `DevIo_OpenDev` intern einen neuen HttpUtils-Hash ohne `hideurl` und ohne übernommenes `devioLoglevel`; HttpUtils kann URL, DNS/IP, Timeout- und Verbindungsfehler auf Level 4 oder 5 protokollieren. Wattpilot bewahrt die korrekte DevIo-Bedeutung von Initialverbindung (`reopen=0`) und Reconnect (`reopen=1`) und redigiert seine eigenen Meldungen, kann diese transitiven Core-Logs über die öffentliche DevIo-Schnittstelle aber nicht zuverlässig verhindern. Eine belastbare Vollunterdrückung erfordert eine FHEM-Core-Erweiterung, die `privacy` an HttpUtils als `hideurl` und ein geeignetes Log-/Fehler-Redaktionsverhalten weiterreicht. Bis dahin dürfen Logs bei hohem `verbose` nicht als endpointfrei betrachtet werden und müssen entsprechend geschützt und vor Weitergabe bereinigt werden.
+Technische Grenze: In der geprüften FHEM-Revision `6a920121204142b435c7b05cd9e9e2dd754879f6` maskiert DevIo `privacy=1` nur die initiale Öffnungszeile. Für WebSockets erzeugt `DevIo_OpenDev` intern einen neuen HttpUtils-Hash ohne `hideurl` und ohne übernommenes `devioLoglevel`; HttpUtils kann URL, DNS/IP, Timeout- und Verbindungsfehler auf Level 4 oder 5 protokollieren. Wattpilot bewahrt die korrekte DevIo-Bedeutung von Initialverbindung (`reopen=0`) und Reconnect (`reopen=1`) und redigiert seine eigenen Meldungen, kann diese transitiven Core-Logs über die öffentliche DevIo-Schnittstelle aber nicht zuverlässig verhindern. Eine belastbare Vollunterdrückung erfordert eine FHEM-Core-Erweiterung, die `privacy` an HttpUtils als `hideurl` und ein geeignetes Log-/Fehler-Redaktionsverhalten weiterreicht. Bis dahin dürfen Logs bei hohem `verbose` nicht als endpointfrei betrachtet werden und müssen entsprechend geschützt und vor Weitergabe bereinigt werden.
+
+`DevIo_DecodeWS` puffert auf dieser Revision unvollständige rohe WebSocket-Frames selbst in `.WSBUF`, wertet das `FIN`-Bit aber nicht als logische Nachrichtenbegrenzung aus. Wattpilot führt deshalb keinen zweiten Rohframe-Puffer, sondern nur einen separaten, auf insgesamt 1 MiB begrenzten JSON-Fortsetzungspuffer. Es verarbeitet mehrere vollständige, direkt verkettete JSON-Werte strukturell, wartet bei einem syntaktisch unvollständigen Top-Level-Objekt auf die nächste decodierte Nutzlast und lehnt fehlerhafte oder übergroße Folgen atomar ab. Statusnachrichten benötigen ein Objekt; bekannte skalare Felder und die ersten zwölf `nrg`-Elemente werden vor der Verwendung typgeprüft. Ausgelassene `deltaStatus`-Felder bleiben unverändert.
 
 ### `authHash` (auto, pbkdf2, bcrypt)
 
 Wählt das Verfahren für die Passwort-Verschlüsselung.
 
-* `auto` (Standard): Wählt automatisch das vom Gerät geforderte Verfahren.
+* `auto` (Standard): Verwendet ausschließlich ausdrücklich angekündigtes `pbkdf2` oder `bcrypt`. Beim belegten Legacy-Profil `devicetype=wattpilot`, Protokoll 2, bleibt ein fehlendes `authRequired.hash` kompatibel und wählt PBKDF2. Ein ausdrücklich unbekanntes Verfahren oder ein fehlendes Verfahren außerhalb dieses Profils wird abgelehnt.
 * `pbkdf2`: Erzwingt PBKDF2 (ältere Modelle).
 * `bcrypt`: Erzwingt bcrypt (neuere Wattpilot Flex Modelle).
 

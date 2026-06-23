@@ -115,7 +115,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 - Direction: device → client in the historical compilation.
 - Candidate fields: `type`, `requestId`, `success`, and `status`.
 - Example: `{"type":"response","requestId":"1","success":true,"status":{"amp":16}}`
-- Evidence: pinned Wattpilot-specific third-party implementation at commit `4712ba3b8409fda55303870c047038b1b221d7ff`; not observed in the accepted Flex capture and not official Fronius documentation. Version 1.4.0 correlates numeric request IDs and `sm`-suffixed IDs, treats returned `status` as a partial update, and reports failures without copying the device message into normal logs/readings.
+- Evidence: pinned Wattpilot-specific third-party implementation at commit `4712ba3b8409fda55303870c047038b1b221d7ff`; not observed in the accepted Flex capture and not official Fronius documentation. Version 1.5.0 correlates numeric request IDs and `sm`-suffixed IDs, validates a successful response status object, treats returned `status` as a partial update, and reports failures without copying the device message into normal logs/readings.
 - Open questions: complete Flex 43.4 schema, device-side timeout, error-code fields, and whether status is always returned.
 
 ## Observed arrays
@@ -208,10 +208,10 @@ The current columns describe root `72_Wattpilot.pm` at the branch baseline. Plan
 | `nrg[4..6]` | inferred phase currents | `Current_L1..3` | `currentL1..3` | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
 | `nrg[7..9]` | inferred phase powers | `Power_L1..3` | `powerL1..3` | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
 | `nrg[11]` | inferred total power | `power` | not specified in Issue #13 comment | formats 2 decimals; rate-limited and charging/idle gated | current implementation inference |
-| `authRequired.hash` / status `authhash` | authentication mode candidate | `authHashMode` plus `authHash` attribute | not specified | auto chooses bcrypt only for challenge `hash:"bcrypt"`, else PBKDF2; status `authhash` is not consumed | current implementation plus separate observed status value; equivalence unknown |
+| `authRequired.hash` / status `authhash` | authentication mode candidate | `authHashMode` plus `authHash` attribute | not specified | auto accepts announced `bcrypt` or `pbkdf2`; missing hash selects PBKDF2 only for the evidenced legacy `wattpilot` protocol-2 profile; unknown modes are rejected; status `authhash` is not consumed | current implementation plus separate observed status value; equivalence unknown |
 | outbound `setValue` in `securedMsg` | authenticated command envelope | internal only | internal only | numeric request ID, JSON text, HMAC-SHA256, outer request ID with `sm` suffix | current implementation; protocol acceptance unverified |
 
-The current module applies `interval` only to `eto`, `wh`, and `nrg`-derived readings. They update only after the interval and while the cached `car` state is Charging, unless `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, and `lmo` are updated immediately when present. Missing `deltaStatus` keys are untouched.
+The current module applies `interval` only to `eto`, `wh`, and `nrg`-derived readings. They update only after the interval and while the cached `car` state is Charging, unless `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, and `lmo` are updated immediately when present and valid. Known scalar values and the first twelve `nrg` positions are type-checked before use. Missing `deltaStatus` keys are untouched.
 
 ## Complete observed status-key reference
 

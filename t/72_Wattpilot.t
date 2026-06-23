@@ -619,7 +619,7 @@ main::Wattpilot_Ready($hash);
 ok(!scalar(grep { $_ eq 'DISCONNECTED' } @DevIo::TRIGGERS), 'failed reconnect does not forge an initial DISCONNECTED event');
 
 DevIo::reset_test_state();
-my $invalid = '{"token":"TOKEN-IN-INVALID-JSON"';
+my $invalid = '{"token":"TOKEN-IN-INVALID-JSON",}';
 main::Wattpilot_Parse($hash, $invalid);
 unlike(log_text(), qr/TOKEN-IN-INVALID-JSON|\Q$invalid\E/, 'JSON errors suppress the untrusted payload');
 
