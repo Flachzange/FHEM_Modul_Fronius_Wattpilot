@@ -48,6 +48,16 @@ sub timer_count {
     } @DevIo::ACTIVE_TIMERS;
 }
 
+sub stable_password_key {
+    my ($hash) = @_;
+    return 'Wattpilot_' . $hash->{FUUID} . '_password';
+}
+
+sub set_stable_password {
+    my ($hash, $password) = @_;
+    $DevIo::KEY_VALUES{stable_password_key($hash)} = $password // 'synthetic-password';
+}
+
 sub due_in {
     my ($seconds) = @_;
     $DevIo::NOW += $seconds;
@@ -276,6 +286,7 @@ is(timer_count('lifecycle_timeout'), 0, 'old DevIo callback after shutdown arms 
 
 $hash = fresh_device();
 $DevIo::OPEN_MODE = 'deferred';
+set_stable_password($hash);
 main::Wattpilot_Connect($hash);
 my $old_key = $hash->{NAME} . '.' . $hash->{DeviceName};
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
@@ -286,6 +297,7 @@ ok(!exists $DevIo::SELECTLIST{$old_key}, 'deferred open completing after rename 
 is(timer_count('connect'), 1, 'rename keeps exactly one controlled reconnect owner');
 
 $hash = fresh_device();
+set_stable_password($hash);
 main::Wattpilot_ScheduleConnect($hash, 10);
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
 is(timer_count('connect'), 1, 'rename replaces a pending connect timer under the new name');
@@ -293,18 +305,49 @@ is($DevIo::ACTIVE_TIMERS[0][2]{name}, 'renamedLifeWallbox',
     'rename timer context uses the new name');
 
 $hash = fresh_device();
+set_stable_password($hash);
 main::Wattpilot_Connect($hash);
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
 is(timer_count('lifecycle_timeout'), 0, 'rename cancels an auth lifecycle timeout');
 is(timer_count('connect'), 1, 'rename restarts lifecycle after auth timeout cancellation');
 
 $hash = fresh_device();
+set_stable_password($hash);
 $hash->{helper}{authenticated} = 1;
 $hash->{helper}{pendingRequests}{1} = { sentAt => $DevIo::NOW };
 main::Wattpilot_ScheduleRequestTimeout($hash);
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
 is(timer_count('command_timeout'), 0, 'rename cancels command timeout context');
 is(timer_count('connect'), 1, 'rename restarts lifecycle after command timeout cancellation');
+
+$hash = fresh_device();
+$DevIo::KEY_VALUES{'Wattpilot_lifeWallbox_password'} = 'legacy-password';
+$DevIo::SET_KEY_ERRORS{stable_password_key($hash)} = 'synthetic write failure';
+$DevIo::OPEN_MODE = 'deferred';
+main::Wattpilot_Connect($hash);
+DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
+is($hash->{STATE}, 'credential error',
+    'rename migration failure leaves the device in credential error');
+is(timer_count('connect'), 0,
+    'rename migration failure schedules no immediate reconnect');
+DevIo::complete_deferred_open(0);
+is(timer_count('connect'), 0,
+    'stale deferred open after rename migration failure schedules no delayed reconnect');
+
+$hash = fresh_device();
+DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
+is($hash->{STATE}, 'password missing',
+    'active rename without a readable password is fail-closed');
+is(timer_count('connect'), 0,
+    'active rename without password schedules no reconnect');
+
+$hash = fresh_device();
+$DevIo::GET_KEY_ERRORS{stable_password_key($hash)} = 'synthetic read failure';
+DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
+is($hash->{STATE}, 'credential error',
+    'active rename with credential read failure reports credential error');
+is(timer_count('connect'), 0,
+    'active rename with credential read failure schedules no reconnect');
 
 $hash = fresh_device();
 $hash->{STATE} = 'disconnected';
@@ -317,6 +360,27 @@ $DevIo::OPEN_ERROR = 'synthetic immediate connect failure';
 main::Wattpilot_Connect($hash);
 is($hash->{STATE}, 'connection failed', 'immediate DevIo open error reports connection failed');
 is(timer_count('connect'), 1, 'immediate DevIo open error schedules recovery through guarded connect');
+ok(!defined $hash->{NEXT_OPEN}, 'immediate DevIo open error has no DevIo recovery owner');
+ok(!exists $DevIo::READYFNLIST{$hash->{NAME}},
+    'immediate DevIo open error leaves no readyfnlist owner');
+
+$hash = fresh_device();
+$DevIo::OPEN_MODE = 'async_error';
+main::Wattpilot_Connect($hash);
+is($hash->{STATE}, 'connection failed', 'async DevIo open error reports connection failed');
+is(timer_count('connect'), 0, 'async DevIo open error keeps recovery owned by DevIo');
+ok(defined $hash->{NEXT_OPEN}, 'async DevIo open error sets NEXT_OPEN');
+ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash,
+    'async DevIo open error registers readyfnlist owner');
+
+$hash = fresh_device();
+$DevIo::OPEN_MODE = 'timeout';
+main::Wattpilot_Connect($hash);
+is($hash->{STATE}, 'connection failed', 'DevIo open timeout reports connection failed');
+is(timer_count('connect'), 0, 'DevIo open timeout keeps recovery owned by DevIo');
+ok(defined $hash->{NEXT_OPEN}, 'DevIo open timeout sets NEXT_OPEN');
+ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash,
+    'DevIo open timeout registers readyfnlist owner');
 
 $hash = fresh_device();
 $hash->{TEST_OPEN} = 1;

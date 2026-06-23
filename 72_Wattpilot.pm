@@ -157,11 +157,18 @@ sub Wattpilot_CloseDevIoForContext($;$) {
     my $close_name = ref($ctx) eq 'HASH' && defined($ctx->{devioName})
         ? $ctx->{devioName}
         : $hash->{NAME};
-    if (defined($close_name) && $close_name ne ($hash->{NAME} // '')) {
+    my $close_device = ref($ctx) eq 'HASH' && defined($ctx->{devioDevice})
+        ? $ctx->{devioDevice}
+        : $hash->{DeviceName};
+    if ((defined($close_name) && $close_name ne ($hash->{NAME} // ''))
+        || (defined($close_device) && $close_device ne ($hash->{DeviceName} // ''))) {
         my $current_name = $hash->{NAME};
+        my $current_device = $hash->{DeviceName};
         $hash->{NAME} = $close_name;
+        $hash->{DeviceName} = $close_device;
         DevIo_CloseDev($hash);
         $hash->{NAME} = $current_name;
+        $hash->{DeviceName} = $current_device;
     } else {
         DevIo_CloseDev($hash);
     }
@@ -303,24 +310,41 @@ sub Wattpilot_Rename($$) {
     return undef if !defined $hash;
 
     my $was_active = Wattpilot_IsRuntimeActive($hash);
+    my $open_ctx = $hash->{helper}{openInFlight};
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
     Wattpilot_ClearConnectionState($hash);
-    if ($hash->{helper}{openInFlight}) {
-        $hash->{helper}{pendingReconnectAfterOpen} = 1 if $was_active;
-    }
     Wattpilot_CloseDevIoForContext($hash, {
         devioName => $old_name,
-        devioDevice => $hash->{DeviceName},
+        devioDevice => ref($open_ctx) eq 'HASH'
+            ? ($open_ctx->{devioDevice} // $hash->{DeviceName})
+            : $hash->{DeviceName},
     });
 
     delete $modules{Wattpilot}{defptr}{$old_name};
     $modules{Wattpilot}{defptr}{$new_name} = $hash;
     my $migration_error = Wattpilot_MigrateLegacySecrets($hash, $old_name);
-    readingsSingleUpdate($hash, "state", "credential error", 1) if defined $migration_error;
-    if (!defined($migration_error) && $was_active) {
-        readingsSingleUpdate($hash, "state", "disconnected", 1);
-        Wattpilot_ScheduleConnect($hash, 1);
+    if (defined $migration_error) {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        readingsSingleUpdate($hash, "state", "credential error", 1);
+        return undef;
+    }
+    my $password_result = Wattpilot_GetPassword($hash);
+    if ($password_result->{status} eq "error") {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        readingsSingleUpdate($hash, "state", "credential error", 1);
+    } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
+        readingsSingleUpdate($hash, "state", "disconnected", 1) if $was_active;
+        if ($was_active) {
+            if ($hash->{helper}{openInFlight}) {
+                $hash->{helper}{pendingReconnectAfterOpen} = 1;
+            } else {
+                Wattpilot_ScheduleConnect($hash, 1);
+            }
+        }
+    } else {
+        delete $hash->{helper}{pendingReconnectAfterOpen};
+        readingsSingleUpdate($hash, "state", "password missing", 1);
     }
     return undef; # CommandRename ignores RenameFn replies in the audited FHEM revision.
 }
@@ -380,7 +404,7 @@ sub Wattpilot_StartOpen($$) {
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
             readingsSingleUpdate($hash, "state", "connection failed", 1);
-            Wattpilot_ScheduleConnect($hash, 60);
+            Wattpilot_ScheduleConnect($hash, 60) if !defined($hash->{NEXT_OPEN});
             return;
         }
         Wattpilot_DoInit($hash);
