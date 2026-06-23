@@ -175,6 +175,7 @@ like(main::Wattpilot_Set($hash, 'testWallbox', 'chargingCurrent', 16), qr/Too ma
 is(scalar @DevIo::WRITES, 0, 'bounded bookkeeping rejects an additional frame');
 
 
+# BEGIN 2.0 negative controls for removed public names
 for my $old_command (qw(Password Laden_starten Strom Modus Zeit_NextTrip)) {
     $hash = fresh_device();
     like(main::Wattpilot_Set($hash, 'testWallbox', $old_command, 'x'),
@@ -199,5 +200,6 @@ is($hash->{STATE}, 'disconnected',
     'password command transitions directly to the truthful disconnected state');
 ok(!scalar(grep { defined($_->[2]) && $_->[2] eq 'password stored' } @DevIo::READING_UPDATES),
     'password command emits no transient password-stored state');
+# END 2.0 negative controls for removed public names
 
 done_testing;

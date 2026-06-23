@@ -272,10 +272,8 @@ sub gettimeofday { return defined($NOW) ? $NOW : time }
 sub readingsSingleUpdate {
     push @READING_UPDATES, [@_];
     my ($hash, $reading, $value) = @_;
-    if ($reading eq 'state') {
-        $hash->{STATE} = $value;
-        $hash->{READINGS}{state}{VAL} = $value;
-    }
+    $hash->{READINGS}{$reading}{VAL} = $value;
+    $hash->{STATE} = $value if $reading eq 'state';
     return;
 }
 sub readingsBeginUpdate { return }

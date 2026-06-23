@@ -10,6 +10,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Passwortänderung und Gerätelöschung sind auf transaktionale Zwei-Schlüssel-Operationen mit vollständigem Snapshot, Rollback in umgekehrter Reihenfolge und ausdrücklicher Meldung eines unvollständigen Rollbacks reduziert.
 - Gemeinsame Session-Invalidierung und die Ermittlung des konfigurierten Runtime-Zustands wurden zentralisiert, ohne die bewährte Timer-, DevIo- und Reconnect-Eigentumslogik zu ersetzen.
 - Statusdaten werden genau einmal in einer Kopie normalisiert. Die Reading-Verarbeitung ist in unmittelbare Werte, Fahrzeugübergänge, Electrical-Gating, Energiewerte und `nrg`-Readings aufgeteilt.
+- Neue Vertragstests verlangen exakt 23 öffentliche 2.0-Readings, prüfen alle bekannten und unbekannten Enum-Abbildungen, lehnen sämtliche alten Set-Befehle ab und verhindern alte öffentliche Strings außerhalb ausdrücklich markierter Negativtests.
 - Die öffentliche 2.0-Schnittstelle ist im gemeinsamen Entwicklungsbranch auf englische `lowerCamelCase`-Readings, Set-Befehle und Zustandswerte umgestellt. Der formale Versionswechsel und die vollständige Benutzerdokumentation folgen in den nachgelagerten 2.0-Arbeitspaketen; dieser Zwischenstand darf nicht separat nach `main` gemergt werden.
 
 ## [v1.6.0] - 2026-06-23
