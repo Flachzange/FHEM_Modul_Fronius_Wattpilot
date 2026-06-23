@@ -87,11 +87,14 @@ sub Wattpilot_CurrentLifecycleGeneration($) {
     return $hash->{helper}{lifecycleGeneration};
 }
 
-sub Wattpilot_IsRuntimeActive($) {
-    my ($hash) = @_;
+sub Wattpilot_IsRuntimeActive($;$) {
+    my ($hash, $disable_override) = @_;
     return 0 if ref($hash) ne 'HASH';
     return 0 if $hash->{helper}{undefined} || $hash->{helper}{deleting} || $hash->{helper}{shuttingDown};
-    return 0 if Wattpilot_IsDisabled($hash->{NAME});
+    my $disabled = defined($disable_override)
+        ? $disable_override
+        : Wattpilot_IsDisabled($hash->{NAME});
+    return 0 if $disabled;
     return 0 if !defined($defs{$hash->{NAME}}) || $defs{$hash->{NAME}} != $hash;
     return 1;
 }
@@ -123,10 +126,10 @@ sub Wattpilot_CancelAllTimers($) {
     }
 }
 
-sub Wattpilot_ScheduleTimer($$$$;$) {
-    my ($hash, $kind, $delay, $fn, $extra) = @_;
+sub Wattpilot_ScheduleTimer($$$$;$$) {
+    my ($hash, $kind, $delay, $fn, $extra, $disable_override) = @_;
     Wattpilot_CancelTimer($hash, $kind);
-    return undef if !Wattpilot_IsRuntimeActive($hash);
+    return undef if !Wattpilot_IsRuntimeActive($hash, $disable_override);
     my $ctx = {
         hash => $hash,
         kind => $kind,
@@ -141,12 +144,12 @@ sub Wattpilot_ScheduleTimer($$$$;$) {
     return $ctx;
 }
 
-sub Wattpilot_ScheduleConnect($;$) {
-    my ($hash, $delay) = @_;
+sub Wattpilot_ScheduleConnect($;$$) {
+    my ($hash, $delay, $disable_override) = @_;
     $delay //= 1;
-    return undef if !Wattpilot_IsRuntimeActive($hash);
+    return undef if !Wattpilot_IsRuntimeActive($hash, $disable_override);
     return undef if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
-    return Wattpilot_ScheduleTimer($hash, 'connect', $delay, 'Wattpilot_Connect');
+    return Wattpilot_ScheduleTimer($hash, 'connect', $delay, 'Wattpilot_Connect', undef, $disable_override);
 }
 
 sub Wattpilot_FinishTimer($$) {
@@ -283,10 +286,23 @@ sub Wattpilot_Rename($$) {
     my $hash = $defs{$new_name};
     return undef if !defined $hash;
 
+    my $was_active = Wattpilot_IsRuntimeActive($hash);
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
+    Wattpilot_ClearConnectionState($hash);
+    if ($hash->{helper}{openInFlight}) {
+        $hash->{helper}{pendingReconnectAfterOpen} = 1 if $was_active;
+    }
+    DevIo_CloseDev($hash);
+
     delete $modules{Wattpilot}{defptr}{$old_name};
     $modules{Wattpilot}{defptr}{$new_name} = $hash;
     my $migration_error = Wattpilot_MigrateLegacySecrets($hash, $old_name);
     readingsSingleUpdate($hash, "state", "credential error", 1) if defined $migration_error;
+    if (!defined($migration_error) && $was_active) {
+        readingsSingleUpdate($hash, "state", "disconnected", 1);
+        Wattpilot_ScheduleConnect($hash, 1);
+    }
     return undef; # CommandRename ignores RenameFn replies in the audited FHEM revision.
 }
 
@@ -300,9 +316,14 @@ sub Wattpilot_Connect($) {
         Wattpilot_FinishTimer($hash, $ctx);
     }
 
-    return if !Wattpilot_IsRuntimeActive($hash);
     return if !$ctx && defined($hash->{helper}{timers}{connect});
-    return if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
+    return Wattpilot_StartOpen($hash, 0);
+}
+
+sub Wattpilot_StartOpen($$) {
+    my ($hash, $reopen) = @_;
+    return 0 if !Wattpilot_IsRuntimeActive($hash);
+    return 0 if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
     Wattpilot_ClearConnectionState($hash);
     
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
@@ -316,16 +337,29 @@ sub Wattpilot_Connect($) {
     $hash->{helper}{openInFlight} = $open_ctx;
     
     # WebSocket in DevIo benötigt einen Callback für den asynchronen Verbindungsaufbau
-    Wattpilot_OpenDev($hash, 0, sub {
+    return Wattpilot_OpenDev($hash, $reopen, sub {
         my ($hash, $error) = @_;
-        return if !defined($hash->{helper}{openInFlight})
-            || $hash->{helper}{openInFlight} != $open_ctx;
+        my $is_owner = defined($hash->{helper}{openInFlight})
+            && $hash->{helper}{openInFlight} == $open_ctx
+            && ($open_ctx->{name} // '') eq ($hash->{NAME} // '')
+            && Wattpilot_CurrentLifecycleGeneration($hash) == $generation
+            && Wattpilot_IsRuntimeActive($hash);
+        if (!$is_owner) {
+            DevIo_CloseDev($hash) if !$error && DevIo_IsOpen($hash);
+            if (defined($hash->{helper}{openInFlight})
+                && $hash->{helper}{openInFlight} == $open_ctx) {
+                delete $hash->{helper}{openInFlight};
+            }
+            if (delete $hash->{helper}{pendingReconnectAfterOpen}) {
+                Wattpilot_ScheduleConnect($hash, 1);
+            }
+            return;
+        }
         delete $hash->{helper}{openInFlight};
-        return if !Wattpilot_IsRuntimeActive($hash);
-        return if Wattpilot_CurrentLifecycleGeneration($hash) != $generation;
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
             readingsSingleUpdate($hash, "state", "connection failed", 1);
+            Wattpilot_ScheduleConnect($hash, 60);
             return;
         }
         Wattpilot_DoInit($hash);
@@ -656,9 +690,12 @@ sub Wattpilot_NrgReadingsNeedIdleRefresh($) {
     return 0;
 }
 
-sub Wattpilot_StartIdleRefreshWindow($) {
-    my ($hash) = @_;
-    return if AttrVal($hash->{NAME}, "update_while_idle", 0) ne "1";
+sub Wattpilot_StartIdleRefreshWindow($;$) {
+    my ($hash, $update_while_idle_override) = @_;
+    my $update_while_idle = defined($update_while_idle_override)
+        ? $update_while_idle_override
+        : AttrVal($hash->{NAME}, "update_while_idle", 0);
+    return if $update_while_idle ne "1";
     return if !DevIo_IsOpen($hash);
     return if $hash->{helper}{idleRefreshAttempted};
     return if $hash->{helper}{idleRefreshPending};
@@ -674,6 +711,12 @@ sub Wattpilot_ClearIdleRefreshWindow($) {
     Wattpilot_CancelTimer($hash, 'idle_refresh');
 }
 
+sub Wattpilot_StopIdleRefresh($) {
+    my ($hash) = @_;
+    Wattpilot_ClearIdleRefreshWindow($hash);
+    delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
+}
+
 sub Wattpilot_IdleRefreshTimeout($) {
     my ($ctx) = @_;
     my $hash = $ctx->{hash};
@@ -682,6 +725,7 @@ sub Wattpilot_IdleRefreshTimeout($) {
     delete $hash->{helper}{idleRefreshPending};
     return if $hash->{helper}{idleRefreshAttempted};
     $hash->{helper}{idleRefreshAttempted} = 1;
+    $hash->{helper}{idleRefreshAwaitingReconnectNrg} = 1;
     Log3 $hash->{NAME}, 3,
         "Wattpilot ($hash->{NAME}) - idle refresh fallback closes the session once for this idle episode";
     Wattpilot_NextLifecycleGeneration($hash);
@@ -738,7 +782,7 @@ sub Wattpilot_UpdateReadings($$) {
         && $hash->{helper}{car_state} != 2;
     if ($is_charging) {
         $hash->{helper}{idleRefreshAttempted} = 0;
-        Wattpilot_ClearIdleRefreshWindow($hash);
+        Wattpilot_StopIdleRefresh($hash);
     } elsif ($car_transitioned_to_idle) {
         Wattpilot_StartIdleRefreshWindow($hash);
     }
@@ -785,17 +829,20 @@ sub Wattpilot_UpdateReadings($$) {
     # Nur wenn NICHT unterdrückt UND (Ladung aktiv ODER update_while_idle gesetzt)
     
     my $update_while_idle = AttrVal($name, "update_while_idle", 0);
-    my $idle_bypass = $hash->{helper}{idleRefreshPending} && $has_valid_nrg ? 1 : 0;
+    my $idle_bypass = ($hash->{helper}{idleRefreshPending}
+        || $hash->{helper}{idleRefreshAwaitingReconnectNrg}) && $has_valid_nrg ? 1 : 0;
     
     my $process_nrg = 0;
     if ($idle_bypass) {
         $process_nrg = 1;
-        Wattpilot_ClearIdleRefreshWindow($hash);
+        Wattpilot_StopIdleRefresh($hash);
     } elsif (!$suppress_spammy) {
         if ($is_charging || $update_while_idle) {
              $process_nrg = 1;
         }
     }
+    delete $hash->{helper}{idleRefreshAwaitingReconnectNrg}
+        if $hash->{helper}{idleRefreshAwaitingReconnectNrg} && !$has_valid_nrg;
     $hash->{LAST_UPDATE} = $now if $process_nrg;
     
     if ($process_nrg) {
@@ -1216,31 +1263,8 @@ sub Wattpilot_Ready($) {
     return 0 if ($hash->{STATE} // '') ne "disconnected"
         && ($hash->{STATE} // '') ne "connection failed";
     Wattpilot_ClearConnectionState($hash);
-    return 0 if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight}
-        || defined($hash->{helper}{timers}{connect});
-    readingsSingleUpdate($hash, "state", "connecting", 1);
-    my $generation = Wattpilot_CurrentLifecycleGeneration($hash);
-    my $open_ctx = {
-        generation => $generation,
-        name => $hash->{NAME},
-        fuuid => $hash->{FUUID},
-    };
-    $hash->{helper}{openInFlight} = $open_ctx;
-    return Wattpilot_OpenDev($hash, 1, sub {
-         my ($hash, $error) = @_;
-         return if !defined($hash->{helper}{openInFlight})
-             || $hash->{helper}{openInFlight} != $open_ctx;
-         delete $hash->{helper}{openInFlight};
-         return if !Wattpilot_IsRuntimeActive($hash);
-         return if Wattpilot_CurrentLifecycleGeneration($hash) != $generation;
-         if ($error) {
-             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket reconnect failed";
-             readingsSingleUpdate($hash, "state", "connection failed", 1);
-             return;
-         }
-         Wattpilot_DoInit($hash);
-     });
-    return 0;
+    return 0 if defined($hash->{helper}{timers}{connect});
+    return Wattpilot_StartOpen($hash, 1) ? 1 : 0;
 }
 
 sub Wattpilot_Attr(@) {
@@ -1271,7 +1295,7 @@ sub Wattpilot_Attr(@) {
 				 readingsSingleUpdate($hash, "state", "credential error", 1);
 			 } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
 				 readingsSingleUpdate($hash, "state", "disconnected", 1);
-				 Wattpilot_ScheduleConnect($hash, 1);
+				 Wattpilot_ScheduleConnect($hash, 1, 0);
 			 } else {
 				 readingsSingleUpdate($hash, "state", "password missing", 1);
 			 }
@@ -1285,20 +1309,28 @@ sub Wattpilot_Attr(@) {
         RemoveInternalTimer($hash, 'Wattpilot_Connect');
         RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
         Wattpilot_ClearConnectionState($hash);
-        delete $hash->{helper}{openInFlight};
+        my $had_open_in_flight = $hash->{helper}{openInFlight};
+        $hash->{helper}{pendingReconnectAfterOpen} = 1 if $had_open_in_flight;
         DevIo_CloseDev($hash);
+        my $hash_error = Wattpilot_InvalidateStoredPasswordHash($hash);
 
-        if (Wattpilot_IsDisabled($name)) {
+        if (defined $hash_error) {
+            readingsSingleUpdate($hash, "state", "credential error", 1);
+            delete $hash->{helper}{pendingReconnectAfterOpen};
+        } elsif (Wattpilot_IsDisabled($name)) {
             readingsSingleUpdate($hash, "state", "disabled", 1);
+            delete $hash->{helper}{pendingReconnectAfterOpen};
         } else {
             my $password_result = Wattpilot_GetPassword($hash);
             if ($password_result->{status} eq "error") {
                 readingsSingleUpdate($hash, "state", "credential error", 1);
+                delete $hash->{helper}{pendingReconnectAfterOpen};
             } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
                 readingsSingleUpdate($hash, "state", "disconnected", 1);
                 Wattpilot_ScheduleConnect($hash, 1);
             } else {
                 readingsSingleUpdate($hash, "state", "password missing", 1);
+                delete $hash->{helper}{pendingReconnectAfterOpen};
             }
         }
     }
@@ -1315,11 +1347,16 @@ sub Wattpilot_Attr(@) {
         # Hier könnte Logik stehen, falls das Intervall sofortige Aktionen erfordert
     }
     
-    if ($attrName eq "update_while_idle" && $cmd eq "set" && defined($attrVal) && $attrVal eq "1") {
-        if (($hash->{helper}{car_state} // 0) != 2
-            && !$hash->{helper}{idleRefreshAttempted}
-            && Wattpilot_NrgReadingsNeedIdleRefresh($hash)) {
-            Wattpilot_StartIdleRefreshWindow($hash);
+    if ($attrName eq "update_while_idle") {
+        my $enabled = $cmd eq "set" && defined($attrVal) && $attrVal eq "1";
+        if ($enabled) {
+            if (($hash->{helper}{car_state} // 0) != 2
+                && !$hash->{helper}{idleRefreshAttempted}
+                && Wattpilot_NrgReadingsNeedIdleRefresh($hash)) {
+                Wattpilot_StartIdleRefreshWindow($hash, 1);
+            }
+        } else {
+            Wattpilot_StopIdleRefresh($hash);
         }
     }
 
@@ -1376,6 +1413,25 @@ sub Wattpilot_SetStoredPasswordHash {
     }
 
     return 1;
+}
+
+sub Wattpilot_InvalidateStoredPasswordHash {
+    my ($hash) = @_;
+    my $name = $hash->{NAME};
+    my $key = Wattpilot_SecretKey($hash, "passwordhash");
+    my ($read_err, $old_value) = getKeyValue($key);
+    if (defined $read_err) {
+        Log3 $name, 1, "Wattpilot ($name) - failed to inspect stored password hash before authHash change";
+        return "failed to inspect stored password hash";
+    }
+    return undef if !defined $old_value;
+
+    my $delete_err = setKeyValue($key, undef);
+    if (defined $delete_err) {
+        Log3 $name, 1, "Wattpilot ($name) - failed to invalidate stored password hash";
+        return "failed to invalidate stored password hash";
+    }
+    return undef;
 }
 
 sub Wattpilot_DeleteStoredSecrets {

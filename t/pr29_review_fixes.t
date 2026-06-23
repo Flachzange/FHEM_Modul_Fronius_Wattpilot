@@ -98,6 +98,7 @@ for my $attr_command ([set => 'bcrypt', 'pbkdf2'], [del => undef, 'bcrypt']) {
     $hash->{STATE} = 'connected';
     $hash->{READINGS}{state}{VAL} = 'connected';
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'x';
+    $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'stale-signing-key';
     InternalTimer(gettimeofday()+10, 'Wattpilot_Connect', $hash, 0);
     InternalTimer(gettimeofday()+20, 'Wattpilot_RequestTimeout', $hash, 0);
 
@@ -113,6 +114,8 @@ for my $attr_command ([set => 'bcrypt', 'pbkdf2'], [del => undef, 'bcrypt']) {
         "authHash $command leaves exactly one reconnect timer");
     is(scalar @DevIo::ACTIVE_TIMERS, 1,
         "authHash $command removes stale request and reconnect timers");
+    ok(!exists $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'},
+        "authHash $command invalidates the persisted signing hash before reconnect");
     @DevIo::WRITES = ();
     like(main::Wattpilot_SendSecure($hash, 'amp', 16),
         qr/disconnected|not authenticated/,
@@ -154,5 +157,20 @@ is($hash->{STATE}, 'credential error',
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'authHash change schedules no reconnect after a credential read error');
 
+$hash = fresh_device();
+$attr{$hash->{NAME}}{authHash} = 'pbkdf2';
+seed_auth_state($hash);
+$hash->{STATE} = 'connected';
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'x';
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'stale-signing-key';
+$DevIo::SET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} =
+    'synthetic hash deletion failure';
+main::Wattpilot_Attr('set', $hash->{NAME}, 'authHash', 'bcrypt');
+is($hash->{STATE}, 'credential error',
+    'authHash change fails closed when persisted signing hash cannot be invalidated');
+is($DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'}, 'stale-signing-key',
+    'failed authHash invalidation preserves the old signing hash');
+is(scalar @DevIo::ACTIVE_TIMERS, 0,
+    'authHash invalidation failure schedules no reconnect');
 
 done_testing;

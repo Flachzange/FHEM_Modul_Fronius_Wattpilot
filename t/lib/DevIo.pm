@@ -156,6 +156,30 @@ sub DevIo_OpenDev {
     $callback->($hash, undef) if $callback;
     return;
 }
+
+sub complete_deferred_open {
+    my ($index, $error) = @_;
+    $index //= 0;
+    my $entry = $OPEN_CALLBACKS[$index];
+    die "no deferred open at index $index" if ref($entry) ne 'ARRAY' || @$entry < 4;
+    my ($reopen, undef, $callback, $hash) = @$entry;
+    my $name = $hash->{NAME};
+    my $dev = $hash->{DeviceName};
+    if (defined $error) {
+        push @TRIGGERS, 'DISCONNECTED' if !$reopen;
+        $callback->($hash, $error) if $callback;
+        return;
+    }
+
+    Log3($name, $hash->{devioLoglevel} || 1, "$dev reappeared ($name)") if $reopen;
+    $hash->{TEST_OPEN} = 1;
+    $hash->{FD} = 99;
+    delete $hash->{NEXT_OPEN};
+    delete $READYFNLIST{$name};
+    push @TRIGGERS, 'CONNECTED';
+    $callback->($hash, undef) if $callback;
+    return;
+}
 # DevIo_DecodeWS at the pinned revision owns raw-frame buffering in .WSBUF and
 # DevIo_SimpleRead returns decoded payload bytes, possibly concatenated from
 # complete frames. FIN is logged but not used to accumulate a logical message,
