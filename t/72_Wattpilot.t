@@ -451,8 +451,8 @@ for my $legacy_location (qw(current pending)) {
 
     is(main::Wattpilot_Define($device_b, "$name_b Wattpilot 192.0.2.11"), undef,
         "$legacy_location foreign hash does not fail Define");
-    is($device_b->{STATE}, 'connecting',
-        "$legacy_location foreign hash leaves B connecting from its stable password");
+    is($device_b->{STATE}, 'disconnected',
+        "$legacy_location foreign hash leaves B waiting for one scheduled connection from its stable password");
     is(scalar @DevIo::ACTIVE_TIMERS, 1,
         "$legacy_location foreign hash schedules exactly one connection timer for B");
     is($DevIo::KEY_VALUES{$legacy_hash_a}, 'legacy-hash-a',
@@ -807,7 +807,7 @@ like(log_text(), qr/WARNING.*sensitive authentication, network, device, and oper
 DevIo::reset_test_state();
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 main::Wattpilot_Attr('set', 'testWallbox', 'disable', '1');
-is(scalar @DevIo::REMOVED_TIMERS, 1, 'disable removes timers');
+is(scalar @DevIo::ACTIVE_TIMERS, 0, 'disable removes timers');
 is(scalar @DevIo::CLOSES, 1, 'disable closes DevIo');
 is($DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'}, 'synthetic-password', 'disable preserves credentials');
 

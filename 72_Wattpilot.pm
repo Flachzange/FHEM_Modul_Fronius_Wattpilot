@@ -34,8 +34,12 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '1.5.0';
+my $WATTPILOT_VERSION = '1.6.0';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
+my $WATTPILOT_AUTH_TIMEOUT = 30;
+my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
+my $WATTPILOT_TIMEOUT_RETRY_DELAY = 5;
+my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
@@ -59,15 +63,97 @@ sub Wattpilot_Initialize($) {
     $hash->{AttrFn}   = \&Wattpilot_Attr;
     $hash->{ReadFn}   = \&Wattpilot_Read;
     $hash->{ReadyFn}  = \&Wattpilot_Ready;
+    $hash->{ShutdownFn} = \&Wattpilot_Shutdown;
     
     # Attribut-Liste:
     # interval: Schieberegler von 0 bis 300, Schrittweite 5 (Sekunden)
     # update_while_idle: Boolean (0/1) um Updates auch im Leerlauf zu erzwingen
     # defaultAmp: Standard-Stromstärke (kann als Slider dargestellt werden, z.B. 6-32A)
-    $hash->{AttrList} = "debug:1,0 interval:slider,0,5,300 update_while_idle:0,1 defaultAmp:slider,6,1,32 disable:0,1 rawJsonLog:0,1 authHash:auto,pbkdf2,bcrypt " .
+    $hash->{AttrList} = "debug:1,0 interval:slider,0,5,300 update_while_idle:0,1 defaultAmp:slider,6,1,32 disable:0,1 rawJsonLog:0,1 authHash:auto,pbkdf2,bcrypt authHashCost:slider,4,1,14 " .
 	$readingFnAttributes;
 
     return FHEM::Meta::InitMod(__FILE__, $hash);
+}
+
+sub Wattpilot_NextLifecycleGeneration($) {
+    my ($hash) = @_;
+    $hash->{helper}{lifecycleGeneration} = ($hash->{helper}{lifecycleGeneration} // 0) + 1;
+    return $hash->{helper}{lifecycleGeneration};
+}
+
+sub Wattpilot_CurrentLifecycleGeneration($) {
+    my ($hash) = @_;
+    $hash->{helper}{lifecycleGeneration} //= 0;
+    return $hash->{helper}{lifecycleGeneration};
+}
+
+sub Wattpilot_IsRuntimeActive($) {
+    my ($hash) = @_;
+    return 0 if ref($hash) ne 'HASH';
+    return 0 if $hash->{helper}{undefined} || $hash->{helper}{deleting} || $hash->{helper}{shuttingDown};
+    return 0 if Wattpilot_IsDisabled($hash->{NAME});
+    return 0 if !defined($defs{$hash->{NAME}}) || $defs{$hash->{NAME}} != $hash;
+    return 1;
+}
+
+sub Wattpilot_TimerContextValid($$) {
+    my ($hash, $ctx) = @_;
+    return 0 if ref($ctx) ne 'HASH' || ref($hash) ne 'HASH';
+    my $kind = $ctx->{kind};
+    return 0 if !defined($kind);
+    return 0 if !defined($hash->{helper}{timers}{$kind});
+    return 0 if $hash->{helper}{timers}{$kind} != $ctx;
+    return 0 if ($ctx->{generation} // -1) != Wattpilot_CurrentLifecycleGeneration($hash);
+    return 0 if !defined($defs{$ctx->{name}}) || $defs{$ctx->{name}} != $hash;
+    return 0 if defined($ctx->{fuuid}) && defined($hash->{FUUID}) && $ctx->{fuuid} ne $hash->{FUUID};
+    return Wattpilot_IsRuntimeActive($hash);
+}
+
+sub Wattpilot_CancelTimer($$) {
+    my ($hash, $kind) = @_;
+    my $ctx = delete $hash->{helper}{timers}{$kind};
+    return if ref($ctx) ne 'HASH';
+    RemoveInternalTimer($ctx, $ctx->{fn});
+}
+
+sub Wattpilot_CancelAllTimers($) {
+    my ($hash) = @_;
+    for my $kind (keys %{ $hash->{helper}{timers} // {} }) {
+        Wattpilot_CancelTimer($hash, $kind);
+    }
+}
+
+sub Wattpilot_ScheduleTimer($$$$;$) {
+    my ($hash, $kind, $delay, $fn, $extra) = @_;
+    Wattpilot_CancelTimer($hash, $kind);
+    return undef if !Wattpilot_IsRuntimeActive($hash);
+    my $ctx = {
+        hash => $hash,
+        kind => $kind,
+        fn => $fn,
+        generation => Wattpilot_CurrentLifecycleGeneration($hash),
+        name => $hash->{NAME},
+        fuuid => $hash->{FUUID},
+        %{ ref($extra) eq 'HASH' ? $extra : {} },
+    };
+    $hash->{helper}{timers}{$kind} = $ctx;
+    InternalTimer(gettimeofday() + $delay, $fn, $ctx, 0);
+    return $ctx;
+}
+
+sub Wattpilot_ScheduleConnect($;$) {
+    my ($hash, $delay) = @_;
+    $delay //= 1;
+    return undef if !Wattpilot_IsRuntimeActive($hash);
+    return undef if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
+    return Wattpilot_ScheduleTimer($hash, 'connect', $delay, 'Wattpilot_Connect');
+}
+
+sub Wattpilot_FinishTimer($$) {
+    my ($hash, $ctx) = @_;
+    delete $hash->{helper}{timers}{$ctx->{kind}}
+        if ref($ctx) eq 'HASH'
+        && ($hash->{helper}{timers}{$ctx->{kind}} // undef) == $ctx;
 }
 
 sub Wattpilot_Define($$) {
@@ -82,6 +168,11 @@ sub Wattpilot_Define($$) {
     my $ip = $a[2];
     my $serial = $a[3] if (defined $a[3]);
 	
+    delete $hash->{helper}{undefined};
+    delete $hash->{helper}{deleting};
+    delete $hash->{helper}{shuttingDown};
+    delete $hash->{helper}{timeoutRetryUsed};
+    Wattpilot_NextLifecycleGeneration($hash);
 	
     # DevIo WebSocket URL Format: ws:host:port/path
     $hash->{DeviceName} = "ws:$ip:80/ws";
@@ -107,8 +198,8 @@ sub Wattpilot_Define($$) {
 		Log3 $name, 1,
 		  "Wattpilot ($name) - optional password hash migration or cleanup deferred"
 		  if $password_hash_result->{status} eq "error";
-		readingsSingleUpdate($hash, "state", "connecting", 1);
-		InternalTimer(gettimeofday()+2, "Wattpilot_Connect", $hash, 0);
+        readingsSingleUpdate($hash, "state", "disconnected", 1);
+		Wattpilot_ScheduleConnect($hash, 2);
 	} else {
 		readingsSingleUpdate($hash, "state", "password missing", 1);
 	}
@@ -118,9 +209,13 @@ sub Wattpilot_Define($$) {
 sub Wattpilot_Undefine($$) {
     my ($hash, $name) = @_;
 
+    $hash->{helper}{undefined} = 1;
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
     Wattpilot_ClearConnectionState($hash);
-    RemoveInternalTimer($hash);
+    delete $hash->{helper}{openInFlight};
     DevIo_CloseDev($hash);
+    RemoveInternalTimer($hash);
     
     delete $modules{Wattpilot}{defptr}{$name};
     return undef;
@@ -129,9 +224,13 @@ sub Wattpilot_Undefine($$) {
 sub Wattpilot_Delete($$) {
     my ($hash, $name) = @_;
 
+    $hash->{helper}{deleting} = 1;
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
     Wattpilot_ClearConnectionState($hash);
-    RemoveInternalTimer($hash);
+    delete $hash->{helper}{openInFlight};
     DevIo_CloseDev($hash);
+    RemoveInternalTimer($hash);
     my $error = Wattpilot_DeleteStoredSecrets($hash);
     Wattpilot_RestoreAfterFailedDelete($hash, $name) if defined $error;
     return $error;
@@ -141,7 +240,12 @@ sub Wattpilot_RestoreAfterFailedDelete($$) {
     my ($hash, $name) = @_;
 
     $modules{Wattpilot}{defptr}{$name} = $hash;
-    RemoveInternalTimer($hash);
+    delete $hash->{helper}{undefined};
+    delete $hash->{helper}{deleting};
+    delete $hash->{helper}{shuttingDown};
+    delete $hash->{helper}{timeoutRetryUsed};
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
     DevIo_CloseDev($hash) if DevIo_IsOpen($hash);
 
     if (Wattpilot_IsDisabled($name)) {
@@ -155,10 +259,23 @@ sub Wattpilot_RestoreAfterFailedDelete($$) {
         readingsSingleUpdate($hash, "state", "credential error", 1);
     } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
         readingsSingleUpdate($hash, "state", "disconnected", 1);
-        InternalTimer(gettimeofday()+2, "Wattpilot_Connect", $hash, 0);
+        Wattpilot_ScheduleConnect($hash, 2);
     } else {
         readingsSingleUpdate($hash, "state", "password missing", 1);
     }
+}
+
+sub Wattpilot_Shutdown($) {
+    my ($hash) = @_;
+    $hash->{helper}{shuttingDown} = 1;
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
+    Wattpilot_ClearConnectionState($hash);
+    delete $hash->{helper}{openInFlight};
+    DevIo_CloseDev($hash);
+    readingsSingleUpdate($hash, "state", "disconnected", 1);
+    RemoveInternalTimer($hash);
+    return undef;
 }
 
 sub Wattpilot_Rename($$) {
@@ -174,19 +291,41 @@ sub Wattpilot_Rename($$) {
 }
 
 sub Wattpilot_Connect($) {
-    my ($hash) = @_;
-    
-    return if(DevIo_IsOpen($hash));
+    my ($arg) = @_;
+    my $ctx = ref($arg) eq 'HASH' && exists($arg->{hash}) ? $arg : undef;
+    my $hash = $ctx ? $ctx->{hash} : $arg;
+
+    if ($ctx) {
+        return if !Wattpilot_TimerContextValid($hash, $ctx);
+        Wattpilot_FinishTimer($hash, $ctx);
+    }
+
+    return if !Wattpilot_IsRuntimeActive($hash);
+    return if !$ctx && defined($hash->{helper}{timers}{connect});
+    return if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
     Wattpilot_ClearConnectionState($hash);
-    return if(Wattpilot_IsDisabled($hash->{NAME}));
     
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
+    readingsSingleUpdate($hash, "state", "connecting", 1);
+    my $generation = Wattpilot_CurrentLifecycleGeneration($hash);
+    my $open_ctx = {
+        generation => $generation,
+        name => $hash->{NAME},
+        fuuid => $hash->{FUUID},
+    };
+    $hash->{helper}{openInFlight} = $open_ctx;
     
     # WebSocket in DevIo benötigt einen Callback für den asynchronen Verbindungsaufbau
     Wattpilot_OpenDev($hash, 0, sub {
         my ($hash, $error) = @_;
+        return if !defined($hash->{helper}{openInFlight})
+            || $hash->{helper}{openInFlight} != $open_ctx;
+        delete $hash->{helper}{openInFlight};
+        return if !Wattpilot_IsRuntimeActive($hash);
+        return if Wattpilot_CurrentLifecycleGeneration($hash) != $generation;
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
+            readingsSingleUpdate($hash, "state", "connection failed", 1);
             return;
         }
         Wattpilot_DoInit($hash);
@@ -206,8 +345,37 @@ sub Wattpilot_OpenDev($$$) {
 
 sub Wattpilot_DoInit($) {
     my ($hash) = @_;
+    return if !Wattpilot_IsRuntimeActive($hash);
+    readingsSingleUpdate($hash, "state", "authenticating", 1);
+    Wattpilot_ScheduleTimer(
+        $hash, 'lifecycle_timeout', $WATTPILOT_AUTH_TIMEOUT,
+        'Wattpilot_LifecycleTimeout', { phase => 'auth' });
     # Hier könnten Initialisierungsbefehle gesendet werden, falls nötig
     return undef;
+}
+
+sub Wattpilot_LifecycleTimeout($) {
+    my ($ctx) = @_;
+    my $hash = $ctx->{hash};
+    return if !Wattpilot_TimerContextValid($hash, $ctx);
+    Wattpilot_FinishTimer($hash, $ctx);
+
+    my $phase = $ctx->{phase} // 'auth';
+    my $state = $phase eq 'initialization'
+        ? 'initialization_timeout'
+        : 'auth_timeout';
+    Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - $state";
+    readingsSingleUpdate($hash, "state", $state, 1);
+
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
+    Wattpilot_ClearConnectionState($hash);
+    delete $hash->{helper}{openInFlight};
+    DevIo_CloseDev($hash);
+
+    return if $hash->{helper}{timeoutRetryUsed};
+    $hash->{helper}{timeoutRetryUsed} = 1;
+    Wattpilot_ScheduleConnect($hash, $WATTPILOT_TIMEOUT_RETRY_DELAY);
 }
 
 sub Wattpilot_Read($) {
@@ -215,6 +383,10 @@ sub Wattpilot_Read($) {
     my $buf = DevIo_SimpleRead($hash);
 
     if (!defined($buf)) {
+        Wattpilot_NextLifecycleGeneration($hash);
+        Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
+        Wattpilot_CancelTimer($hash, 'idle_refresh');
+        delete $hash->{helper}{openInFlight};
         Wattpilot_ClearConnectionState($hash);
         return "";
     }
@@ -426,7 +598,11 @@ sub Wattpilot_DispatchMessage($$) {
         $hash->{helper}{authenticated} = 1;
         delete $hash->{helper}{authPending};
         delete $hash->{helper}{authHashMode};
-        readingsSingleUpdate($hash, "state", "connected", 1);
+        Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
+        readingsSingleUpdate($hash, "state", "initializing", 1);
+        Wattpilot_ScheduleTimer(
+            $hash, 'lifecycle_timeout', $WATTPILOT_INITIALIZATION_TIMEOUT,
+            'Wattpilot_LifecycleTimeout', { phase => 'initialization' });
     } elsif ($type eq 'authError') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication failed";
         Wattpilot_AbortAuthentication($hash, "auth_failed");
@@ -438,6 +614,9 @@ sub Wattpilot_DispatchMessage($$) {
         my %status = %{$json->{status}};
         Wattpilot_ValidateStatus($hash, \%status);
         Wattpilot_UpdateReadings($hash, \%status);
+        Wattpilot_MarkInitialized($hash)
+            if $hash->{helper}{authenticated}
+            && ($hash->{STATE} // '') eq 'initializing';
     } elsif ($type eq 'response') {
         if (exists($json->{success}) && !Wattpilot_IsBoolean($json->{success})) {
             Log3 $name, 2, "Wattpilot ($name) - Ignoring response with invalid success value";
@@ -460,6 +639,60 @@ sub Wattpilot_DispatchMessage($$) {
     return 1;
 }
 
+sub Wattpilot_MarkInitialized($) {
+    my ($hash) = @_;
+    Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
+    delete $hash->{helper}{timeoutRetryUsed};
+    readingsSingleUpdate($hash, "state", "connected", 1);
+}
+
+sub Wattpilot_NrgReadingsNeedIdleRefresh($) {
+    my ($hash) = @_;
+    for my $reading (qw(power Current_L1 Current_L2 Current_L3 Power_L1 Power_L2 Power_L3)) {
+        return 1 if !exists($hash->{READINGS}{$reading}{VAL});
+        my $value = $hash->{READINGS}{$reading}{VAL};
+        return 1 if defined($value) && $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ && $value != 0;
+    }
+    return 0;
+}
+
+sub Wattpilot_StartIdleRefreshWindow($) {
+    my ($hash) = @_;
+    return if AttrVal($hash->{NAME}, "update_while_idle", 0) ne "1";
+    return if !DevIo_IsOpen($hash);
+    return if $hash->{helper}{idleRefreshAttempted};
+    return if $hash->{helper}{idleRefreshPending};
+    $hash->{helper}{idleRefreshPending} = 1;
+    Wattpilot_ScheduleTimer(
+        $hash, 'idle_refresh', $WATTPILOT_IDLE_REFRESH_TIMEOUT,
+        'Wattpilot_IdleRefreshTimeout');
+}
+
+sub Wattpilot_ClearIdleRefreshWindow($) {
+    my ($hash) = @_;
+    delete $hash->{helper}{idleRefreshPending};
+    Wattpilot_CancelTimer($hash, 'idle_refresh');
+}
+
+sub Wattpilot_IdleRefreshTimeout($) {
+    my ($ctx) = @_;
+    my $hash = $ctx->{hash};
+    return if !Wattpilot_TimerContextValid($hash, $ctx);
+    Wattpilot_FinishTimer($hash, $ctx);
+    delete $hash->{helper}{idleRefreshPending};
+    return if $hash->{helper}{idleRefreshAttempted};
+    $hash->{helper}{idleRefreshAttempted} = 1;
+    Log3 $hash->{NAME}, 3,
+        "Wattpilot ($hash->{NAME}) - idle refresh fallback closes the session once for this idle episode";
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
+    Wattpilot_ClearConnectionState($hash);
+    delete $hash->{helper}{openInFlight};
+    DevIo_CloseDev($hash);
+    readingsSingleUpdate($hash, "state", "disconnected", 1);
+    Wattpilot_ScheduleConnect($hash, 1);
+}
+
 sub Wattpilot_UpdateReadings($$) {
     my ($hash, $status) = @_;
     my $name = $hash->{NAME};
@@ -467,6 +700,8 @@ sub Wattpilot_UpdateReadings($$) {
     my %validated_status = %$status;
     $status = \%validated_status;
     Wattpilot_ValidateStatus($hash, $status);
+    my $previous_car_state = $hash->{helper}{car_state};
+    my $has_valid_nrg = ref($status->{nrg}) eq 'ARRAY' && @{$status->{nrg}} >= 12;
     
     # Rate-Limiting Logik:
     # Einige Werte (wie 'nrg' - Spannung/Strom) aktualisieren sehr häufig (hochfrequent).
@@ -479,11 +714,6 @@ sub Wattpilot_UpdateReadings($$) {
     
     # Unterdrücke Spam-Werte, wenn Intervall noch nicht abgelaufen
     my $suppress_spammy = ($interval > 0 && ($now - $last_update < $interval));
-    
-    # Aktualisiere Zeitstempel nur, wenn wir diesmal updaten
-    if (!$suppress_spammy) {
-        $hash->{LAST_UPDATE} = $now;
-    }
     
     readingsBeginUpdate($hash);
     
@@ -501,6 +731,17 @@ sub Wattpilot_UpdateReadings($$) {
     
     # Prüfe ob geladen wird (Status 2)
     my $is_charging = ($hash->{helper}{car_state} // 0) == 2;
+    my $car_transitioned_to_idle =
+        defined($previous_car_state)
+        && $previous_car_state == 2
+        && defined($hash->{helper}{car_state})
+        && $hash->{helper}{car_state} != 2;
+    if ($is_charging) {
+        $hash->{helper}{idleRefreshAttempted} = 0;
+        Wattpilot_ClearIdleRefreshWindow($hash);
+    } elsif ($car_transitioned_to_idle) {
+        Wattpilot_StartIdleRefreshWindow($hash);
+    }
     
     # Force state (frc): compatibility labels Start/Stop plus explicit Neutral.
     if (defined $status->{frc} && Wattpilot_IsInteger($status->{frc})) {
@@ -544,13 +785,18 @@ sub Wattpilot_UpdateReadings($$) {
     # Nur wenn NICHT unterdrückt UND (Ladung aktiv ODER update_while_idle gesetzt)
     
     my $update_while_idle = AttrVal($name, "update_while_idle", 0);
+    my $idle_bypass = $hash->{helper}{idleRefreshPending} && $has_valid_nrg ? 1 : 0;
     
     my $process_nrg = 0;
-    if (!$suppress_spammy) {
+    if ($idle_bypass) {
+        $process_nrg = 1;
+        Wattpilot_ClearIdleRefreshWindow($hash);
+    } elsif (!$suppress_spammy) {
         if ($is_charging || $update_while_idle) {
              $process_nrg = 1;
         }
     }
+    $hash->{LAST_UPDATE} = $now if $process_nrg;
     
     if ($process_nrg) {
         
@@ -764,11 +1010,14 @@ sub Wattpilot_Set($@) {
 		
 	
 		readingsSingleUpdate($hash, "state", "password stored", 1);
+        delete $hash->{helper}{timeoutRetryUsed};
+        Wattpilot_NextLifecycleGeneration($hash);
+        Wattpilot_CancelAllTimers($hash);
 		Wattpilot_ClearConnectionState($hash);
-		
-		RemoveInternalTimer($hash);
+        delete $hash->{helper}{openInFlight};
 		DevIo_CloseDev($hash);
-		InternalTimer(gettimeofday()+1, "Wattpilot_Connect", $hash, 0);
+        readingsSingleUpdate($hash, "state", "disconnected", 1);
+		Wattpilot_ScheduleConnect($hash, 1);
 		
 		return undef;
 	} 
@@ -786,7 +1035,8 @@ sub Wattpilot_SendSecure($$$) {
     return "Device is disabled" if Wattpilot_IsDisabled($name);
     return "Wattpilot is disconnected" if !DevIo_IsOpen($hash);
     return "Wattpilot is not authenticated" if !$hash->{helper}{authenticated}
-        || ($hash->{STATE} // '') ne 'connected';
+        || (($hash->{STATE} // '') ne 'connected'
+            && (($hash->{READINGS}{state}{VAL} // '') ne 'connected'));
 
     my $stored_hash_result = Wattpilot_GetPasswordHash($hash);
     if ($stored_hash_result->{status} eq "error") {
@@ -857,7 +1107,7 @@ sub Wattpilot_NormalizeRequestId($) {
 sub Wattpilot_ClearCommandState($) {
     my ($hash) = @_;
     my $pending = $hash->{helper}{pendingRequests};
-    RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout')
+    Wattpilot_CancelTimer($hash, 'command_timeout')
         if ref($pending) eq 'HASH' && keys %$pending;
     delete $hash->{helper}{pendingRequests};
     delete $hash->{helper}{authenticated};
@@ -875,19 +1125,24 @@ sub Wattpilot_ClearConnectionState($) {
 
 sub Wattpilot_AbortAuthentication($$) {
     my ($hash, $state) = @_;
+    Wattpilot_NextLifecycleGeneration($hash);
+    Wattpilot_CancelAllTimers($hash);
     Wattpilot_ClearConnectionState($hash);
+    delete $hash->{helper}{openInFlight};
     readingsSingleUpdate($hash, "state", $state, 1);
     DevIo_CloseDev($hash);
 }
 
 sub Wattpilot_ScheduleRequestTimeout($) {
     my ($hash) = @_;
-    RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
+    Wattpilot_CancelTimer($hash, 'command_timeout');
     my $pending = $hash->{helper}{pendingRequests} // {};
     return if !keys %$pending;
     my ($next) = sort { $a <=> $b }
         map { $pending->{$_}{sentAt} + $WATTPILOT_REQUEST_TIMEOUT } keys %$pending;
-    InternalTimer($next, 'Wattpilot_RequestTimeout', $hash, 0);
+    Wattpilot_ScheduleTimer(
+        $hash, 'command_timeout', $next - gettimeofday(),
+        'Wattpilot_RequestTimeout');
 }
 
 sub Wattpilot_CleanupPendingRequests($) {
@@ -907,7 +1162,13 @@ sub Wattpilot_CleanupPendingRequests($) {
 }
 
 sub Wattpilot_RequestTimeout($) {
-    my ($hash) = @_;
+    my ($arg) = @_;
+    my $ctx = ref($arg) eq 'HASH' && exists($arg->{hash}) ? $arg : undef;
+    my $hash = $ctx ? $ctx->{hash} : $arg;
+    if ($ctx) {
+        return if !Wattpilot_TimerContextValid($hash, $ctx);
+        Wattpilot_FinishTimer($hash, $ctx);
+    }
     Wattpilot_CleanupPendingRequests($hash);
 }
 
@@ -951,14 +1212,34 @@ sub Wattpilot_Get($@) {
 
 sub Wattpilot_Ready($) {
     my ($hash) = @_;
-    if($hash->{STATE} eq "disconnected") {
-        Wattpilot_ClearConnectionState($hash);
-        return Wattpilot_OpenDev($hash, 1, sub {
-             my ($hash, $error) = @_;
-             return if($error);
-             Wattpilot_DoInit($hash);
-         });
-    }
+    return 0 if !Wattpilot_IsRuntimeActive($hash);
+    return 0 if ($hash->{STATE} // '') ne "disconnected"
+        && ($hash->{STATE} // '') ne "connection failed";
+    Wattpilot_ClearConnectionState($hash);
+    return 0 if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight}
+        || defined($hash->{helper}{timers}{connect});
+    readingsSingleUpdate($hash, "state", "connecting", 1);
+    my $generation = Wattpilot_CurrentLifecycleGeneration($hash);
+    my $open_ctx = {
+        generation => $generation,
+        name => $hash->{NAME},
+        fuuid => $hash->{FUUID},
+    };
+    $hash->{helper}{openInFlight} = $open_ctx;
+    return Wattpilot_OpenDev($hash, 1, sub {
+         my ($hash, $error) = @_;
+         return if !defined($hash->{helper}{openInFlight})
+             || $hash->{helper}{openInFlight} != $open_ctx;
+         delete $hash->{helper}{openInFlight};
+         return if !Wattpilot_IsRuntimeActive($hash);
+         return if Wattpilot_CurrentLifecycleGeneration($hash) != $generation;
+         if ($error) {
+             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket reconnect failed";
+             readingsSingleUpdate($hash, "state", "connection failed", 1);
+             return;
+         }
+         Wattpilot_DoInit($hash);
+     });
     return 0;
 }
 
@@ -971,26 +1252,40 @@ sub Wattpilot_Attr(@) {
     
     if($attrName eq "disable") {
         if($cmd eq "set" && $attrVal eq "1") {
+             Wattpilot_NextLifecycleGeneration($hash);
+             Wattpilot_CancelAllTimers($hash);
+             RemoveInternalTimer($hash, 'Wattpilot_Connect');
+             RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
              Wattpilot_ClearConnectionState($hash);
-             RemoveInternalTimer($hash);
+             delete $hash->{helper}{openInFlight};
              DevIo_CloseDev($hash);
              readingsSingleUpdate($hash, "state", "disabled", 1);
 		} elsif($cmd eq "del" || $attrVal eq "0") {
+             delete $hash->{helper}{timeoutRetryUsed};
+             Wattpilot_NextLifecycleGeneration($hash);
+             Wattpilot_CancelAllTimers($hash);
+             Wattpilot_ClearConnectionState($hash);
+             delete $hash->{helper}{openInFlight};
 			 my $password_result = Wattpilot_GetPassword($hash);
 			 if ($password_result->{status} eq "error") {
 				 readingsSingleUpdate($hash, "state", "credential error", 1);
 			 } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
 				 readingsSingleUpdate($hash, "state", "disconnected", 1);
-				 InternalTimer(gettimeofday()+1, "Wattpilot_Connect", $hash, 0);
+				 Wattpilot_ScheduleConnect($hash, 1);
 			 } else {
 				 readingsSingleUpdate($hash, "state", "password missing", 1);
 			 }
 		}
     }
 
-    if ($attrName eq "authHash" && ($cmd eq "set" || $cmd eq "del")) {
+    if (($attrName eq "authHash" || $attrName eq "authHashCost") && ($cmd eq "set" || $cmd eq "del")) {
+        delete $hash->{helper}{timeoutRetryUsed};
+        Wattpilot_NextLifecycleGeneration($hash);
+        Wattpilot_CancelAllTimers($hash);
+        RemoveInternalTimer($hash, 'Wattpilot_Connect');
+        RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
         Wattpilot_ClearConnectionState($hash);
-        RemoveInternalTimer($hash);
+        delete $hash->{helper}{openInFlight};
         DevIo_CloseDev($hash);
 
         if (Wattpilot_IsDisabled($name)) {
@@ -1001,7 +1296,7 @@ sub Wattpilot_Attr(@) {
                 readingsSingleUpdate($hash, "state", "credential error", 1);
             } elsif ($password_result->{status} eq "value" && $password_result->{value} ne "") {
                 readingsSingleUpdate($hash, "state", "disconnected", 1);
-                InternalTimer(gettimeofday()+1, "Wattpilot_Connect", $hash, 0);
+                Wattpilot_ScheduleConnect($hash, 1);
             } else {
                 readingsSingleUpdate($hash, "state", "password missing", 1);
             }
@@ -1020,6 +1315,14 @@ sub Wattpilot_Attr(@) {
         # Hier könnte Logik stehen, falls das Intervall sofortige Aktionen erfordert
     }
     
+    if ($attrName eq "update_while_idle" && $cmd eq "set" && defined($attrVal) && $attrVal eq "1") {
+        if (($hash->{helper}{car_state} // 0) != 2
+            && !$hash->{helper}{idleRefreshAttempted}
+            && Wattpilot_NrgReadingsNeedIdleRefresh($hash)) {
+            Wattpilot_StartIdleRefreshWindow($hash);
+        }
+    }
+
     return undef;
 }
 
@@ -1678,7 +1981,7 @@ sub Wattpilot_WriteJson($$) {
         Interval in seconds for updating high-frequency readings such as voltages and phase currents. <code>0</code> means no rate limiting.</li>
 
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        If set to <code>1</code>, high-frequency values are also updated while not charging. Useful for diagnostics.</li>
+        <code>0</code> keeps high-frequency <code>nrg</code>/power/current readings passive while the car is not charging. <code>1</code> processes real incoming idle values subject to <code>interval</code>. When charging changes to a valid non-charging <code>car</code> state, one authoritative idle <code>nrg</code> received in the same message or within 30 seconds bypasses the rate limit once so real zero values from the device clear stale readings. No protocol polling command is sent: no evidenced Wattpilot WebSocket request for all values or full status is known. If that 30-second window receives no valid <code>nrg</code>, the module closes the session and schedules at most one controlled reconnect for that idle episode. This is a bounded fallback inferred from third-party client behavior that initial status is server-pushed after login; it is not an official Fronius refresh feature. Missing fields, timeouts, disconnects, and failed refreshes never synthesize zero values.</li>
 
     <li><code>defaultAmp &lt;value&gt;</code><br>
         Default value for the current setting slider in the frontend.</li>
@@ -1698,6 +2001,8 @@ sub Wattpilot_WriteJson($$) {
         </ul>
         Changing or deleting this attribute immediately invalidates the current authentication and closes the connection. If the device is enabled and its password is readable, exactly one fresh login is scheduled before secured commands are accepted again; otherwise the state remains disabled, credential error, or password missing as applicable.
     </li>
+    <li><code>authHashCost &lt;4-14&gt;</code><br>
+        bcrypt cost used for newly derived authentication hashes. Changing or deleting it is authentication-relevant and therefore closes the current session and schedules exactly one fresh login when enabled and configured.</li>
   </ul>
   <br>
 
@@ -1705,7 +2010,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Readings</b>
   <ul>
     <li><code>state</code><br>
-        Current connection/authentication state, e.g. <code>connecting</code>, <code>connected</code>, <code>password missing</code>, <code>auth_failed</code>.</li>
+        Current connection/authentication state, e.g. <code>disabled</code>, <code>password missing</code>, <code>credential error</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connection failed</code>, <code>auth_failed</code>, <code>auth_timeout</code>, or <code>initialization_timeout</code>. <code>connected</code> requires an open DevIo connection, successful authentication, and at least one valid post-authentication status message; <code>authSuccess</code> alone is not enough.</li>
 
     <li><code>version</code><br>
         Firmware / protocol version reported by the Wattpilot.</li>
@@ -1816,7 +2121,7 @@ sub Wattpilot_WriteJson($$) {
         Intervall in Sekunden für die Aktualisierung hochfrequenter Messwerte wie Spannungen und Phasenströme. <code>0</code> bedeutet keine Begrenzung.</li>
 
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        Wenn auf <code>1</code> gesetzt, werden hochfrequente Messwerte auch im Leerlauf aktualisiert. Nützlich für Diagnosezwecke.</li>
+        <code>0</code> belässt hochfrequente <code>nrg</code>-, Leistungs- und Strom-Readings im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte unter Berücksichtigung von <code>interval</code>. Beim Wechsel von Laden zu einem gültigen nicht ladenden <code>car</code>-Zustand umgeht ein echtes <code>nrg</code> in derselben Nachricht oder innerhalb von 30 Sekunden einmalig das Rate-Limit, damit vom Gerät gelieferte Nullwerte stale Readings korrigieren. Es wird kein Polling-Kommando gesendet: Es ist kein belegter Wattpilot-WebSocket-Request für alle Werte oder einen Full-Status bekannt. Kommt in diesem 30-Sekunden-Fenster kein gültiges <code>nrg</code>, schließt das Modul die Sitzung und plant höchstens einen kontrollierten Reconnect für diese Idle-Episode. Dieser begrenzte Fallback ist aus Drittclient-Verhalten abgeleitet, wonach nach Login ein initialer Status serverseitig gepusht wird; er ist kein offizielles Fronius-Refresh-Feature. Fehlende Felder, Timeouts, Disconnects und fehlgeschlagene Refreshes erzeugen niemals künstliche Nullwerte.</li>
 
     <li><code>defaultAmp &lt;wert&gt;</code><br>
         Standardwert für den Strom-Slider im Frontend.</li>
@@ -1836,6 +2141,8 @@ sub Wattpilot_WriteJson($$) {
         </ul>
         Das Ändern oder Löschen dieses Attributs verwirft die aktuelle Authentifizierung sofort und trennt die Verbindung. Ist das Gerät aktiviert und das Passwort lesbar, wird genau eine neue Anmeldung geplant, bevor wieder gesicherte Befehle akzeptiert werden; andernfalls bleibt der passende Zustand disabled, credential error oder password missing bestehen.
     </li>
+    <li><code>authHashCost &lt;4-14&gt;</code><br>
+        bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes. Ändern oder Löschen ist authentifizierungsrelevant, trennt deshalb die aktuelle Sitzung und plant bei aktiviertem und konfiguriertem Gerät genau eine frische Anmeldung.</li>
   </ul>
   <br>
 
@@ -1843,7 +2150,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Readings</b>
   <ul>
     <li><code>state</code><br>
-        Aktueller Verbindungs-/Authentifizierungsstatus, z.B. <code>connecting</code>, <code>connected</code>, <code>password missing</code> oder <code>auth_failed</code>.</li>
+        Aktueller Verbindungs-/Authentifizierungsstatus, z.B. <code>disabled</code>, <code>password missing</code>, <code>credential error</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connection failed</code>, <code>auth_failed</code>, <code>auth_timeout</code> oder <code>initialization_timeout</code>. <code>connected</code> setzt eine offene DevIo-Verbindung, erfolgreiche Authentifizierung und mindestens eine gültige Statusnachricht nach der Authentifizierung voraus; <code>authSuccess</code> allein reicht nicht.</li>
 
     <li><code>version</code><br>
         Vom Wattpilot gemeldete Firmware-/Protokollversion.</li>
@@ -1900,7 +2207,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v1.5.0",
+  "version": "v1.6.0",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>"

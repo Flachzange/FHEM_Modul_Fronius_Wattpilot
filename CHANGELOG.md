@@ -4,6 +4,20 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
+## [v1.6.0] - 2026-06-23
+
+### Geändert
+
+- `update_while_idle` hat eine dokumentierte Idle-Semantik: Es wird kein unbelegter Status-Request und kein `getAllValues` gesendet. Stattdessen verarbeitet das Modul echte Idle-`nrg`-Werte, lässt beim Charging-zu-Idle-Wechsel einen einmaligen Rate-Limit-Bypass für den ersten autoritativen Idle-Wert zu und plant bei fehlendem `nrg` höchstens einen begrenzten Reconnect pro Idle-Episode. Fehlende Werte werden niemals als Null interpretiert.
+- Der Verbindungslebenszyklus unterscheidet jetzt `connecting`, `authenticating`, `initializing` und `connected`. `connected` wird erst nach erfolgreicher Authentifizierung und einer gültigen post-authentication Statusnachricht gesetzt.
+- Authentication- und Initialization-Timeouts laufen jeweils nach 30 Sekunden ab und erlauben höchstens einen verzögerten Retry nach fünf Sekunden. `authError`, ungültige Auth-Konfiguration und Credential-Fehler starten keine automatische Retry-Schleife.
+- Timer werden nach Art und Lifecycle-Generation verwaltet; veraltete Timer- und DevIo-Callbacks nach Disable, Undefine, Delete oder Shutdown bleiben wirkungslos. `ReadyFn` nutzt denselben guarded Open-Pfad wie Define, Enable und Auth-Änderungen.
+- `ShutdownFn` ist registriert und führt synchronen, idempotenten Cleanup aus, ohne persistente Credentials zu löschen.
+
+### Tests
+
+- Neue deterministische Tests decken Idle-Refresh, Timeout-Retry, State-Machine, Timer-Kontexte, ReadyFn/DevIo-Seiteffekte, Open-Guard und Shutdown-Cleanup ab.
+
 ## [v1.5.0] - 2026-06-22
 
 ### Sicherheit und Robustheit

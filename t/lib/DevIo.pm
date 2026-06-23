@@ -3,11 +3,12 @@ package DevIo;
 use strict;
 use warnings;
 
-our $FHEM_SOURCE_REVISION = '6a920121204142b435c7b05cd9e9e2dd754879f6';
-our $FHEM_TIMER_SOURCE_REVISION = '72a81ea2b3836953fd52afbbd3f1ced034e3baeb';
+our $FHEM_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
+our $FHEM_TIMER_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
 our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
+our (%READYFNLIST);
 our ($OPEN_ERROR, $OPEN_MODE);
 our (@LOGS, @WRITES, @READS, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @RENAMES, @IGNORED_RENAME_REPLIES);
 
@@ -18,6 +19,7 @@ sub reset_test_state {
     %SET_KEY_ERRORS = ();
     %GET_KEY_ERROR_QUEUE = ();
     %SET_KEY_ERROR_QUEUE = ();
+    %READYFNLIST = ();
     %main::attr = ();
     $OPEN_ERROR = undef;
     $OPEN_MODE = 'success';
@@ -77,7 +79,17 @@ sub import {
     *{"${caller}::attr"} = \%main::attr;
 }
 
-sub DevIo_CloseDev { push @CLOSES, $_[0]; $_[0]{TEST_OPEN} = 0; return }
+sub DevIo_CloseDev {
+    my ($hash) = @_;
+    push @CLOSES, $hash;
+    $hash->{TEST_OPEN} = 0;
+    delete $hash->{FD};
+    delete $hash->{WSBUF};
+    delete $hash->{PARTIAL};
+    delete $hash->{NEXT_OPEN};
+    delete $READYFNLIST{$hash->{NAME}};
+    return;
+}
 sub DevIo_IsOpen { return $_[0]{TEST_OPEN} ? 1 : 0 }
 sub DevIo_OpenDev {
     my ($hash, $reopen, $initfn, $callback) = @_;
@@ -129,8 +141,16 @@ sub DevIo_OpenDev {
         return;
     }
 
+    if ($mode eq 'deferred') {
+        push @OPEN_CALLBACKS, [$reopen, undef, $callback, $hash];
+        return;
+    }
+
     Log3($name, $hash->{devioLoglevel} || 1, "$dev reappeared ($name)") if $reopen;
     $hash->{TEST_OPEN} = 1;
+    $hash->{FD} = 99;
+    delete $hash->{NEXT_OPEN};
+    delete $READYFNLIST{$name};
     push @TRIGGERS, 'CONNECTED';
     push @OPEN_CALLBACKS, [$reopen, undef];
     $callback->($hash, undef) if $callback;
@@ -143,8 +163,11 @@ sub DevIo_OpenDev {
 sub DevIo_SimpleRead {
     my $value = shift @READS;
     if (!defined $value) {
-        DevIo_CloseDev($_[0]);
-        readingsSingleUpdate($_[0], 'state', 'disconnected', 1);
+        my $hash = $_[0];
+        DevIo_CloseDev($hash);
+        $READYFNLIST{$hash->{NAME}} = $hash;
+        $hash->{NEXT_OPEN} = gettimeofday() + 60;
+        readingsSingleUpdate($hash, 'state', 'disconnected', 1);
         push @TRIGGERS, 'DISCONNECTED';
     }
     return $value;
