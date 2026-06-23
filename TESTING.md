@@ -1,6 +1,6 @@
 # Testing
 
-Development and release checks require Perl, `Archive::Zip`, `CPAN::Meta`, `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, and `Crypt::Bcrypt`, plus the standard `prove`, `sha256sum`, `zip`/`unzip`, and POSIX shell tools. On Debian or Ubuntu, install `libarchive-zip-perl` in addition to the module dependencies. `Crypt::Bcrypt` remains optional at runtime for installations that use only PBKDF2, but its deterministic vector runs whenever it is installed.
+Development and release checks require Perl, `IO::Compress::Zip`, `CPAN::Meta`, `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, and `Crypt::Bcrypt`, plus the standard `prove`, `sha256sum`, `zip`/`unzip`, and POSIX shell tools. On Debian or Ubuntu, `IO::Compress::Zip` is provided by `libio-compress-perl` when it is not already included with the Perl installation. `Crypt::Bcrypt` remains optional at runtime for installations that use only PBKDF2, but its deterministic vector runs whenever it is installed.
 
 Run the complete local check suite from the repository root:
 
