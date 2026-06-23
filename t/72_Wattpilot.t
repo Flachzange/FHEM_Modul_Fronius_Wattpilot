@@ -22,9 +22,10 @@ main::Wattpilot_Initialize(\%registration);
 is(scalar @FHEM::Meta::INIT_MOD_CALLS, 1, 'embedded META is initialized once');
 is($FHEM::Meta::INIT_MOD_CALLS[0][1], \%registration, 'META initialization receives the module hash');
 
-for my $slot (qw(DefFn UndefFn DeleteFn RenameFn SetFn GetFn AttrFn ReadFn ReadyFn ShutdownFn)) {
+for my $slot (qw(DefFn UndefFn DeleteFn RenameFn SetFn AttrFn ReadFn ReadyFn ShutdownFn)) {
     ok(ref($registration{$slot}) eq 'CODE', "$slot registers an existing callback");
 }
+ok(!exists $registration{GetFn}, 'no GetFn is registered when no get commands exist');
 
 sub fresh_device {
     DevIo::reset_test_state();

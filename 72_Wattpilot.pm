@@ -144,7 +144,6 @@ sub Wattpilot_Initialize($) {
     $hash->{DeleteFn} = \&Wattpilot_Delete;
     $hash->{RenameFn} = \&Wattpilot_Rename;
     $hash->{SetFn}    = \&Wattpilot_Set;
-    $hash->{GetFn}    = \&Wattpilot_Get;
     $hash->{AttrFn}   = \&Wattpilot_Attr;
     $hash->{ReadFn}   = \&Wattpilot_Read;
     $hash->{ReadyFn}  = \&Wattpilot_Ready;
@@ -331,13 +330,16 @@ sub Wattpilot_Define($$) {
     my ($hash, $def) = @_;
     my @a = split("[ \t][ \t]*", $def);
 
-    if(@a < 3) {
+    if(@a < 3 || @a > 4) {
         return "Usage: define <name> Wattpilot <IP> [Serial]";
     }
 
     my $name = $a[0];
     my $ip = $a[2];
     my $serial = $a[3] if (defined $a[3]);
+    if (defined($serial) && $serial !~ /^\d+$/) {
+        return "Serial must contain digits only";
+    }
 
     delete $hash->{helper}{undefined};
     delete $hash->{helper}{deleting};
@@ -1379,11 +1381,6 @@ sub Wattpilot_HandleResponse($$) {
     Wattpilot_SetCommandReadings($hash, $request_id, 'failed', "device rejected $request->{key}");
 }
 
-sub Wattpilot_Get($@) {
-    my ($hash, @a) = @_;
-    return undef;
-}
-
 sub Wattpilot_Ready($) {
     my ($hash) = @_;
     return 0 if !Wattpilot_IsRuntimeActive($hash);
@@ -1397,6 +1394,11 @@ sub Wattpilot_Ready($) {
 sub Wattpilot_Attr(@) {
     my ($cmd, $name, $attrName, $attrVal) = @_;
     my $hash = $defs{$name};
+
+    if ($cmd eq "set") {
+        my $validation_error = Wattpilot_ValidateAttribute($attrName, $attrVal);
+        return $validation_error if defined $validation_error;
+    }
 
     if($attrName eq "disable") {
         if($cmd eq "set" && $attrVal eq "1") {
@@ -1451,6 +1453,55 @@ sub Wattpilot_Attr(@) {
         } else {
             Wattpilot_StopIdleRefresh($hash);
         }
+    }
+
+    return undef;
+}
+
+sub Wattpilot_ValidateAttribute($$) {
+    my ($attr_name, $attr_value) = @_;
+
+    my %boolean_attribute = map { $_ => 1 } qw(
+        debug update_while_idle disable rawJsonLog
+    );
+    if ($boolean_attribute{$attr_name}) {
+        return "$attr_name must be 0 or 1"
+            if !defined($attr_value) || $attr_value !~ /^(?:0|1)$/;
+        return undef;
+    }
+
+    if ($attr_name eq "interval") {
+        return "interval must be an integer from 0 to 300"
+            if !defined($attr_value)
+            || $attr_value !~ /^\d+$/
+            || $attr_value < 0
+            || $attr_value > 300;
+        return undef;
+    }
+
+    if ($attr_name eq "defaultAmp") {
+        return "defaultAmp must be an integer from 6 to 32"
+            if !defined($attr_value)
+            || $attr_value !~ /^\d+$/
+            || $attr_value < 6
+            || $attr_value > 32;
+        return undef;
+    }
+
+    if ($attr_name eq "authHash") {
+        return "authHash must be one of auto, pbkdf2, bcrypt"
+            if !defined($attr_value)
+            || $attr_value !~ /^(?:auto|pbkdf2|bcrypt)$/;
+        return undef;
+    }
+
+    if ($attr_name eq "authHashCost") {
+        return "authHashCost must be an integer from 4 to 14"
+            if !defined($attr_value)
+            || $attr_value !~ /^\d+$/
+            || $attr_value < 4
+            || $attr_value > 14;
+        return undef;
     }
 
     return undef;
@@ -1749,7 +1800,7 @@ sub Wattpilot_WriteJson($$) {
     <br><br>
     Defines a Wattpilot device.<br>
     <b>&lt;IP-Address&gt;</b>: Local IP address of the Wattpilot.<br>
-    <b>&lt;Serial&gt;</b>: Optional serial number. If omitted, the module uses the value from the device <code>hello</code> message.<br>
+    <b>&lt;Serial&gt;</b>: Optional digits-only serial number. If omitted, the module uses the value from the device <code>hello</code> message.<br>
     <br>
     Set the password separately with <code>set &lt;name&gt; password &lt;secret&gt;</code>.
   </ul>
@@ -1781,6 +1832,7 @@ sub Wattpilot_WriteJson($$) {
   <a name="Wattpilot-attr"></a>
   <b>Attributes</b>
   <ul>
+    <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
         Rate limit for the electrical reading group. <code>0</code> disables rate limiting.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
@@ -1885,7 +1937,7 @@ sub Wattpilot_WriteJson($$) {
     <br><br>
     Definiert ein Wattpilot-Device.<br>
     <b>&lt;IP-Adresse&gt;</b>: Lokale IP-Adresse des Wattpilot.<br>
-    <b>&lt;Seriennummer&gt;</b>: Optional. Ohne Angabe wird der Wert aus der <code>hello</code>-Nachricht übernommen.<br>
+    <b>&lt;Seriennummer&gt;</b>: Optional und ausschließlich aus Ziffern. Ohne Angabe wird der Wert aus der <code>hello</code>-Nachricht übernommen.<br>
     <br>
     Das Passwort wird separat mit <code>set &lt;name&gt; password &lt;secret&gt;</code> gesetzt.
   </ul>
@@ -1917,6 +1969,7 @@ sub Wattpilot_WriteJson($$) {
   <a name="Wattpilot-attr"></a>
   <b>Attribute</b>
   <ul>
+    <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
         Rate-Limit für die Gruppe der elektrischen Readings. <code>0</code> deaktiviert die Begrenzung.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>

@@ -5,6 +5,7 @@ use warnings;
 
 our $FHEM_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
 our $FHEM_TIMER_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
+our $FHEM_ATTR_SOURCE_REVISION = 'b7d60838a845b19cc8e54ce0cdc4a8eda27ad105';
 our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
@@ -39,6 +40,17 @@ sub reset_test_state {
     @RENAMES = ();
     @IGNORED_RENAME_REPLIES = ();
     $NOW = undef;
+}
+
+# Models fhem.pl CommandAttr at the pinned attribute revision: AttrFn is
+# called before framework storage, and a callback error vetoes the mutation.
+sub command_attr {
+    my ($name, $attribute, $value) = @_;
+    return "Please define $name first" if !defined $main::defs{$name};
+    my $reply = main::Wattpilot_Attr('set', $name, $attribute, $value);
+    return $reply if defined($reply) && $reply ne '';
+    $main::attr{$name}{$attribute} = $value;
+    return undef;
 }
 
 # Models fhem.pl CommandRename at the pinned revision: framework-owned hashes
