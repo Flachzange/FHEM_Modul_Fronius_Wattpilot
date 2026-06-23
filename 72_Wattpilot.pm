@@ -47,24 +47,24 @@ my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
 
 my %WATTPILOT_READING_NAME = (
     state                   => 'state',
-    firmware_version        => 'version',
+    firmware_version        => 'firmwareVersion',
     auth_hash_mode          => 'authHashMode',
-    car_state               => 'CarState',
-    force_state             => 'Laden_starten',
-    charging_current        => 'Strom',
-    charging_mode           => 'Modus',
-    next_trip_time          => 'Zeit_NextTrip',
-    energy_total            => 'EnergyTotal',
-    energy_since_plug_in    => 'Energie_seit_Anstecken',
-    voltage_l1              => 'Voltage_L1',
-    voltage_l2              => 'Voltage_L2',
-    voltage_l3              => 'Voltage_L3',
-    current_l1              => 'Current_L1',
-    current_l2              => 'Current_L2',
-    current_l3              => 'Current_L3',
-    power_l1                => 'Power_L1',
-    power_l2                => 'Power_L2',
-    power_l3                => 'Power_L3',
+    car_state               => 'carState',
+    force_state             => 'forceState',
+    charging_current        => 'chargingCurrent',
+    charging_mode           => 'chargingMode',
+    next_trip_time          => 'nextTripTime',
+    energy_total            => 'energyTotal',
+    energy_since_plug_in    => 'energySincePlugIn',
+    voltage_l1              => 'voltageL1',
+    voltage_l2              => 'voltageL2',
+    voltage_l3              => 'voltageL3',
+    current_l1              => 'currentL1',
+    current_l2              => 'currentL2',
+    current_l3              => 'currentL3',
+    power_l1                => 'powerL1',
+    power_l2                => 'powerL2',
+    power_l3                => 'powerL3',
     power                   => 'power',
     last_command_request_id => 'lastCommandRequestId',
     last_command_status     => 'lastCommandStatus',
@@ -72,63 +72,62 @@ my %WATTPILOT_READING_NAME = (
 );
 
 my %WATTPILOT_COMMAND_NAME = (
-    password         => 'Password',
-    force_state      => 'Laden_starten',
-    charging_current => 'Strom',
-    charging_mode    => 'Modus',
-    next_trip_time   => 'Zeit_NextTrip',
+    password         => 'password',
+    force_state      => 'forceState',
+    charging_current => 'chargingCurrent',
+    charging_mode    => 'chargingMode',
+    next_trip_time   => 'nextTripTime',
 );
 
 my %WATTPILOT_CAR_STATE = (
-    0 => 'Unknown',
-    1 => 'Idle',
-    2 => 'Charging',
-    3 => 'WaitCar',
-    4 => 'Complete',
-    5 => 'Error',
+    0 => 'unknown',
+    1 => 'idle',
+    2 => 'charging',
+    3 => 'waitingForCar',
+    4 => 'complete',
+    5 => 'error',
 );
 
 my %WATTPILOT_FORCE_STATE = (
-    0 => 'Neutral',
-    1 => 'Stop',
-    2 => 'Start',
+    0 => 'neutral',
+    1 => 'off',
+    2 => 'on',
 );
 
 my %WATTPILOT_CHARGING_MODE = (
-    3 => 'Default',
-    4 => 'Eco',
-    5 => 'NextTrip',
+    3 => 'default',
+    4 => 'eco',
+    5 => 'nextTrip',
 );
 
 my %WATTPILOT_FORCE_COMMAND_VALUE = (
-    Start => 2,
-    Stop  => 1,
+    neutral => 0,
+    off     => 1,
+    on      => 2,
 );
 
 my %WATTPILOT_CHARGING_MODE_VALUE = reverse %WATTPILOT_CHARGING_MODE;
 
 my %WATTPILOT_LIFECYCLE_STATE = (
-    initialized            => 'Initialized',
     disabled               => 'disabled',
-    credential_error       => 'credential error',
-    password_missing       => 'password missing',
-    password_stored        => 'password stored',
+    credential_error       => 'credentialError',
+    password_missing       => 'passwordMissing',
     disconnected           => 'disconnected',
     connecting             => 'connecting',
-    connection_failed      => 'connection failed',
+    connection_failed      => 'connectionFailed',
     authenticating         => 'authenticating',
     initializing           => 'initializing',
     connected              => 'connected',
-    auth_failed            => 'auth_failed',
-    auth_timeout           => 'auth_timeout',
-    initialization_timeout => 'initialization_timeout',
-    auth_sequence_invalid  => 'auth_sequence_invalid',
-    auth_config_missing    => 'auth_config_missing',
-    auth_challenge_invalid => 'auth_challenge_invalid',
-    auth_hash_unsupported  => 'auth_hash_unsupported',
-    auth_hash_failed       => 'auth_hash_failed',
-    auth_hash_store_failed => 'auth_hash_store_failed',
-    auth_nonce_failed      => 'auth_nonce_failed',
+    auth_failed            => 'authFailed',
+    auth_timeout           => 'authTimeout',
+    initialization_timeout => 'initializationTimeout',
+    auth_sequence_invalid  => 'authSequenceInvalid',
+    auth_config_missing    => 'authConfigMissing',
+    auth_challenge_invalid => 'authChallengeInvalid',
+    auth_hash_unsupported  => 'authHashUnsupported',
+    auth_hash_failed       => 'authHashFailed',
+    auth_hash_store_failed => 'authHashStoreFailed',
+    auth_nonce_failed      => 'authNonceFailed',
 );
 
 eval {
@@ -353,8 +352,6 @@ sub Wattpilot_Define($$) {
     # DevIo privacy masks only its initial opening line. devioLoglevel reduces
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
-
-    $hash->{STATE} = $WATTPILOT_LIFECYCLE_STATE{initialized};
 
     # WebSocket spezifische Header
     $hash->{header}{'User-Agent'} = 'FHEM';
@@ -873,7 +870,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my $car_value = int($status->{car});
         readingsBulkUpdate(
             $hash, $WATTPILOT_READING_NAME{car_state},
-            $WATTPILOT_CAR_STATE{$car_value} // $WATTPILOT_CAR_STATE{0});
+            $WATTPILOT_CAR_STATE{$car_value} // 'unknown:' . $status->{car});
         $hash->{helper}{car_state} = $car_value;
     }
 
@@ -881,7 +878,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my $force_value = int($status->{frc});
         my $force_state = exists($WATTPILOT_FORCE_STATE{$force_value})
             ? $WATTPILOT_FORCE_STATE{$force_value}
-            : 'Unknown(' . $status->{frc} . ')';
+            : 'unknown:' . $status->{frc};
         readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{force_state}, $force_state);
     }
 
@@ -901,7 +898,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my $mode_value = int($status->{lmo});
         readingsBulkUpdate(
             $hash, $WATTPILOT_READING_NAME{charging_mode},
-            $WATTPILOT_CHARGING_MODE{$mode_value} // $status->{lmo});
+            $WATTPILOT_CHARGING_MODE{$mode_value} // 'unknown:' . $status->{lmo});
     }
 }
 
@@ -1162,7 +1159,7 @@ sub Wattpilot_Set($@) {
     return "Device is disabled" if(Wattpilot_IsDisabled($name));
 
     if($cmd eq $WATTPILOT_COMMAND_NAME{force_state}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{force_state} <Start|Stop>"
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{force_state} <neutral|off|on>"
             if !defined($val) || !exists($WATTPILOT_FORCE_COMMAND_VALUE{$val});
         return Wattpilot_SendSecure(
             $hash, "frc", int($WATTPILOT_FORCE_COMMAND_VALUE{$val}));
@@ -1171,16 +1168,16 @@ sub Wattpilot_Set($@) {
             if !defined($val) || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/;
         return Wattpilot_SendSecure($hash, "amp", int($val));
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_mode}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_mode} <Default|Eco|NextTrip>"
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_mode} <default|eco|nextTrip>"
             if !defined $val;
         return "Unknown mode $val"
             if !exists $WATTPILOT_CHARGING_MODE_VALUE{$val};
         return Wattpilot_SendSecure(
             $hash, "lmo", $WATTPILOT_CHARGING_MODE_VALUE{$val});
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{next_trip_time}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{next_trip_time} <hh:mm>"
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{next_trip_time} <HH:MM>"
             if !defined($val)
-            || $val !~ /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
+            || $val !~ /^(?:[01]\d|2[0-3]):[0-5]\d$/;
         my ($h, $m) = split(':', $val);
         my $seconds = ($h * 3600) + ($m * 60);
         return Wattpilot_SendSecure($hash, "ftt", int($seconds));
@@ -1191,9 +1188,6 @@ sub Wattpilot_Set($@) {
         my $password_err = Wattpilot_StoreNewPassword($hash, $a[2]);
         return $password_err if defined $password_err;
 
-        readingsSingleUpdate(
-            $hash, $WATTPILOT_READING_NAME{state},
-            $WATTPILOT_LIFECYCLE_STATE{password_stored}, 1);
         delete $hash->{helper}{timeoutRetryUsed};
         Wattpilot_InvalidateSession($hash);
         Wattpilot_ApplyConfiguredState($hash, 1);
@@ -1202,9 +1196,9 @@ sub Wattpilot_Set($@) {
 
     return "Unknown argument $cmd, choose one of "
         . "$WATTPILOT_COMMAND_NAME{password} "
-        . "$WATTPILOT_COMMAND_NAME{force_state}:Start,Stop "
+        . "$WATTPILOT_COMMAND_NAME{force_state}:neutral,off,on "
         . "$WATTPILOT_COMMAND_NAME{charging_current}:slider,6,1,32 "
-        . "$WATTPILOT_COMMAND_NAME{charging_mode}:Default,Eco,NextTrip "
+        . "$WATTPILOT_COMMAND_NAME{charging_mode}:default,eco,nextTrip "
         . "$WATTPILOT_COMMAND_NAME{next_trip_time}";
 }
 

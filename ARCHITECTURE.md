@@ -82,9 +82,9 @@ gating, energy values, and `nrg` phase/total readings. Missing partial-update
 fields never reset readings, and only real device-supplied zero values create
 zero readings.
 
-The current public 1.6 names and values are collected in one internal interface
-definition and exposed to tests through `Wattpilot_InterfaceSnapshot`. Issue
-#31 performs the deliberate public 2.0 rename later on the same branch.
+The clean public 2.0 reading, command, enum, and lifecycle values are collected
+in one internal interface definition and exposed to tests through
+`Wattpilot_InterfaceSnapshot`. Protocol keys remain internal and unchanged.
 
 ## Development infrastructure
 

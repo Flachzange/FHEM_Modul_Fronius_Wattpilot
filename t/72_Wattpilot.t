@@ -175,7 +175,7 @@ $stable_hash = stable_key($hash, 'passwordhash');
 $DevIo::GET_KEY_ERRORS{$stable_hash} = 'synthetic snapshot failure';
 main::Wattpilot_Undefine($hash, $hash->{NAME});
 main::Wattpilot_Delete($hash, $hash->{NAME});
-is($hash->{STATE}, 'password missing',
+is($hash->{STATE}, 'passwordMissing',
     'failed DeleteFn reports a genuinely missing stable password');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'failed DeleteFn schedules no reconnect without a password');
@@ -185,7 +185,7 @@ $stable_password = stable_key($hash, 'password');
 $DevIo::GET_KEY_ERRORS{$stable_password} = 'synthetic snapshot failure';
 main::Wattpilot_Undefine($hash, $hash->{NAME});
 main::Wattpilot_Delete($hash, $hash->{NAME});
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'failed DeleteFn preserves stable credential storage errors');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'failed DeleteFn does not reconnect on credential storage error');
@@ -231,7 +231,7 @@ main::Wattpilot_Define($hash, 'testWallbox Wattpilot 192.0.2.10');
 main::Wattpilot_GetPassword($hash);
 main::Wattpilot_GetPasswordHash($hash);
 DevIo::command_rename('testWallbox', 'renamedWallbox');
-main::Wattpilot_Set($hash, 'renamedWallbox', 'Password', 'changed-password');
+main::Wattpilot_Set($hash, 'renamedWallbox', 'password', 'changed-password');
 main::Wattpilot_Delete($hash, 'renamedWallbox');
 my @legacy_operations = grep { $legacy_key{$_->[1] // ''} } @DevIo::KEY_OPERATIONS;
 is_deeply(\@legacy_operations, [],
@@ -245,7 +245,7 @@ $stable_password = stable_key($hash, 'password');
 $DevIo::GET_KEY_ERRORS{$stable_password} = 'synthetic define read failure';
 is(main::Wattpilot_Define($hash, 'testWallbox Wattpilot 192.0.2.10'), undef,
     'Define remains structurally successful during credential storage outage');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'Define reports stable credential read failure honestly');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'Define schedules no reconnect after credential read failure');
@@ -254,7 +254,7 @@ $hash = fresh_device();
 $stable_password = stable_key($hash, 'password');
 $DevIo::GET_KEY_ERRORS{$stable_password} = 'synthetic enable read failure';
 main::Wattpilot_Attr('set', 'testWallbox', 'disable', '0');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'enable reports stable credential read failure honestly');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'enable schedules no reconnect after credential read failure');
@@ -266,7 +266,7 @@ $DevIo::GET_KEY_ERRORS{$stable_password} = 'synthetic delete snapshot failure';
 main::Wattpilot_Undefine($hash, $hash->{NAME});
 like(main::Wattpilot_Delete($hash, $hash->{NAME}), qr/before changes were made/,
     'DeleteFn returns stable snapshot failure after UndefFn');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'failed-delete restoration preserves the stable credential read error state');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'failed-delete restoration does not reconnect on credential read failure');
@@ -425,7 +425,7 @@ $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-pas
 $DevIo::SET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic hash storage failure';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
 is(scalar @DevIo::WRITES, 0, 'authentication is not sent when password-hash persistence fails');
-is($DevIo::READING_UPDATES[-1][2], 'auth_hash_store_failed', 'hash persistence failure sets an explicit authentication status');
+is($DevIo::READING_UPDATES[-1][2], 'authHashStoreFailed', 'hash persistence failure sets an explicit authentication status');
 unlike(log_text(), qr/TOKEN-ONE|TOKEN-TWO|synthetic-password/, 'hash persistence failure logs no sensitive authentication values');
 
 $hash = fresh_device();
@@ -434,7 +434,7 @@ $stable_password = 'Wattpilot_' . $hash->{FUUID} . '_password';
 $DevIo::GET_KEY_ERRORS{$stable_password} = 'synthetic auth credential read failure';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
 is(scalar @DevIo::WRITES, 0, 'authentication sends nothing after credential read failure');
-is($hash->{STATE}, 'credential error', 'authentication reports credential storage failure honestly');
+is($hash->{STATE}, 'credentialError', 'authentication reports credential storage failure honestly');
 unlike(log_text(), qr/TOKEN-ONE|TOKEN-TWO/, 'authentication credential error logs no challenge material');
 
 $hash = fresh_device();
@@ -443,7 +443,7 @@ $DevIo::GET_KEY_ERRORS{$stable_hash} = 'synthetic secure credential read failure
 mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 is(scalar @DevIo::WRITES, 0, 'secured command sends nothing after credential read failure');
-is($hash->{STATE}, 'credential error', 'secured command reports credential storage failure honestly');
+is($hash->{STATE}, 'credentialError', 'secured command reports credential storage failure honestly');
 
 
 $hash = fresh_device();
@@ -459,7 +459,7 @@ is(main::Wattpilot_GetStoredSecret($hash, 'password')->{status}, 'absent',
     'name-based password is ignored');
 is(main::Wattpilot_GetStoredSecret($hash, 'passwordhash')->{status}, 'absent',
     'name-based hash is ignored');
-is(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), undef,
+is(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-synthetic-password'), undef,
     'password can be changed before first successful authentication');
 is($DevIo::KEY_VALUES{$stable_password}, 'new-synthetic-password',
     'password change stores the new stable password');
@@ -478,7 +478,7 @@ $stable_hash = stable_key($hash, 'passwordhash');
 $DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
 $DevIo::KEY_VALUES{$stable_hash} = 'old-stable-hash';
 $DevIo::SET_KEY_ERRORS{$stable_hash} = 'synthetic stable hash delete failure';
-like(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), qr/failed to invalidate/,
+like(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-synthetic-password'), qr/failed to invalidate/,
     'stable hash deletion failure rejects password change');
 is($DevIo::KEY_VALUES{$stable_password}, 'old-stable-password',
     'stable hash deletion failure keeps old password');
@@ -490,7 +490,7 @@ $stable_password = stable_key($hash, 'password');
 $stable_hash = stable_key($hash, 'passwordhash');
 $DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
 $DevIo::GET_KEY_ERRORS{$stable_hash} = 'synthetic password snapshot failure';
-like(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), qr/failed to inspect/,
+like(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-synthetic-password'), qr/failed to inspect/,
     'password update aborts on stable snapshot read failure');
 is($DevIo::KEY_VALUES{$stable_password}, 'old-stable-password',
     'password snapshot failure performs no update');
@@ -503,7 +503,7 @@ $stable_hash = stable_key($hash, 'passwordhash');
 $DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
 $DevIo::KEY_VALUES{$stable_hash} = 'old-stable-hash';
 $DevIo::SET_KEY_ERRORS{$stable_password} = 'synthetic password store failure';
-like(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), qr/failed to store new password/,
+like(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-synthetic-password'), qr/failed to store new password/,
     'password store failure aborts update');
 is($DevIo::KEY_VALUES{$stable_password}, 'old-stable-password',
     'password store failure preserves old password');
@@ -517,7 +517,7 @@ $DevIo::KEY_VALUES{$stable_password} = 'old-stable-password';
 $DevIo::KEY_VALUES{$stable_hash} = 'old-stable-hash';
 $DevIo::SET_KEY_ERRORS{$stable_password} = 'synthetic password store failure';
 $DevIo::SET_KEY_ERROR_QUEUE{$stable_hash} = [undef, 'synthetic password rollback failure'];
-like(main::Wattpilot_Set($hash, 'testWallbox', 'Password', 'new-synthetic-password'), qr/rollback incomplete/,
+like(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-synthetic-password'), qr/rollback incomplete/,
     'password update reports rollback failure explicitly');
 ok(!exists $DevIo::KEY_VALUES{$stable_hash},
     'password rollback failure is not falsely reported as restored');

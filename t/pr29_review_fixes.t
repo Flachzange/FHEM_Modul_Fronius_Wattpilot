@@ -76,7 +76,7 @@ unlike(logs(), qr/missing or invalid type/,
 
 $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
-$hash->{READINGS}{Strom}{VAL} = 20;
+$hash->{READINGS}{chargingCurrent}{VAL} = 20;
 my $maximum_documents = join '', map {
     encode_json({ type => 'deltaStatus', status => { amp => 20 } })
 } 1..256;
@@ -87,7 +87,7 @@ my $too_many_documents = join '', map {
 } 1..257;
 is(main::Wattpilot_Parse($hash, $too_many_documents), 0,
     '257 concatenated documents are rejected');
-is($hash->{READINGS}{Strom}{VAL}, 20,
+is($hash->{READINGS}{chargingCurrent}{VAL}, 20,
     'document-count rejection is atomic');
 
 for my $attr_command ([set => 'bcrypt', 'pbkdf2'], [del => undef, 'bcrypt']) {
@@ -140,7 +140,7 @@ $attr{$hash->{NAME}}{authHash} = 'pbkdf2';
 seed_auth_state($hash);
 $hash->{STATE} = 'connected';
 main::Wattpilot_Attr('set', $hash->{NAME}, 'authHash', 'bcrypt');
-is($hash->{STATE}, 'password missing',
+is($hash->{STATE}, 'passwordMissing',
     'authHash change reports a missing password instead of reconnecting');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'authHash change schedules no reconnect without a password');
@@ -152,7 +152,7 @@ $hash->{STATE} = 'connected';
 $DevIo::GET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_password'} =
     'synthetic credential read failure';
 main::Wattpilot_Attr('set', $hash->{NAME}, 'authHash', 'bcrypt');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'authHash change preserves credential read errors');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'authHash change schedules no reconnect after a credential read error');
@@ -166,7 +166,7 @@ $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'stale-sig
 $DevIo::SET_KEY_ERRORS{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} =
     'synthetic hash deletion failure';
 main::Wattpilot_Attr('set', $hash->{NAME}, 'authHash', 'bcrypt');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'authHash change fails closed when persisted signing hash cannot be invalidated');
 is($DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'}, 'stale-signing-key',
     'failed authHash invalidation preserves the old signing hash');

@@ -38,28 +38,80 @@ my $interface = main::Wattpilot_InterfaceSnapshot();
 is_deeply(
     $interface->{commands},
     {
-        password => 'Password',
-        force_state => 'Laden_starten',
-        charging_current => 'Strom',
-        charging_mode => 'Modus',
-        next_trip_time => 'Zeit_NextTrip',
+        password => 'password',
+        force_state => 'forceState',
+        charging_current => 'chargingCurrent',
+        charging_mode => 'chargingMode',
+        next_trip_time => 'nextTripTime',
     },
-    'current public Set command names have one central definition');
+    '2.0 public Set command names have one central definition');
 is(scalar(keys %{$interface->{readings}}), 23,
     'central reading definition contains all 23 public readings');
-is($interface->{readings}{car_state}, 'CarState',
-    'central reading definition preserves the 1.6 car-state name');
+is_deeply(
+    $interface->{readings},
+    {
+        state => 'state',
+        firmware_version => 'firmwareVersion',
+        auth_hash_mode => 'authHashMode',
+        car_state => 'carState',
+        force_state => 'forceState',
+        charging_current => 'chargingCurrent',
+        charging_mode => 'chargingMode',
+        next_trip_time => 'nextTripTime',
+        energy_total => 'energyTotal',
+        energy_since_plug_in => 'energySincePlugIn',
+        voltage_l1 => 'voltageL1',
+        voltage_l2 => 'voltageL2',
+        voltage_l3 => 'voltageL3',
+        current_l1 => 'currentL1',
+        current_l2 => 'currentL2',
+        current_l3 => 'currentL3',
+        power_l1 => 'powerL1',
+        power_l2 => 'powerL2',
+        power_l3 => 'powerL3',
+        power => 'power',
+        last_command_request_id => 'lastCommandRequestId',
+        last_command_status => 'lastCommandStatus',
+        last_command_error => 'lastCommandError',
+    },
+    'all 23 public reading names match the 2.0 contract');
+is($interface->{readings}{car_state}, 'carState',
+    'central reading definition exposes the 2.0 car-state name');
 is_deeply($interface->{carStates},
-    { 0 => 'Unknown', 1 => 'Idle', 2 => 'Charging', 3 => 'WaitCar', 4 => 'Complete', 5 => 'Error' },
-    'central car-state labels preserve the 1.6 contract');
+    { 0 => 'unknown', 1 => 'idle', 2 => 'charging', 3 => 'waitingForCar', 4 => 'complete', 5 => 'error' },
+    'central car-state labels expose the 2.0 contract');
 is_deeply($interface->{forceStates},
-    { 0 => 'Neutral', 1 => 'Stop', 2 => 'Start' },
-    'central force-state labels preserve the 1.6 contract');
+    { 0 => 'neutral', 1 => 'off', 2 => 'on' },
+    'central force-state labels expose the 2.0 contract');
 is_deeply($interface->{chargingModes},
-    { 3 => 'Default', 4 => 'Eco', 5 => 'NextTrip' },
-    'central charging-mode labels preserve the 1.6 contract');
-is($interface->{lifecycle}{credential_error}, 'credential error',
-    'central lifecycle definition preserves the 1.6 credential error value');
+    { 3 => 'default', 4 => 'eco', 5 => 'nextTrip' },
+    'central charging-mode labels expose the 2.0 contract');
+is($interface->{lifecycle}{credential_error}, 'credentialError',
+    'central lifecycle definition exposes the 2.0 credential error value');
+is_deeply(
+    $interface->{lifecycle},
+    {
+        disabled => 'disabled',
+        credential_error => 'credentialError',
+        password_missing => 'passwordMissing',
+        disconnected => 'disconnected',
+        connecting => 'connecting',
+        connection_failed => 'connectionFailed',
+        authenticating => 'authenticating',
+        initializing => 'initializing',
+        connected => 'connected',
+        auth_failed => 'authFailed',
+        auth_timeout => 'authTimeout',
+        initialization_timeout => 'initializationTimeout',
+        auth_sequence_invalid => 'authSequenceInvalid',
+        auth_config_missing => 'authConfigMissing',
+        auth_challenge_invalid => 'authChallengeInvalid',
+        auth_hash_unsupported => 'authHashUnsupported',
+        auth_hash_failed => 'authHashFailed',
+        auth_hash_store_failed => 'authHashStoreFailed',
+        auth_nonce_failed => 'authNonceFailed',
+    },
+    'all lifecycle values match the 2.0 lowerCamelCase contract');
 
 my $normalizer_hash = fresh_device();
 my $original_status = {
@@ -91,27 +143,27 @@ main::Wattpilot_UpdateReadings($hash, {
 });
 
 my %expected_reading = (
-    CarState => 'Charging',
-    Laden_starten => 'Neutral',
-    Zeit_NextTrip => '07:30',
-    Strom => 16,
-    Modus => 'Eco',
-    EnergyTotal => '123.46',
-    Energie_seit_Anstecken => '789.00',
-    Voltage_L1 => '230.00',
-    Voltage_L2 => '231.00',
-    Voltage_L3 => '232.00',
-    Current_L1 => '1.10',
-    Current_L2 => '2.20',
-    Current_L3 => '3.30',
-    Power_L1 => '100.00',
-    Power_L2 => '200.00',
-    Power_L3 => '300.00',
+    carState => 'charging',
+    forceState => 'neutral',
+    nextTripTime => '07:30',
+    chargingCurrent => 16,
+    chargingMode => 'eco',
+    energyTotal => '123.46',
+    energySincePlugIn => '789.00',
+    voltageL1 => '230.00',
+    voltageL2 => '231.00',
+    voltageL3 => '232.00',
+    currentL1 => '1.10',
+    currentL2 => '2.20',
+    currentL3 => '3.30',
+    powerL1 => '100.00',
+    powerL2 => '200.00',
+    powerL3 => '300.00',
     power => '600.00',
 );
 for my $reading (sort keys %expected_reading) {
     is($hash->{READINGS}{$reading}{VAL}, $expected_reading{$reading},
-        "current 1.6 reading contract remains stable for $reading");
+        "2.0 reading contract is exposed for $reading");
 }
 
 $hash = fresh_device();

@@ -226,12 +226,12 @@ main::Wattpilot_Connect($hash);
 is($hash->{STATE}, 'authenticating', 'successful open enters authenticating');
 is(timer_count('lifecycle_timeout'), 1, 'authenticating has one lifecycle timeout');
 due_in(30);
-is($hash->{STATE}, 'auth_timeout', 'authentication timeout is exposed');
+is($hash->{STATE}, 'authTimeout', 'authentication timeout is exposed');
 is(timer_count('connect'), 1, 'first authentication timeout schedules one retry');
 due_in(5);
 is($hash->{STATE}, 'authenticating', 'timeout retry uses the normal open path');
 due_in(30);
-is($hash->{STATE}, 'auth_timeout', 'second authentication timeout remains truthful');
+is($hash->{STATE}, 'authTimeout', 'second authentication timeout remains truthful');
 is(timer_count('connect'), 0, 'second authentication timeout does not loop');
 
 $hash = fresh_device();
@@ -241,13 +241,13 @@ main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
 is($hash->{STATE}, 'initializing', 'authSuccess alone enters initializing');
 is(timer_count('lifecycle_timeout'), 1, 'initializing has one lifecycle timeout');
 due_in(30);
-is($hash->{STATE}, 'initialization_timeout', 'initialization timeout is exposed');
+is($hash->{STATE}, 'initializationTimeout', 'initialization timeout is exposed');
 is(timer_count('connect'), 1, 'first initialization timeout schedules one retry');
 
 $hash = fresh_device();
 main::Wattpilot_Connect($hash);
 main::Wattpilot_Parse($hash, encode_json({ type => 'authError' }));
-is($hash->{STATE}, 'auth_failed', 'authError remains fail-closed');
+is($hash->{STATE}, 'authFailed', 'authError remains fail-closed');
 is(timer_count('connect'), 0, 'authError schedules no automatic retry');
 
 $hash = fresh_device();
@@ -256,7 +256,7 @@ $hash->{helper}{authPending} = 1;
 main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
 main::Wattpilot_Parse($hash, encode_json({ type => 'fullStatus', status => { partial => JSON::true, amp => 16 } }));
 is($hash->{STATE}, 'connected', 'partial fullStatus completes initialization');
-is($hash->{READINGS}{Strom}{VAL}, 16, 'partial fullStatus is still applied incrementally');
+is($hash->{READINGS}{chargingCurrent}{VAL}, 16, 'partial fullStatus is still applied incrementally');
 is(timer_count('lifecycle_timeout'), 0, 'initialization timeout is cancelled after status');
 
 $hash = fresh_device();
@@ -325,7 +325,7 @@ $DevIo::GET_KEY_ERRORS{stable_password_key($hash)} = 'synthetic read failure';
 $DevIo::OPEN_MODE = 'deferred';
 main::Wattpilot_Connect($hash);
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'rename credential read failure leaves the device in credential error');
 is(timer_count('connect'), 0,
     'rename credential read failure schedules no immediate reconnect');
@@ -335,7 +335,7 @@ is(timer_count('connect'), 0,
 
 $hash = fresh_device();
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
-is($hash->{STATE}, 'password missing',
+is($hash->{STATE}, 'passwordMissing',
     'active rename without a readable password is fail-closed');
 is(timer_count('connect'), 0,
     'active rename without password schedules no reconnect');
@@ -343,7 +343,7 @@ is(timer_count('connect'), 0,
 $hash = fresh_device();
 $DevIo::GET_KEY_ERRORS{stable_password_key($hash)} = 'synthetic read failure';
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
-is($hash->{STATE}, 'credential error',
+is($hash->{STATE}, 'credentialError',
     'active rename with credential read failure reports credential error');
 is(timer_count('connect'), 0,
     'active rename with credential read failure schedules no reconnect');
@@ -361,7 +361,7 @@ $DevIo::READYFNLIST{$hash->{NAME}} = $hash;
 $DevIo::READYFNLIST{$hash->{NAME} . '.' . $hash->{DeviceName}} = $hash;
 $DevIo::OPEN_ERROR = 'synthetic immediate reconnect failure';
 main::Wattpilot_Ready($hash);
-is($hash->{STATE}, 'connection failed',
+is($hash->{STATE}, 'connectionFailed',
     'ReadyFn synchronous reopen error reports connection failed');
 is(timer_count('connect'), 1,
     'ReadyFn synchronous reopen error creates one module recovery owner');
@@ -373,7 +373,7 @@ ok(defined($hash->{NEXT_OPEN}) && $hash->{NEXT_OPEN} <= $DevIo::NOW,
 $hash = fresh_device();
 $DevIo::OPEN_ERROR = 'synthetic immediate connect failure';
 main::Wattpilot_Connect($hash);
-is($hash->{STATE}, 'connection failed', 'immediate DevIo open error reports connection failed');
+is($hash->{STATE}, 'connectionFailed', 'immediate DevIo open error reports connection failed');
 is(timer_count('connect'), 1, 'immediate DevIo open error schedules recovery through guarded connect');
 ok(!defined $hash->{NEXT_OPEN}, 'immediate DevIo open error has no DevIo recovery owner');
 ok(!exists $DevIo::READYFNLIST{$hash->{NAME}},
@@ -382,7 +382,7 @@ ok(!exists $DevIo::READYFNLIST{$hash->{NAME}},
 $hash = fresh_device();
 $DevIo::OPEN_MODE = 'async_error';
 main::Wattpilot_Connect($hash);
-is($hash->{STATE}, 'connection failed', 'async DevIo open error reports connection failed');
+is($hash->{STATE}, 'connectionFailed', 'async DevIo open error reports connection failed');
 is(timer_count('connect'), 0, 'async DevIo open error keeps recovery owned by DevIo');
 ok(defined $hash->{NEXT_OPEN}, 'async DevIo open error sets NEXT_OPEN');
 ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash,
@@ -391,7 +391,7 @@ ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash,
 $hash = fresh_device();
 $DevIo::OPEN_MODE = 'timeout';
 main::Wattpilot_Connect($hash);
-is($hash->{STATE}, 'connection failed', 'DevIo open timeout reports connection failed');
+is($hash->{STATE}, 'connectionFailed', 'DevIo open timeout reports connection failed');
 is(timer_count('connect'), 0, 'DevIo open timeout keeps recovery owned by DevIo');
 ok(defined $hash->{NEXT_OPEN}, 'DevIo open timeout sets NEXT_OPEN');
 ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash,
@@ -417,7 +417,7 @@ $hash = fresh_device();
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 $DevIo::OPEN_MODE = 'deferred';
 main::Wattpilot_Connect($hash);
-main::Wattpilot_Set($hash, $hash->{NAME}, 'Password', 'new-password');
+main::Wattpilot_Set($hash, $hash->{NAME}, 'password', 'new-password');
 is(scalar @DevIo::OPENS, 1, 'Password change does not start a competing open before old callback');
 DevIo::complete_deferred_open(0);
 is(timer_count('connect'), 1, 'Password change schedules reconnect after stale open callback');
@@ -426,7 +426,7 @@ $hash = fresh_device();
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 $DevIo::OPEN_MODE = 'deferred';
 main::Wattpilot_Connect($hash);
-main::Wattpilot_Set($hash, $hash->{NAME}, 'Password', 'new-password');
+main::Wattpilot_Set($hash, $hash->{NAME}, 'password', 'new-password');
 DevIo::complete_deferred_open(0, 'synthetic async failure');
 is(timer_count('connect'), 1, 'Password change schedules reconnect after stale open error');
 ok(!defined $hash->{NEXT_OPEN}, 'stale open error cleanup removes DevIo recovery owner');
