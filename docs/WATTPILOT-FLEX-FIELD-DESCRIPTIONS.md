@@ -26,14 +26,14 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 
 - Observed as a number with representative value `32` in the Flex capture.
 - Historical alias and meaning candidate: `chargingCurrent`, requested charging current in amperes.
-- The current 2.0 development runtime exposes `chargingCurrent`, accepts integer values 6–32 A, and sends `amp` through `setValue`.
+- Version 2.0.0 exposes `chargingCurrent`, accepts integer values 6–32 A, and sends `amp` through `setValue`.
 - Actual Flex 43.4 writability, full accepted range, and device-side validation were not established by a real command test.
 
 ### `frc`
 
 - Observed as a number with representative value `0`.
 - Pinned Wattpilot-specific evidence gives `0=Neutral`, `1=Off`, `2=On`.
-- The current 2.0 development runtime exposes `forceState` values `neutral`, `off`, and `on` and sends `0`, `1`, and `2` respectively.
+- Version 2.0.0 exposes `forceState` values `neutral`, `off`, and `on` and sends `0`, `1`, and `2` respectively.
 - The enum and write behavior have not been reproduced on the documented Flex device.
 
 ### `nrg`

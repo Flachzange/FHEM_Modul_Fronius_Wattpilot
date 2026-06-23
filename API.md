@@ -4,7 +4,7 @@ This file is the stable entry point for the repository's JSON/WebSocket API docu
 
 ## Public FHEM interface
 
-The active public interface of the 2.0 development line is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands.
+The active public interface of version 2.0.0 is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands.
 
 Old 1.x public names appear only in explicit breaking-change or historical mapping sections. Version 2.0 provides no aliases or automatic migration for them.
 
