@@ -13,7 +13,7 @@ my @required = qw(
     72_Wattpilot.pm AGENTS.md ARCHITECTURE.md CHANGELOG.md TESTING.md
     REVIEW-CHECKLIST.md .gitignore .github/pull_request_template.md
     .github/workflows/ci.yml t/72_Wattpilot.t t/lib/DevIo.pm
-    t/lib/FHEM/Meta.pm t/repository_text_check.t
+    t/lib/FHEM/Meta.pm t/repository_text_check.t t/architecture_guard.t
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
     t/fixtures/fullStatus-flex-observed.json t/fixtures/README.md

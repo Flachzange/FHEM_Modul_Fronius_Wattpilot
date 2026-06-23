@@ -108,6 +108,8 @@ Mutable identifiers such as device names are locators, not durable proof of owne
 - Test both recreation orders: the original object first and the replacement object first.
 - Prove that getters, migration, credential updates, rollback, and deletion cannot adopt or destroy resources owned by the replacement object.
 
+For the 2.0 clean-install line, Wattpilot credentials are FUUID-only. Runtime code must not read, claim, migrate, overwrite, or delete device-name-based password/hash keys, legacy owner-marker keys, or pending legacy-name metadata. Released 1.6.x versions are the final releases that support the old name-based upgrade path. Version 2.0 requires a fresh definition and a new password operation, and obsolete name-based resources are deliberately left untouched.
+
 ## Connection and authentication lifecycle
 
 For every change involving networking, authentication, credentials, timers, reconnects, enable/disable behavior, rename, delete, reload, or shutdown, review the complete lifecycle together:

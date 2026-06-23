@@ -1,16 +1,109 @@
 # Architecture
 
-`72_Wattpilot.pm` is the authoritative FHEM module. It owns the FHEM callbacks, DevIo WebSocket integration, authentication, command handling, status parsing, readings, and embedded English and German command reference.
+`72_Wattpilot.pm` is the authoritative FHEM module. It remains one installable
+FHEM module file and owns the callbacks, DevIo WebSocket integration,
+authentication, command handling, status parsing, readings, and the embedded
+English and German command reference.
 
-The development infrastructure is deliberately separate:
+The implementation is divided into narrow internal responsibilities rather
+than additional installable Perl modules:
 
-- `t/` contains structural tests, minimal FHEM/DevIo stubs, and synthetic fixtures.
-- `scripts/` contains repository and command-reference checks plus the CI entry point.
-- `.github/workflows/ci.yml` invokes the same entry point used locally.
-- `docs/PROTOCOL-SOURCES.md` records protocol provenance and confidence without promoting guesses to documented behavior.
-- Embedded META data and the central version in `72_Wattpilot.pm` are validated by `scripts/check_meta.pl`.
-- Release tooling creates reproducible, verified artifacts only below ignored `dist/`.
+- lifecycle generation, typed timers, stale-callback rejection, and guarded
+  DevIo open/close handling;
+- stable FUUID-based credential access and two-key transactions;
+- structural JSON continuation, decoding, and message dispatch;
+- authentication and signing-key generation;
+- secured command correlation and response timeouts;
+- status normalization and public reading updates;
+- idle-refresh and electrical-reading rate limiting.
 
-The embedded META block is registered at runtime through `FHEM::Meta::InitMod`. This follows the FHEM reference implementation and modules at `fhem/fhem-mirror` commit `5354e001b55c323f457bd907434e46f284d9582c`; the test suite supplies only a minimal `FHEM::Meta` stub and verifies the initialization call.
+## Credential model
 
-The stubs are not an FHEM simulator. They exist only to compile and load the module and to inspect its registered callbacks. No test in this repository establishes real FHEM, network, WebSocket, authentication, or Wattpilot compatibility.
+The 2.0 development line reads and writes only these persistent resources:
+
+```text
+Wattpilot_<FUUID>_password
+Wattpilot_<FUUID>_passwordhash
+```
+
+The FUUID is the durable owner. Rename therefore does not migrate or rewrite
+credentials. Name-based 1.x password/hash keys, owner-marker keys, and pending
+legacy-name metadata are neither read nor modified. Released 1.6.x versions are the final releases that contain the old
+name-based upgrade machinery. A 2.0 setup
+requires a fresh definition and a new password operation; obsolete 1.x key
+resources are intentionally left untouched.
+
+Password replacement and device deletion snapshot both stable keys before any
+change. A partial failure rolls back earlier successful writes/deletes in
+reverse order and reports an incomplete rollback explicitly. Credential reads
+preserve the distinction between value present, value absent, and storage
+failure.
+
+## Lifecycle ownership
+
+`Wattpilot_InvalidateSession` owns the common session invalidation sequence:
+it increments the lifecycle generation, cancels typed module timers, clears
+connection-scoped state, and closes the current or frozen DevIo context.
+`Wattpilot_ApplyConfiguredState` then resolves disabled, credential-error,
+password-missing, or reconnectable state and creates at most one module-owned
+reconnect. Special transitions with different semantics, such as authentication
+failure, idle-refresh fallback, shutdown, and failed-Delete restoration, remain
+explicit.
+
+`pendingReconnectAfterOpen` is deliberately retained. It transfers ownership
+from an invalidated asynchronous DevIo open callback to exactly one subsequent
+module reconnect.
+
+| State | Lifetime |
+| --- | --- |
+| `lifecycleGeneration` | current device-hash lifetime |
+| `timers` | one active callback per timer kind |
+| `openInFlight` | until the matching asynchronous DevIo callback completes or is rejected as stale |
+| `pendingReconnectAfterOpen` | until the invalidated open callback hands off one reconnect |
+| `timeoutRetryUsed` | current authentication/initialization timeout episode |
+| `deviceType`, `protocol` | current connection/session |
+| `authPending`, `authHashMode`, `authenticated` | current authentication/session |
+| `pendingRequests` | current authenticated session |
+| `jsonBuffer` | current logical JSON continuation/session |
+| `car_state` | current device-hash runtime state |
+| idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single refresh reconnect |
+| `LAST_UPDATE` | current device-hash rate-limit history |
+| `msg_id` | current device-hash request sequence |
+
+## Status and reading pipeline
+
+Incoming status data is copied and normalized once by
+`Wattpilot_NormalizeStatus`. Invalid known fields are removed from the copy;
+unknown fields are preserved, and the caller's structure is never mutated.
+
+`Wattpilot_UpdateReadings` owns one FHEM bulk-reading transaction and delegates
+to narrow helpers for immediate readings, car transitions, electrical-update
+gating, energy values, and `nrg` phase/total readings. Missing partial-update
+fields never reset readings, and only real device-supplied zero values create
+zero readings.
+
+The current public 1.6 names and values are collected in one internal interface
+definition and exposed to tests through `Wattpilot_InterfaceSnapshot`. Issue
+#31 performs the deliberate public 2.0 rename later on the same branch.
+
+## Development infrastructure
+
+- `t/` contains deterministic module-level tests, minimal FHEM/DevIo stubs, and
+  synthetic or sanitized fixtures.
+- `scripts/` contains repository, META, command-reference, release, and
+  reproducibility checks.
+- `.github/workflows/ci.yml` invokes the same CI entry point used locally.
+- `docs/PROTOCOL-SOURCES.md` records protocol provenance and confidence without
+  promoting guesses to documented behavior.
+- Embedded META data and the central version in `72_Wattpilot.pm` are validated
+  by `scripts/check_meta.pl`.
+- Release tooling creates reproducible, verified artifacts only below ignored
+  `dist/`.
+
+The embedded META block is registered through `FHEM::Meta::InitMod`, following
+the FHEM reference implementation and modules at `fhem/fhem-mirror` commit
+`5354e001b55c323f457bd907434e46f284d9582c`.
+
+The stubs are not an FHEM simulator. Automated checks do not establish real
+FHEM, key-value backend, network, WebSocket, Wattpilot Flex, or predecessor
+Wattpilot compatibility.

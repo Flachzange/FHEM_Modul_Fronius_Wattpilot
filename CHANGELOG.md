@@ -4,6 +4,14 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
+### 2.0-Entwicklung – interne Architekturgrundlage
+
+- Der gemeinsame 2.0-Entwicklungsbranch verwendet ausschließlich die beiden stabilen FUUID-basierten Credential-Schlüssel. Die namensbasierte Migration, Owner-Marker und Pending-Listen wurden aus dem Runtime-Code entfernt. Alte namensbasierte Schlüssel bleiben unangetastet; die veröffentlichten 1.6.x-Versionen sind die letzten Releases mit Upgrade-Unterstützung für diese Ressourcen.
+- Passwortänderung und Gerätelöschung sind auf transaktionale Zwei-Schlüssel-Operationen mit vollständigem Snapshot, Rollback in umgekehrter Reihenfolge und ausdrücklicher Meldung eines unvollständigen Rollbacks reduziert.
+- Gemeinsame Session-Invalidierung und die Ermittlung des konfigurierten Runtime-Zustands wurden zentralisiert, ohne die bewährte Timer-, DevIo- und Reconnect-Eigentumslogik zu ersetzen.
+- Statusdaten werden genau einmal in einer Kopie normalisiert. Die Reading-Verarbeitung ist in unmittelbare Werte, Fahrzeugübergänge, Electrical-Gating, Energiewerte und `nrg`-Readings aufgeteilt.
+- Die weiterhin unveränderte öffentliche 1.6-Schnittstelle ist intern zentral definiert, damit Issue #31 den späteren 2.0-Cutover kontrolliert durchführen kann. Dieser Zwischenstand bleibt Version 1.6.0 und darf nicht separat nach `main` gemergt werden.
+
 ## [v1.6.0] - 2026-06-23
 
 ### Geändert
