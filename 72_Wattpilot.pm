@@ -404,7 +404,8 @@ sub Wattpilot_StartOpen($$) {
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
             readingsSingleUpdate($hash, "state", "connection failed", 1);
-            Wattpilot_ScheduleConnect($hash, 60) if !defined($hash->{NEXT_OPEN});
+            Wattpilot_ScheduleConnect($hash, 60)
+                if !defined($hash->{NEXT_OPEN}) || $hash->{NEXT_OPEN} <= gettimeofday();
             return;
         }
         Wattpilot_DoInit($hash);

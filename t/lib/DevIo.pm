@@ -101,9 +101,16 @@ sub DevIo_OpenDev {
     my $name = $hash->{NAME};
     my $dev = $hash->{DeviceName};
     my $level = $hash->{devioLoglevel} || 3;
+    my $key = "$name.$dev";
     if (!$reopen) {
         my $shown = AttrVal($name, 'privacy', 0) ? '(private)' : $dev;
         Log3($name, $level, "Opening $name device $shown");
+    } else {
+        # FHEM DevIo removes the old ReadyFn owner before HttpUtils_Connect.
+        # A synchronous HttpUtils error can then leave only the expired
+        # NEXT_OPEN value behind.
+        delete $READYFNLIST{$name};
+        delete $READYFNLIST{$key};
     }
 
     # FHEM DevIo.pm -> HttpUtils_Connect side effects at revision above.
@@ -139,7 +146,6 @@ sub DevIo_OpenDev {
           : "$host: connection refused";
         Log3($name, 4, "HttpUtils: $error") if $mode eq 'async_error';
         DevIo_CloseDev($hash);
-        my $key = "$name.$dev";
         $READYFNLIST{$name} = $hash;
         $READYFNLIST{$key} = $hash;
         $hash->{NEXT_OPEN} = gettimeofday() + 60;

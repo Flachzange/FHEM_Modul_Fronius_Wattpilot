@@ -356,6 +356,22 @@ is($DevIo::OPENS[0][1], 1, 'ReadyFn uses the guarded reopen path');
 is($hash->{STATE}, 'authenticating', 'ReadyFn reaches the normal auth phase');
 
 $hash = fresh_device();
+$hash->{STATE} = 'disconnected';
+$hash->{NEXT_OPEN} = $DevIo::NOW - 1;
+$DevIo::READYFNLIST{$hash->{NAME}} = $hash;
+$DevIo::READYFNLIST{$hash->{NAME} . '.' . $hash->{DeviceName}} = $hash;
+$DevIo::OPEN_ERROR = 'synthetic immediate reconnect failure';
+main::Wattpilot_Ready($hash);
+is($hash->{STATE}, 'connection failed',
+    'ReadyFn synchronous reopen error reports connection failed');
+is(timer_count('connect'), 1,
+    'ReadyFn synchronous reopen error creates one module recovery owner');
+ok(!exists $DevIo::READYFNLIST{$hash->{NAME}},
+    'ReadyFn synchronous reopen error does not retain stale readyfnlist owner');
+ok(defined($hash->{NEXT_OPEN}) && $hash->{NEXT_OPEN} <= $DevIo::NOW,
+    'ReadyFn synchronous reopen error ignores the expired NEXT_OPEN as recovery owner');
+
+$hash = fresh_device();
 $DevIo::OPEN_ERROR = 'synthetic immediate connect failure';
 main::Wattpilot_Connect($hash);
 is($hash->{STATE}, 'connection failed', 'immediate DevIo open error reports connection failed');
