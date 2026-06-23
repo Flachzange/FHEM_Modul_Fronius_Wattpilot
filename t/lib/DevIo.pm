@@ -8,7 +8,7 @@ our $FHEM_TIMER_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
 our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
-our (%READYFNLIST);
+our (%READYFNLIST, %SELECTLIST);
 our ($OPEN_ERROR, $OPEN_MODE);
 our (@LOGS, @WRITES, @READS, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @RENAMES, @IGNORED_RENAME_REPLIES);
 
@@ -20,6 +20,7 @@ sub reset_test_state {
     %GET_KEY_ERROR_QUEUE = ();
     %SET_KEY_ERROR_QUEUE = ();
     %READYFNLIST = ();
+    %SELECTLIST = ();
     %main::attr = ();
     $OPEN_ERROR = undef;
     $OPEN_MODE = 'success';
@@ -82,12 +83,15 @@ sub import {
 sub DevIo_CloseDev {
     my ($hash) = @_;
     push @CLOSES, $hash;
+    my $key = join('.', $hash->{NAME} // '', $hash->{DeviceName} // '');
     $hash->{TEST_OPEN} = 0;
     delete $hash->{FD};
     delete $hash->{WSBUF};
     delete $hash->{PARTIAL};
     delete $hash->{NEXT_OPEN};
     delete $READYFNLIST{$hash->{NAME}};
+    delete $READYFNLIST{$key};
+    delete $SELECTLIST{$key};
     return;
 }
 sub DevIo_IsOpen { return $_[0]{TEST_OPEN} ? 1 : 0 }
@@ -134,6 +138,11 @@ sub DevIo_OpenDev {
           ? "connect to http://$host:80 timed out"
           : "$host: connection refused";
         Log3($name, 4, "HttpUtils: $error") if $mode eq 'async_error';
+        DevIo_CloseDev($hash);
+        my $key = "$name.$dev";
+        $READYFNLIST{$name} = $hash;
+        $READYFNLIST{$key} = $hash;
+        $hash->{NEXT_OPEN} = gettimeofday() + 60;
         push @TRIGGERS, 'DISCONNECTED' if !$reopen;
         Log3($name, 1, "$name: Can't connect to $dev: $error") if !$reopen;
         push @OPEN_CALLBACKS, [$reopen, $error];
@@ -142,7 +151,7 @@ sub DevIo_OpenDev {
     }
 
     if ($mode eq 'deferred') {
-        push @OPEN_CALLBACKS, [$reopen, undef, $callback, $hash];
+        push @OPEN_CALLBACKS, [$reopen, undef, $callback, $hash, $name, $dev];
         return;
     }
 
@@ -151,6 +160,8 @@ sub DevIo_OpenDev {
     $hash->{FD} = 99;
     delete $hash->{NEXT_OPEN};
     delete $READYFNLIST{$name};
+    delete $READYFNLIST{"$name.$dev"};
+    $SELECTLIST{"$name.$dev"} = $hash;
     push @TRIGGERS, 'CONNECTED';
     push @OPEN_CALLBACKS, [$reopen, undef];
     $callback->($hash, undef) if $callback;
@@ -162,10 +173,15 @@ sub complete_deferred_open {
     $index //= 0;
     my $entry = $OPEN_CALLBACKS[$index];
     die "no deferred open at index $index" if ref($entry) ne 'ARRAY' || @$entry < 4;
-    my ($reopen, undef, $callback, $hash) = @$entry;
-    my $name = $hash->{NAME};
-    my $dev = $hash->{DeviceName};
+    my ($reopen, undef, $callback, $hash, $name, $dev) = @$entry;
+    $name //= $hash->{NAME};
+    $dev //= $hash->{DeviceName};
     if (defined $error) {
+        DevIo_CloseDev($hash);
+        my $key = "$name.$dev";
+        $READYFNLIST{$name} = $hash;
+        $READYFNLIST{$key} = $hash;
+        $hash->{NEXT_OPEN} = gettimeofday() + 60;
         push @TRIGGERS, 'DISCONNECTED' if !$reopen;
         $callback->($hash, $error) if $callback;
         return;
@@ -176,6 +192,8 @@ sub complete_deferred_open {
     $hash->{FD} = 99;
     delete $hash->{NEXT_OPEN};
     delete $READYFNLIST{$name};
+    delete $READYFNLIST{"$name.$dev"};
+    $SELECTLIST{"$name.$dev"} = $hash;
     push @TRIGGERS, 'CONNECTED';
     $callback->($hash, undef) if $callback;
     return;
@@ -190,6 +208,7 @@ sub DevIo_SimpleRead {
         my $hash = $_[0];
         DevIo_CloseDev($hash);
         $READYFNLIST{$hash->{NAME}} = $hash;
+        $READYFNLIST{($hash->{NAME} // '') . '.' . ($hash->{DeviceName} // '')} = $hash;
         $hash->{NEXT_OPEN} = gettimeofday() + 60;
         readingsSingleUpdate($hash, 'state', 'disconnected', 1);
         push @TRIGGERS, 'DISCONNECTED';

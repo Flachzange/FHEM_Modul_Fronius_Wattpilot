@@ -176,6 +176,26 @@ $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
 due_in(31);
+due_in(1);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'fullStatus',
+    status => { partial => JSON::true, car => 1, amp => 6 },
+}));
+main::Wattpilot_Parse($hash, status_msg({ nrg => nrg(0) }));
+is($hash->{READINGS}{power}{VAL}, '0.00',
+    'refresh reconnect nrg bypass survives nrg-less partial status');
+is(timer_count('idle_refresh'), 0,
+    'partial status without nrg does not create a reconnect loop');
+
+$hash = fresh_device();
+$attr{$hash->{NAME}}{update_while_idle} = 1;
+$attr{$hash->{NAME}}{interval} = 300;
+$hash->{TEST_OPEN} = 1;
+$hash->{LAST_UPDATE} = $DevIo::NOW;
+$hash->{helper}{car_state} = 2;
+$hash->{READINGS}{power}{VAL} = '1388.00';
+main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
+due_in(31);
 main::Wattpilot_Parse($hash, encode_json({
     type => 'fullStatus',
     status => { partial => JSON::false, car => 1, amp => 16 },
@@ -257,10 +277,12 @@ is(timer_count('lifecycle_timeout'), 0, 'old DevIo callback after shutdown arms 
 $hash = fresh_device();
 $DevIo::OPEN_MODE = 'deferred';
 main::Wattpilot_Connect($hash);
+my $old_key = $hash->{NAME} . '.' . $hash->{DeviceName};
 DevIo::command_rename('lifeWallbox', 'renamedLifeWallbox');
 DevIo::complete_deferred_open(0);
 is($hash->{NAME}, 'renamedLifeWallbox', 'rename test double moved the device name');
 ok(!$hash->{TEST_OPEN}, 'deferred open started before rename is closed as stale');
+ok(!exists $DevIo::SELECTLIST{$old_key}, 'deferred open completing after rename cleans old-name selectlist key');
 is(timer_count('connect'), 1, 'rename keeps exactly one controlled reconnect owner');
 
 $hash = fresh_device();
@@ -311,5 +333,33 @@ main::Wattpilot_ScheduleTimer($hash, 'idle_refresh', 10, 'Wattpilot_IdleRefreshT
 main::Wattpilot_Shutdown($hash);
 is(scalar @DevIo::ACTIVE_TIMERS, 0, 'ShutdownFn removes tracked timers');
 is(scalar @DevIo::CLOSES, 1, 'ShutdownFn closes DevIo synchronously');
+
+$hash = fresh_device();
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
+$DevIo::OPEN_MODE = 'deferred';
+main::Wattpilot_Connect($hash);
+main::Wattpilot_Set($hash, $hash->{NAME}, 'Password', 'new-password');
+is(scalar @DevIo::OPENS, 1, 'Password change does not start a competing open before old callback');
+DevIo::complete_deferred_open(0);
+is(timer_count('connect'), 1, 'Password change schedules reconnect after stale open callback');
+
+$hash = fresh_device();
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
+$DevIo::OPEN_MODE = 'deferred';
+main::Wattpilot_Connect($hash);
+main::Wattpilot_Set($hash, $hash->{NAME}, 'Password', 'new-password');
+DevIo::complete_deferred_open(0, 'synthetic async failure');
+is(timer_count('connect'), 1, 'Password change schedules reconnect after stale open error');
+ok(!defined $hash->{NEXT_OPEN}, 'stale open error cleanup removes DevIo recovery owner');
+
+$hash = fresh_device();
+$DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
+$DevIo::OPEN_MODE = 'deferred';
+main::Wattpilot_Connect($hash);
+main::Wattpilot_Attr('set', $hash->{NAME}, 'disable', '1');
+main::Wattpilot_Attr('set', $hash->{NAME}, 'disable', '0');
+is(scalar @DevIo::OPENS, 1, 'disable/enable does not start a competing open before old callback');
+DevIo::complete_deferred_open(0);
+is(timer_count('connect'), 1, 'disable/enable reconnect is deferred until stale open completes');
 
 done_testing;
