@@ -85,7 +85,9 @@ transitions, energy values, electrical-update gating, and `nrg` phase/total
 readings. Energy counters are processed independently. `update_while_idle`
 applies uniformly to the `nrg`-derived voltage/current/power group and the three
 stationary-battery readings. `interval` uses separate histories for the two
-groups, so neither group can suppress the other. A complete non-partial
+groups, so neither group can suppress the other. `LAST_UPDATE` advances only
+after a valid `nrg` array is actually admitted; battery-only, configuration-only,
+and invalid-`nrg` messages cannot consume the electrical interval. A complete non-partial
 `fullStatus` and a matched `response` may bypass the battery interval gate, but
 not the shared idle gate; normal `deltaStatus` updates are rate-limited. Missing partial-update fields
 never reset readings, and only real device-supplied zero values create zero

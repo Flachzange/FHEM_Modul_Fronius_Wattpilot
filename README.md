@@ -228,6 +228,7 @@ Legt fest, wie oft **hochfrequente Messwerte** aktualisiert werden. Dazu gehöre
 * Empfehlung: `10` oder `60`.
 * *Hinweis:* Wichtige Änderungen (Ladevorgang startet, Auto angesteckt) werden immer **sofort** angezeigt, unabhängig vom Intervall.
 * Die Speichertelemetrie besitzt eine eigene Intervall-Zeitbasis. Dadurch begrenzen sich Speicher- und `nrg`-Updates nicht gegenseitig.
+* Nur eine Nachricht mit einem gültigen `nrg`-Array schreibt die elektrische Intervall-Zeitbasis fort. Batterie-, Konfigurations- oder ungültige `nrg`-Deltas verbrauchen das `nrg`-Intervall nicht.
 * Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen, nicht jedoch `update_while_idle`.
 
 ### `update_while_idle` (0 oder 1)

@@ -1298,15 +1298,23 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
     my $name = $hash->{NAME};
     my $has_valid_nrg = ref($status->{nrg}) eq 'ARRAY'
         && @{$status->{nrg}} >= 12;
+
+    if ($hash->{helper}{idleRefreshAwaitingReconnectNrg}
+        && !$has_valid_nrg
+        && $message_type eq 'fullStatus'
+        && !$status->{partial}) {
+        delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
+    }
+    return 0 if !$has_valid_nrg;
+
     my $interval = AttrVal($name, "interval", 0);
     my $last_update = $hash->{LAST_UPDATE} // 0;
     my $suppress_electrical =
         $interval > 0 && ($now - $last_update < $interval);
     my $volatile_telemetry_allowed =
         Wattpilot_ShouldProcessVolatileTelemetry($hash);
-    my $idle_bypass = ($hash->{helper}{idleRefreshPending}
-        || $hash->{helper}{idleRefreshAwaitingReconnectNrg})
-        && $has_valid_nrg;
+    my $idle_bypass = $hash->{helper}{idleRefreshPending}
+        || $hash->{helper}{idleRefreshAwaitingReconnectNrg};
 
     my $process_electrical = 0;
     if ($idle_bypass) {
@@ -1315,13 +1323,6 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     } elsif (!$suppress_electrical && $volatile_telemetry_allowed) {
         $process_electrical = 1;
-    }
-
-    if ($hash->{helper}{idleRefreshAwaitingReconnectNrg}
-        && !$has_valid_nrg
-        && $message_type eq 'fullStatus'
-        && !$status->{partial}) {
-        delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     }
 
     $hash->{LAST_UPDATE} = $now if $process_electrical;
@@ -2368,7 +2369,7 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        Rate limit for the voltage, current, and power group derived from <code>nrg</code> and, independently, for <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code>, and <code>pvBatteryModeCode</code>. <code>0</code> disables rate limiting. A complete initial status and a matched device response may bypass the stationary-battery interval gate, but not the idle gate.</li>
+        Rate limit for the voltage, current, and power group derived from <code>nrg</code> and, independently, for <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code>, and <code>pvBatteryModeCode</code>. <code>0</code> disables rate limiting. Only a message containing a valid <code>nrg</code> array advances the electrical interval history; battery-only, configuration-only, and invalid-<code>nrg</code> messages do not consume it. A complete initial status and a matched device response may bypass the stationary-battery interval gate, but not the idle gate.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
         <code>0</code> keeps both the <code>nrg</code>-derived voltage/current/power group and the stationary-PV-battery telemetry passive while not charging. <code>1</code> processes real incoming idle values for both groups, each still subject to its own <code>interval</code> history. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
@@ -2589,7 +2590,7 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Rate-Limit für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe und unabhängig davon für <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code> und <code>pvBatteryModeCode</code>. <code>0</code> deaktiviert die Begrenzung. Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen, nicht jedoch das Idle-Gate.</li>
+        Rate-Limit für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe und unabhängig davon für <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code> und <code>pvBatteryModeCode</code>. <code>0</code> deaktiviert die Begrenzung. Nur eine Nachricht mit einem gültigen <code>nrg</code>-Array schreibt die elektrische Intervall-Zeitbasis fort; Batterie-, Konfigurations- und ungültige <code>nrg</code>-Nachrichten verbrauchen sie nicht. Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen, nicht jedoch das Idle-Gate.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
         <code>0</code> belässt sowohl die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings als auch die stationäre PV-Speichertelemetrie im nicht ladenden Zustand passiv. <code>1</code> verarbeitet für beide Gruppen echte eingehende Idle-Werte, jeweils weiterhin unter Beachtung ihrer eigenen <code>interval</code>-Zeitbasis. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
     <li><code>disable &lt;0|1&gt;</code><br>

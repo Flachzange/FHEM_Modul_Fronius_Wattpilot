@@ -228,6 +228,7 @@ Determines how often **high-frequency readings** are updated. This includes the 
 * Recommendation: `10` or `60`.
 * *Note:* Important changes (charging starts, car plugged in) are always shown **immediately**, regardless of the interval.
 * Stationary-battery telemetry uses its own interval history, so it does not consume or block the `nrg` history.
+* Only a message containing a valid `nrg` array advances the electrical interval history. Battery-only, configuration-only, or invalid-`nrg` deltas do not consume the `nrg` interval.
 * A complete initial status and a matched device response may bypass the stationary-battery interval gate, but not `update_while_idle`.
 
 ### `update_while_idle` (0 or 1)
