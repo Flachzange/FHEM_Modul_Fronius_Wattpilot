@@ -4,7 +4,7 @@ no warnings 'once';
 
 use File::Basename qw(dirname);
 use File::Spec;
-use JSON qw(decode_json true false);
+use JSON qw(decode_json);
 use Test::More;
 
 our ($readingFnAttributes, %modules, %defs, %attr);
@@ -67,7 +67,7 @@ ok(!exists $hash->{READINGS}{chargingDecisionReason},
 main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
     status => {
-        alw => true,
+        alw => JSON::true,
         modelStatus => 24,
     },
 });
@@ -108,7 +108,7 @@ main::Wattpilot_DispatchMessage($hash, {
         err => {},
         ama => 31.5,
         amt => '32A',
-        mca => true,
+        mca => JSON::true,
     },
 });
 is(reading_value($hash, 'chargingAllowed'), 1,
@@ -134,7 +134,7 @@ main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
     status => {
         car => 1,
-        alw => false,
+        alw => JSON::false,
         modelStatus => 0,
         msi => 0,
         err => 0,
