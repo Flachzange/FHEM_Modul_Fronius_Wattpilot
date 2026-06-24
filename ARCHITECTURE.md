@@ -70,7 +70,7 @@ module reconnect.
 | `car_state` | current device-hash runtime state |
 | idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single automatic refresh reconnect, while a manual reconnect clears the episode state |
 | `LAST_UPDATE` | current device-hash rate-limit history shared by all high-frequency measurement readings |
-| `volatileTelemetryCache` | current connection/session cache for the latest valid stationary-PV-battery fields; published only by an admitted `nrg` cycle |
+| `volatileTelemetryCache` | current connection/session cache for the latest valid `nrg` array and stationary-PV-battery fields; published by one admitted shared measurement cycle |
 | `msg_id` | current device-hash request sequence |
 
 ## Status and reading pipeline
@@ -80,22 +80,23 @@ Incoming status data is copied and normalized once by
 unknown fields are preserved, and the caller's structure is never mutated.
 
 `Wattpilot_UpdateReadings` owns one FHEM bulk-reading transaction and delegates
-to narrow helpers for immediate readings, stationary-battery caching, car
-transitions, energy values, shared measurement gating, and `nrg` phase/total
+to narrow helpers for immediate readings, volatile-telemetry caching, car
+transitions, energy values, shared measurement gating, and cached phase/total
 readings. Energy counters are processed independently. `update_while_idle`
-applies once to the shared high-frequency measurement cycle. Valid stationary-
-PV-battery fields are cached per connection and are published only when a valid
-`nrg` array is admitted. `interval` therefore has exactly one history,
-`LAST_UPDATE`, for voltage, current, power, and stationary-battery telemetry.
-Battery-only, configuration-only, invalid-`nrg`, and incomplete-`nrg` messages
-cannot consume that interval. Complete `fullStatus` and matched `response`
-messages without valid `nrg` may refresh the cache but do not bypass the shared
-cadence. Missing partial-update fields never reset readings, and only real
+applies once to the shared high-frequency measurement cycle. Valid `nrg` and
+stationary-PV-battery fields are cached per connection. After a valid `nrg`
+array has initialized the cache, valid input from either volatile group may
+trigger the next cycle admitted by `interval`; the complete available cache is
+then published in one FHEM bulk-reading transaction. `interval` therefore has
+exactly one history, `LAST_UPDATE`, for voltage, current, power, and stationary-
+battery telemetry. Configuration-only and invalid-only messages cannot consume
+that interval. Complete `fullStatus` and matched `response` messages follow the
+same shared cadence and do not receive a separate interval bypass. Missing partial-update fields never reset readings, and only real
 device-supplied zero values create zero readings. `modelStatus` and `msi` each produce both an unmodified numeric code
 and a lowerCamelCase text reading. The text table is a compatibility mapping
 from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
 based on pinned Wattpilot-specific evidence that it is the internal variant of
-the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields use the shared cached measurement pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100, `fbuf_pAkku` is preserved as a signed finite watt value, formatted to two decimal places, without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. No battery setter is present in version 2.0.6; candidate fields such as `fam` remain outside the public interface until their current Flex semantics and writability are independently verified.
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields use the shared cached measurement pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100 and formatted to one decimal place, `fbuf_pAkku` is preserved as a signed finite watt value, formatted to two decimal places, without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. No battery setter is present in version 2.0.6; candidate fields such as `fam` remain outside the public interface until their current Flex semantics and writability are independently verified.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during

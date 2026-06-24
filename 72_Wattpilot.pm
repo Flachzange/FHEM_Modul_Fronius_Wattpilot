@@ -1226,13 +1226,23 @@ sub Wattpilot_HasValidNrg($) {
     return !grep { !defined($_) || !Wattpilot_IsNumber($_) } @{$status->{nrg}}[0..11];
 }
 
-sub Wattpilot_CacheBatteryTelemetry($$) {
-    my ($hash, $status) = @_;
-    my @keys = qw(fbuf_akkuSOC fbuf_pAkku fbuf_akkuMode);
-    return if !grep { defined $status->{$_} } @keys;
+sub Wattpilot_HasBatteryTelemetry($) {
+    my ($status) = @_;
+    return 1 if defined $status->{fbuf_akkuSOC};
+    return 1 if defined $status->{fbuf_pAkku};
+    return 1 if defined $status->{fbuf_akkuMode};
+    return 0;
+}
 
+sub Wattpilot_CacheVolatileTelemetry($$) {
+    my ($hash, $status) = @_;
     my $cache = $hash->{helper}{volatileTelemetryCache} //= {};
-    for my $key (@keys) {
+
+    if (Wattpilot_HasValidNrg($status)) {
+        $cache->{nrg} = [@{$status->{nrg}}];
+    }
+
+    for my $key (qw(fbuf_akkuSOC fbuf_pAkku fbuf_akkuMode)) {
         $cache->{$key} = $status->{$key} if defined $status->{$key};
     }
 }
@@ -1248,7 +1258,7 @@ sub Wattpilot_UpdateBatteryReadings($$) {
 
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{pv_battery_state_of_charge},
-        $status->{fbuf_akkuSOC})
+        sprintf("%.1f", $status->{fbuf_akkuSOC}))
         if defined $status->{fbuf_akkuSOC};
 
     readingsBulkUpdate(
@@ -1280,10 +1290,12 @@ sub Wattpilot_HandleCarTransition($$) {
     return $is_charging;
 }
 
-sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
+sub Wattpilot_ShouldProcessVolatileReadings($$$$) {
     my ($hash, $status, $message_type, $now) = @_;
     my $name = $hash->{NAME};
     my $has_valid_nrg = Wattpilot_HasValidNrg($status);
+    my $has_battery_telemetry = Wattpilot_HasBatteryTelemetry($status);
+    my $has_volatile_input = $has_valid_nrg || $has_battery_telemetry;
 
     if ($hash->{helper}{idleRefreshAwaitingReconnectNrg}
         && !$has_valid_nrg
@@ -1291,7 +1303,10 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
         && !$status->{partial}) {
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     }
-    return 0 if !$has_valid_nrg;
+    return 0 if !$has_volatile_input;
+
+    my $cache = $hash->{helper}{volatileTelemetryCache} // {};
+    return 0 if !Wattpilot_HasValidNrg($cache);
 
     my $interval = AttrVal($name, "interval", 0);
     my $last_update = $hash->{LAST_UPDATE} // 0;
@@ -1299,20 +1314,21 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
         $interval > 0 && ($now - $last_update < $interval);
     my $volatile_telemetry_allowed =
         Wattpilot_ShouldProcessVolatileTelemetry($hash);
-    my $idle_bypass = $hash->{helper}{idleRefreshPending}
-        || $hash->{helper}{idleRefreshAwaitingReconnectNrg};
+    my $idle_bypass = $has_valid_nrg
+        && ($hash->{helper}{idleRefreshPending}
+            || $hash->{helper}{idleRefreshAwaitingReconnectNrg});
 
-    my $process_electrical = 0;
+    my $process_volatile = 0;
     if ($idle_bypass) {
-        $process_electrical = 1;
+        $process_volatile = 1;
         Wattpilot_StopIdleRefresh($hash);
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     } elsif (!$suppress_electrical && $volatile_telemetry_allowed) {
-        $process_electrical = 1;
+        $process_volatile = 1;
     }
 
-    $hash->{LAST_UPDATE} = $now if $process_electrical;
-    return $process_electrical;
+    $hash->{LAST_UPDATE} = $now if $process_volatile;
+    return $process_volatile;
 }
 
 sub Wattpilot_UpdateEnergyReadings($$) {
@@ -1355,17 +1371,17 @@ sub Wattpilot_UpdateReadings($$;$) {
 
     # Remove the obsolete per-battery cadence after a hot module reload.
     delete $hash->{LAST_BATTERY_UPDATE};
-    Wattpilot_CacheBatteryTelemetry($hash, $status);
+    Wattpilot_CacheVolatileTelemetry($hash, $status);
 
     readingsBeginUpdate($hash);
     Wattpilot_UpdateImmediateReadings($hash, $status);
     Wattpilot_HandleCarTransition($hash, $previous_car_state);
     Wattpilot_UpdateEnergyReadings($hash, $status);
-    if (Wattpilot_ShouldProcessElectricalReadings(
+    if (Wattpilot_ShouldProcessVolatileReadings(
             $hash, $status, $message_type, $now)) {
-        Wattpilot_UpdateNrgReadings($hash, $status);
-        Wattpilot_UpdateBatteryReadings(
-            $hash, $hash->{helper}{volatileTelemetryCache} // {});
+        my $cache = $hash->{helper}{volatileTelemetryCache} // {};
+        Wattpilot_UpdateNrgReadings($hash, $cache);
+        Wattpilot_UpdateBatteryReadings($hash, $cache);
     }
     readingsEndUpdate($hash, 1);
 }
@@ -2358,9 +2374,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        One shared rate limit for the voltage, current, and power readings derived from <code>nrg</code> and for <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code>, and <code>pvBatteryModeCode</code>. <code>0</code> disables rate limiting. Valid stationary-battery fields are cached and published in the same FHEM reading transaction as the next admitted valid <code>nrg</code> cycle. Battery-only, configuration-only, invalid-<code>nrg</code>, and incomplete-<code>nrg</code> messages do not advance <code>LAST_UPDATE</code>. A complete initial status or matched device response without valid <code>nrg</code> refreshes only the cache and does not bypass the shared cadence.</li>
+        One shared rate limit for the voltage, current, and power readings derived from <code>nrg</code> and for <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code>, and <code>pvBatteryModeCode</code>. <code>0</code> disables rate limiting. Valid <code>nrg</code> and stationary-battery fields are cached together. Once a valid <code>nrg</code> snapshot has initialized the cache, valid input from either group may trigger the next admitted shared cycle, which republishes all available volatile readings in one FHEM reading transaction. Values arriving inside the interval refresh only the cache; messages without valid volatile telemetry do not advance <code>LAST_UPDATE</code>. Complete initial status and matched device responses use the same shared cadence.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps the shared <code>nrg</code>-led voltage/current/power and stationary-PV-battery cycle passive while not charging. <code>1</code> processes real incoming idle values through that one shared <code>interval</code> history. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
+        <code>0</code> keeps the shared voltage/current/power and stationary-PV-battery cycle passive while not charging. <code>1</code> processes real incoming idle values through that one shared <code>interval</code> history. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2398,10 +2414,10 @@ sub Wattpilot_WriteJson($$) {
     <li><code>phaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code>, or <code>unknown:&lt;raw-value&gt;</code> from <code>psm</code>.</li>
     <li><code>threePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts.</li>
     <li><code>phaseSwitchDelay</code>, <code>minimumPhaseSwitchInterval</code>, <code>minimumChargeTime</code>, <code>minimumChargingPauseDuration</code>, <code>minimumChargingInterval</code><br>Non-negative finite values from <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code>, and <code>mci</code>, converted from protocol milliseconds to public seconds.</li>
-    <li><code>pvBatteryStateOfCharge</code><br>Stationary PV-battery state of charge from <code>fbuf_akkuSOC</code>, accepted only as a finite percentage from <code>0</code> through <code>100</code>.</li>
+    <li><code>pvBatteryStateOfCharge</code><br>Stationary PV-battery state of charge from <code>fbuf_akkuSOC</code>, accepted only as a finite percentage from <code>0</code> through <code>100</code> and formatted with exactly one decimal place.</li>
     <li><code>pvBatteryPower</code><br>Signed finite value from <code>fbuf_pAkku</code>, exposed in watts and formatted to two decimal places. The module does not assign an unverified charge/discharge direction to the sign.</li>
     <li><code>pvBatteryModeCode</code><br>Unmodified non-negative integer code from <code>fbuf_akkuMode</code>. No text enum is invented. These stationary-battery readings have no public setters in version 2.0.6; candidate writable fields such as <code>fam</code> remain excluded until verified.</li>
-    <li>Operational status and configuration readings other than the three stationary-battery readings update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Valid stationary-battery fields are cached and published only together with an admitted valid <code>nrg</code> cycle, so all high-frequency measurement readings use the same <code>LAST_UPDATE</code> history and the same idle decision. Missing, <code>null</code>, or type-invalid fields leave existing readings and the latest valid cache values unchanged.</li>
+    <li>Operational status and configuration readings other than the three stationary-battery readings update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Valid <code>nrg</code> and stationary-battery fields are cached together. After valid <code>nrg</code> has initialized the cache, valid input from either group may trigger the next admitted shared cycle; all available high-frequency measurement readings are then updated from the latest cache in the same FHEM reading transaction. They therefore use the same <code>LAST_UPDATE</code> history and the same idle decision. Missing, <code>null</code>, or type-invalid fields leave existing readings and the latest valid cache values unchanged.</li>
   </ul>
   <p><b>Note on aWATTar:</b> aWATTar is a provider or tariff name associated with dynamic electricity prices, not a technical abbreviation introduced by this module. Names containing <code>Awattar</code> in the imported go-e enum refer to price-controlled charging decisions. <code>Fallback</code> denotes the default outcome of a decision branch when no more specific charging reason applies; it does not automatically indicate a technical fault. The exact trigger and full semantics of these codes are not confirmed for Wattpilot Flex. In particular, <code>notChargingBecauseFallbackAwattar</code> alone does not prove that an aWATTar tariff is enabled.</p>
   <p><b>Charging-decision compatibility mapping</b></p>
@@ -2580,9 +2596,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Ein gemeinsames Rate-Limit für die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings sowie für <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code> und <code>pvBatteryModeCode</code>. <code>0</code> deaktiviert die Begrenzung. Gültige Speicherwerte werden zwischengespeichert und in derselben FHEM-Reading-Transaktion mit dem nächsten zugelassenen gültigen <code>nrg</code>-Zyklus veröffentlicht. Batterie-only-, Konfigurations-, ungültige und unvollständige <code>nrg</code>-Nachrichten schreiben <code>LAST_UPDATE</code> nicht fort. Ein vollständiger Initialstatus oder eine zugeordnete Geräteantwort ohne gültiges <code>nrg</code> aktualisiert nur den Zwischenspeicher und umgeht den gemeinsamen Takt nicht.</li>
+        Ein gemeinsames Rate-Limit für die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings sowie für <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code> und <code>pvBatteryModeCode</code>. <code>0</code> deaktiviert die Begrenzung. Gültige <code>nrg</code>- und Speicherwerte werden gemeinsam zwischengespeichert. Sobald ein gültiger <code>nrg</code>-Stand den Zwischenspeicher initialisiert hat, kann ein gültiges Update aus jeder der beiden Gruppen den nächsten zugelassenen gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren volatilen Readings in einer FHEM-Reading-Transaktion aktualisiert. Innerhalb des Intervalls eintreffende Werte aktualisieren nur den Zwischenspeicher; Nachrichten ohne gültige volatile Telemetrie schreiben <code>LAST_UPDATE</code> nicht fort. Vollständige Initialstatus-Nachrichten und zugeordnete Geräteantworten verwenden denselben gemeinsamen Takt.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt den gemeinsamen <code>nrg</code>-geführten Zyklus für Spannung, Strom, Leistung und stationäre PV-Speichertelemetrie im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte über genau eine gemeinsame <code>interval</code>-Zeitbasis. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
+        <code>0</code> belässt den gemeinsamen Zyklus für Spannung, Strom, Leistung und stationäre PV-Speichertelemetrie im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte über genau eine gemeinsame <code>interval</code>-Zeitbasis. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2620,10 +2636,10 @@ sub Wattpilot_WriteJson($$) {
     <li><code>phaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code> oder <code>unknown:&lt;Rohwert&gt;</code> aus <code>psm</code>.</li>
     <li><code>threePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt.</li>
     <li><code>phaseSwitchDelay</code>, <code>minimumPhaseSwitchInterval</code>, <code>minimumChargeTime</code>, <code>minimumChargingPauseDuration</code>, <code>minimumChargingInterval</code><br>Nicht negative, endliche Werte aus <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code> und <code>mci</code>, von Protokoll-Millisekunden in öffentliche Sekunden umgerechnet.</li>
-    <li><code>pvBatteryStateOfCharge</code><br>Ladezustand des stationären PV-Speichers aus <code>fbuf_akkuSOC</code>, nur als endlicher Prozentwert von <code>0</code> bis <code>100</code> akzeptiert.</li>
+    <li><code>pvBatteryStateOfCharge</code><br>Ladezustand des stationären PV-Speichers aus <code>fbuf_akkuSOC</code>, nur als endlicher Prozentwert von <code>0</code> bis <code>100</code> akzeptiert und mit genau einer Nachkommastelle ausgegeben.</li>
     <li><code>pvBatteryPower</code><br>Vorzeichenbehafteter endlicher Wert aus <code>fbuf_pAkku</code>, ausgegeben in Watt und auf zwei Nachkommastellen formatiert. Das Modul weist dem Vorzeichen keine unbestätigte Lade-/Entladerichtung zu.</li>
     <li><code>pvBatteryModeCode</code><br>Unveränderter nicht negativer Ganzzahlcode aus <code>fbuf_akkuMode</code>. Es wird keine Klartext-Enum erfunden. Für diese stationären Speicherreadings gibt es in Version 2.0.6 keine öffentlichen Setter; Kandidaten wie <code>fam</code> bleiben bis zur Verifikation ausgeschlossen.</li>
-    <li>Die operativen Status- und Konfigurationsreadings außerhalb der drei stationären Speicherreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Gültige Speicherwerte werden zwischengespeichert und ausschließlich zusammen mit einem zugelassenen gültigen <code>nrg</code>-Zyklus veröffentlicht, sodass alle hochfrequenten Messreadings dieselbe <code>LAST_UPDATE</code>-Zeitbasis und dieselbe Idle-Entscheidung verwenden. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings und die zuletzt gültigen Zwischenspeicherwerte unverändert.</li>
+    <li>Die operativen Status- und Konfigurationsreadings außerhalb der drei stationären Speicherreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Gültige <code>nrg</code>- und Speicherwerte werden gemeinsam zwischengespeichert. Nach der ersten gültigen <code>nrg</code>-Initialisierung kann ein gültiges Update aus jeder der beiden Gruppen den nächsten zugelassenen gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren hochfrequenten Messreadings in derselben FHEM-Reading-Transaktion aus dem neuesten Zwischenspeicher aktualisiert. Dadurch verwenden sie dieselbe <code>LAST_UPDATE</code>-Zeitbasis und dieselbe Idle-Entscheidung. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings und die zuletzt gültigen Zwischenspeicherwerte unverändert.</li>
   </ul>
   <p><b>Hinweis zu aWATTar:</b> aWATTar ist ein Anbieter- beziehungsweise Tarifname für dynamische Strompreise und kein technisches Kürzel des Moduls. Die aus der go-e-Enum übernommenen Namen mit <code>Awattar</code> bezeichnen preisabhängige Ladeentscheidungen. <code>Fallback</code> bezeichnet dabei den Standardausgang eines Entscheidungszweigs, wenn kein speziellerer Ladegrund greift, und nicht automatisch einen technischen Fehler. Für den Wattpilot Flex sind der genaue Auslöser dieser Codes und ihre vollständige Semantik nicht bestätigt; insbesondere beweist <code>notChargingBecauseFallbackAwattar</code> allein nicht, dass ein aWATTar-Tarif aktiviert ist.</p>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>

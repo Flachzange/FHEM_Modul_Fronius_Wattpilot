@@ -198,7 +198,7 @@ These additional setters use the existing secured `setValue` path. No reading is
 
 ### PV battery telemetry
 
-The readings `pvBatteryStateOfCharge`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not to the vehicle traction battery. They are read from the device-supplied fields `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. Valid stationary-battery values are cached and published together with the next admitted `nrg` measurement cycle. Voltage, current, power, and stationary-battery telemetry therefore use exactly one shared `interval` history and are updated in the same FHEM reading transaction. Battery-only messages, complete initial status messages without valid `nrg`, and matched device responses do not publish battery readings separately and do not consume the interval. Version 2.0.6 deliberately provides no setters for these three values. In particular, the module does not invent an unverified mode enum or an unverified charge/discharge sign meaning for battery power. Writable storage parameters such as `fam` remain outside the public interface until field semantics and writability are verified.
+The readings `pvBatteryStateOfCharge`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not to the vehicle traction battery. They are read from the device-supplied fields `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. Valid `nrg` and stationary-battery values are cached together. Once at least one valid `nrg` snapshot is available, either valid `nrg` input or valid battery input may trigger the next shared measurement cycle admitted by `interval`. Voltage, current, power, and stationary-battery telemetry are then published from the latest cache in the same FHEM reading transaction. There is only one shared history in `LAST_UPDATE`; values arriving inside the interval update only the cache. `pvBatteryStateOfCharge` is formatted with exactly one decimal place. Version 2.0.6 deliberately provides no setters for these three values. In particular, the module does not invent an unverified mode enum or an unverified charge/discharge sign meaning for battery power. Writable storage parameters such as `fam` remain outside the public interface until field semantics and writability are verified.
 
 ### Rebuild the connection deliberately
 
@@ -228,8 +228,8 @@ Determines how often **high-frequency readings** are updated. This includes the 
 * Recommendation: `10` or `60`.
 * *Note:* Important changes (charging starts, car plugged in) are always shown **immediately**, regardless of the interval.
 * All high-frequency measurement readings use exactly one shared interval history in `LAST_UPDATE`; there is no separate battery history.
-* Only an admitted measurement cycle containing a valid `nrg` array advances that history. Valid battery fields from intervening battery-only messages are cached and published in the same reading cycle as the next `nrg`.
-* Configuration-only, battery-only, invalid-`nrg`, and incomplete-`nrg` messages do not consume the interval. A complete initial status or matched device response without valid `nrg` does not bypass the shared cadence.
+* Valid `nrg` and battery values are cached together. After the first valid `nrg` initialization, valid input from either measurement group may trigger the next admitted shared reading cycle.
+* Values arriving inside the interval refresh only the shared cache. Configuration messages and messages without valid volatile telemetry do not consume the interval. Complete initial status and matched device responses use the same shared cadence.
 
 ### `update_while_idle` (0 or 1)
 
@@ -310,7 +310,7 @@ The module exposes exactly these 47 public readings:
 | `chargingPauseAllowed` | Boolean field `fap`, exposed as `0` or `1`. |
 | `minimumChargingPauseDuration` | `mcpd` converted from milliseconds to seconds. |
 | `minimumChargingInterval` | `mci` converted from milliseconds to seconds. The name follows the API alias; the Fronius Flex manual calls the behavior Forced charging interval. |
-| `pvBatteryStateOfCharge` | Stationary PV-battery state of charge from `fbuf_akkuSOC`, exposed as a percentage from `0` to `100`. Missing or invalid values leave the reading unchanged. |
+| `pvBatteryStateOfCharge` | Stationary PV-battery state of charge from `fbuf_akkuSOC`, exposed as a percentage from `0` to `100` with exactly one decimal place. Missing or invalid values leave the reading unchanged. |
 | `pvBatteryPower` | Signed numeric value from `fbuf_pAkku`, exposed in watts and always formatted to two decimal places. The charge/discharge sign direction has not yet been confirmed by a controlled Flex live test, so the module does not reinterpret the sign. |
 | `pvBatteryModeCode` | Unmodified non-negative integer code from `fbuf_akkuMode`. No text mode is invented because no reliable enum is available. |
 | `nextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
@@ -324,7 +324,7 @@ The module exposes exactly these 47 public readings:
 | `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
 | `lastCommandError` | Concise redacted error or result text. |
 
-Operational status and configuration readings other than the three stationary-battery readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Valid stationary-battery fields are cached and published only together with an admitted valid `nrg` cycle, so all high-frequency measurement readings use the same `LAST_UPDATE` history and the same idle decision. Missing, `null`, or type-invalid fields leave existing readings and the latest valid cached values unchanged.
+Operational status and configuration readings other than the three stationary-battery readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Valid `nrg` and stationary-battery values are cached together. After the first valid `nrg` initialization, valid input from either measurement group may trigger the next admitted shared cycle; all available high-frequency measurement readings are then updated from the latest cache in the same FHEM reading transaction. They therefore use the same `LAST_UPDATE` history and the same idle decision. Missing, `null`, or type-invalid fields leave existing readings and the latest valid cached values unchanged.
 
 The text values use a compatibility mapping from the pinned official go-e `modelStatus` enum. The same value table is applied to `msi` because the pinned Wattpilot-specific source describes it as an internal decision variant. This is not an official Fronius Flex specification; both raw codes therefore remain available and unmapped values stay explicit. The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed for Wattpilot Flex. In particular, the module does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values and do not infer a causal chain from this documentation.
 

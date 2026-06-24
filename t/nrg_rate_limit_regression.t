@@ -136,7 +136,7 @@ subtest 'interval zero disables electrical rate limiting' => sub {
         'latest valid unlimited nrg records its timestamp');
 };
 
-subtest 'one nrg-led interval cycle publishes all volatile telemetry' => sub {
+subtest 'one shared interval cycle publishes all volatile telemetry' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
@@ -162,28 +162,33 @@ subtest 'one nrg-led interval cycle publishes all volatile telemetry' => sub {
         fbuf_pAkku => -500,
         fbuf_akkuMode => 2,
     }), 'battery-only delta at the shared boundary is accepted');
-    is(reading_value($hash, 'pvBatteryPower'), '-400.00',
-        'battery-only delta is cached instead of publishing on a separate cadence');
-    is(scalar @DevIo::READING_UPDATES, $updates_before_battery_delta,
-        'battery-only delta produces no public reading update');
-    is($hash->{LAST_UPDATE}, 4_000,
-        'battery-only delta cannot consume the shared interval');
+    is(reading_value($hash, 'power'), '690.00',
+        'latest cached nrg is republished by the shared cycle');
+    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
+        'fresh battery telemetry is published at the shared boundary');
+    is($hash->{LAST_UPDATE}, 4_030,
+        'battery-only input advances the one shared interval history after publication');
+    my @battery_cycle = map { $_->[1] }
+        @DevIo::READING_UPDATES[$updates_before_battery_delta .. $#DevIo::READING_UPDATES];
+    ok(grep($_ eq 'power', @battery_cycle)
+        && grep($_ eq 'pvBatteryPower', @battery_cycle),
+        'battery input republishes nrg and battery readings in one transaction');
 
     my $updates_before_nrg_delta = scalar @DevIo::READING_UPDATES;
-    $DevIo::NOW = 4_031;
+    $DevIo::NOW = 4_060;
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(900) }),
-        'subsequent charging nrg delta is accepted');
+        'subsequent charging nrg delta is accepted at the next boundary');
     is(reading_value($hash, 'power'), '900.00',
-        'fresh nrg is published at the shared boundary');
+        'fresh nrg is published at the next shared boundary');
     is(reading_value($hash, 'pvBatteryPower'), '-500.00',
-        'latest cached battery telemetry is published in the same update call');
-    is($hash->{LAST_UPDATE}, 4_031,
-        'the nrg-led publication advances the one shared interval history');
-    my @cycle_readings = map { $_->[1] }
+        'latest cached battery telemetry is republished in the same update call');
+    is($hash->{LAST_UPDATE}, 4_060,
+        'the nrg input advances the same shared interval history');
+    my @nrg_cycle = map { $_->[1] }
         @DevIo::READING_UPDATES[$updates_before_nrg_delta .. $#DevIo::READING_UPDATES];
-    ok(grep($_ eq 'power', @cycle_readings)
-        && grep($_ eq 'pvBatteryPower', @cycle_readings),
-        'nrg and battery readings are emitted by the same readings transaction');
+    ok(grep($_ eq 'power', @nrg_cycle)
+        && grep($_ eq 'pvBatteryPower', @nrg_cycle),
+        'nrg input republishes nrg and battery readings in one transaction');
 };
 
 subtest 'invalid or incomplete nrg cannot consume the interval' => sub {
@@ -248,6 +253,24 @@ subtest 'observed Flex 43.4 fullStatus uses the shared measurement cycle' => sub
     ok(grep($_ eq 'voltageL1', @cycle)
         && grep($_ eq 'pvBatteryPower', @cycle),
         'observed nrg and battery readings are emitted together');
+
+    my $battery_cycle_start = scalar @DevIo::READING_UPDATES;
+    $DevIo::NOW = 5_530;
+    ok(parse_status($hash, 'deltaStatus', {
+        fbuf_akkuSOC => 59.94,
+        fbuf_pAkku => -1400,
+    }), 'observed-style idle battery delta starts the next shared cycle');
+    is(reading_value($hash, 'pvBatteryStateOfCharge'), '59.9',
+        'idle battery SOC is rounded to one decimal place');
+    is(reading_value($hash, 'voltageL1'), '230.00',
+        'cached Flex voltage is republished in the same idle cycle');
+    is($hash->{LAST_UPDATE}, 5_530,
+        'battery input advances the shared idle cadence');
+    my @battery_cycle = map { $_->[1] }
+        @DevIo::READING_UPDATES[$battery_cycle_start .. $#DevIo::READING_UPDATES];
+    ok(grep($_ eq 'voltageL1', @battery_cycle)
+        && grep($_ eq 'pvBatteryStateOfCharge', @battery_cycle),
+        'idle battery input republishes both measurement groups together');
 };
 
 subtest 'fullStatus, deltaStatus, and matched response share the nrg gate' => sub {
