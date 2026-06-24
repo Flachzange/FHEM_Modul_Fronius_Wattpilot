@@ -328,6 +328,8 @@ Operational status and configuration readings other than the three stationary-ba
 
 The text values use a compatibility mapping from the pinned official go-e `modelStatus` enum. The same value table is applied to `msi` because the pinned Wattpilot-specific source describes it as an internal decision variant. This is not an official Fronius Flex specification; both raw codes therefore remain available and unmapped values stay explicit. The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed for Wattpilot Flex. In particular, the module does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values and do not infer a causal chain from this documentation.
 
+**Note on aWATTar:** aWATTar is a provider or tariff name associated with dynamic electricity prices, not a technical abbreviation introduced by this module. Names containing `Awattar` in the imported go-e enum refer to price-controlled charging decisions. `Fallback` denotes the default outcome of a decision branch when no more specific charging reason applies; it does not automatically indicate a technical fault. The exact trigger and full semantics of these codes are not confirmed for Wattpilot Flex. In particular, a value such as `notChargingBecauseFallbackAwattar` alone does not prove that an aWATTar tariff is enabled.
+
 | Code | Text value |
 | :--- | :--- |
 | `0` | `notChargingBecauseNoChargeCtrlData` |
