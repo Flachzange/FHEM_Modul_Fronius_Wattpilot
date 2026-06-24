@@ -9,7 +9,7 @@
 - Keine optimistischen Reading-Updates: nur vom Gerät zurückgelieferter Status bestätigt einen neuen Wert; Fehlerantworten lassen den zuletzt bestätigten Wert unverändert.
 - Öffentliche Namen verwenden einheitlich `SoC`: `pvBatterySoC`, `configPvBatteryChargeAboveSoC` und `configPvBatteryDischargeUntilSoC`. `configPvBatteryDischargeEndTime` wurde ohne Alias oder Migration in `configPvBatteryDischargeStopTime` umbenannt.
 - Automatisierte Tests decken exakte Payload-Schlüssel und JSON-Typen, Grenzwerte, Zeitkonvertierung, ungültige Syntax, fehlende optimistische Updates sowie erfolgreiche und fehlgeschlagene Responses ab.
-- Der Stand bleibt bis zum kontrollierten Realgerätetest auf Wattpilot Flex Home 22 C6 mit Firmware 43.4 ein Verifikationskandidat. Schreibannahme, Readback, Restore, Ablehnung und Persistenz sind noch nicht als Realgerätetest bestätigt.
+- Alle sechs gruppierten Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, vom Gerät angenommen, über geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben ungetestet.
 
 ## [v2.0.8] - 2026-06-24
 

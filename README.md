@@ -236,7 +236,7 @@ set wallbox pvBattery dischargeStartTime 07:00
 set wallbox pvBattery dischargeStopTime 20:00
 ```
 
-`chargeAboveSoC` und `dischargeUntilSoC` akzeptieren ganze Werte von `0` bis `100`. Die beiden Schalter akzeptieren `0` oder `1` und werden als JSON-Boolean gesendet. `dischargeStartTime` akzeptiert `00:00` bis `23:59`; `dischargeStopTime` zusätzlich `24:00`. Intern werden die Zeiten als Sekunden seit Mitternacht über `pdls` beziehungsweise `pdlo` übertragen. Es wird kein Reading optimistisch geändert; nur eine Geräteantwort oder ein späterer Status bestätigt den Wert. Diese Setter sind zunächst ein Verifikationsstand für Flex 43.4. Gerätereaktion, Readback, Restore, Ablehnung ungültiger Werte und weitere Firmware-/Modellstände müssen vor dem Merge kontrolliert getestet werden.
+`chargeAboveSoC` und `dischargeUntilSoC` akzeptieren ganze Werte von `0` bis `100`. Die beiden Schalter akzeptieren `0` oder `1` und werden als JSON-Boolean gesendet. `dischargeStartTime` akzeptiert `00:00` bis `23:59`; `dischargeStopTime` zusätzlich `24:00`. Intern werden die Zeiten als Sekunden seit Mitternacht über `pdls` beziehungsweise `pdlo` übertragen. Es wird kein Reading optimistisch geändert; nur eine Geräteantwort oder ein späterer Status bestätigt den Wert. Alle sechs Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch den geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände sind nicht verifiziert.
 
 ### Verbindung kontrolliert neu aufbauen
 
