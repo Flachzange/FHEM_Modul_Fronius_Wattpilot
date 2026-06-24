@@ -226,7 +226,7 @@ The names below are implemented by version 2.0.1. They describe FHEM behavior on
 | `lmo` | `chargingMode` | 3 `default`, 4 `eco`, 5 `nextTrip`; other values become `unknown:<raw-value>` | current implementation; writability unverified |
 | `alw` | `chargingAllowed` | boolean normalized to `0` or `1` | current implementation plus pinned third-party meaning candidate; Flex capture confirms type only |
 | `modelStatus` | `chargingDecisionCode`, `chargingDecision` | raw integer plus go-e-enum text mapping; unknown codes remain `unknown:<code>` | current implementation; mapping is useful for automation but not an official Fronius Flex specification |
-| `msi` | `chargingDecisionInternalCode`, `chargingDecisionInternal` | raw integer plus the same go-e-enum text mapping; unknown codes remain `unknown:<code>` | current implementation; exact distinction from `modelStatus` remains unconfirmed |
+| `msi` | `chargingDecisionInternalCode`, `chargingDecisionInternal` | raw integer plus the same go-e-enum text mapping; unknown codes remain `unknown:<code>` | current implementation; a pinned third-party source calls it an internal decision variant, but the exact distinction from `modelStatus` remains unconfirmed |
 | `err` | `errorCode` | raw integer; no text enum | current implementation; error enum deliberately unconfirmed |
 | `ama` | `maximumCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
 | `amt` | `temperatureCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
@@ -240,6 +240,8 @@ The names below are implemented by version 2.0.1. They describe FHEM behavior on
 | `nrg[11]` | `power` | formats two decimals; interpreted as total watts | current implementation inference |
 | `authRequired.hash` | `authHashMode` | `auto` accepts announced `bcrypt` or `pbkdf2`; missing hash selects PBKDF2 only for the evidenced predecessor protocol-2 profile | current implementation; relation to observed status `authhash` remains unverified |
 | outbound `setValue` in `securedMsg` | `lastCommandRequestId`, `lastCommandStatus`, `lastCommandError` | request correlation, HMAC-SHA256 envelope, pending/success/failed/timeout result readings | current implementation; device acceptance unverified |
+
+The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` between `modelStatus` and `msi` are not confirmed for Wattpilot Flex. The documentation therefore does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, they must be treated as two device-supplied diagnostic values; no causal chain is inferred.
 
 The module applies `interval` only to the electrical group (`eto`, `wh`, and `nrg`-derived readings). Those values update after the interval while charging, or under the documented idle policy when `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, `lmo`, `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca` are immediate. Known scalar values and the first twelve `nrg` positions are type-checked before use. Missing partial-update keys remain untouched.
 
