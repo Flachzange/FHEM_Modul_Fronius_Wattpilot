@@ -77,10 +77,17 @@ Incoming status data is copied and normalized once by
 unknown fields are preserved, and the caller's structure is never mutated.
 
 `Wattpilot_UpdateReadings` owns one FHEM bulk-reading transaction and delegates
-to narrow helpers for immediate readings, car transitions, electrical-update
-gating, energy values, and `nrg` phase/total readings. Missing partial-update
-fields never reset readings, and only real device-supplied zero values create
-zero readings.
+to narrow helpers for immediate readings, car transitions, energy values,
+electrical-update gating, and `nrg` phase/total readings. Energy counters are
+processed before the gate; `interval` and `update_while_idle` apply only to the
+`nrg`-derived voltage, current, and power group. Missing partial-update fields
+never reset readings, and only real device-supplied zero values create zero
+readings.
+
+The device Internal `VERSION` is module-owned. Define sets it from the central
+module version, and Initialize refreshes it for existing Wattpilot hashes during
+FHEM module reload without touching lifecycle state. Device firmware remains a
+separate `firmwareVersion` reading populated from `hello.version`.
 
 The clean public 2.0 reading, command, enum, and lifecycle values are collected
 in one internal interface definition and exposed to tests through

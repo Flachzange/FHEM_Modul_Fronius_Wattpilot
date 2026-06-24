@@ -53,9 +53,14 @@ ok(!exists $fixture->{authRequired}{hash}, 'legacy challenge omits hash');
 is(scalar @{$fixture->{fullStatus}[1]{status}{nrg}}, 12, 'legacy nrg has twelve elements');
 
 my $hash = fresh_device();
+is(main::Wattpilot_Define(
+        $hash, 'legacyWallbox Wattpilot 192.0.2.27 10000001'), undef,
+    'legacy profile definition succeeds');
 main::Wattpilot_Parse($hash, encode_json($fixture->{hello}));
 is($hash->{SERIAL}, '10000001', 'configured serial remains available for legacy PBKDF2');
-is($hash->{VERSION}, '36.3', 'legacy hello accepts profile fields');
+is($hash->{VERSION}, '2.0.3', 'legacy hello preserves the module VERSION Internal');
+is($hash->{READINGS}{firmwareVersion}{VAL}, '36.3',
+    'legacy hello exposes device firmware separately');
 is(main::Wattpilot_GetAuthHashMode($hash, $fixture->{authRequired}), 'pbkdf2',
     'missing legacy hash selects PBKDF2');
 main::Wattpilot_Parse($hash, encode_json($fixture->{authRequired}));

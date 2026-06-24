@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.0.2**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Current module version: **2.0.3**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## Breaking change in 2.0
 
@@ -103,6 +103,8 @@ define <Name> Wattpilot <IP-Address> [Serial]
 
 **Note:** Version 2.0 requires a fresh definition. Set the password separately with `set <Name> password <secret>`.
 
+**Version display:** The Internal `VERSION` reports the module version. Firmware reported by the Wattpilot remains separate in the `firmwareVersion` reading.
+
 ### Example
 
 Enter this into the FHEM command line:
@@ -180,6 +182,7 @@ Controls how high-frequency electrical readings are handled when the car is **no
 * `1`: real incoming idle values are processed, still subject to `interval`. When `car=2` changes to a valid non-charging state, one real `nrg` in the same message or within 30 seconds may bypass the rate limit once so device-supplied zero values can correct stale readings.
 * No evidenced explicit Wattpilot WebSocket status request is known; the module therefore does not send `getAllValues` and does not invent a polling command. If that 30-second window receives no valid `nrg`, at most one controlled reconnect is scheduled for that idle episode. This reconnect is a bounded fallback inferred from third-party sources, not an official Fronius protocol feature.
 * Missing values are never interpreted as zero. Real zero values are processed only when the device supplies them in a valid `nrg`.
+* `energyTotal` and `energySincePlugIn` update whenever `eto`/`wh` arrive, independently of `interval` and `update_while_idle`. The idle gate applies only to voltage, current, and power readings derived from `nrg`.
 
 ### `disable` (0 or 1)
 
