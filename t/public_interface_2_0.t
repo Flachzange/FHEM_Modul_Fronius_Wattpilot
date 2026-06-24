@@ -38,7 +38,8 @@ my @public_readings = qw(
     pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
     threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
     minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
-    minimumChargingInterval nextTripTime
+    minimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
+    pvBatteryModeCode nextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
@@ -84,6 +85,9 @@ main::Wattpilot_UpdateReadings($hash, {
     fap => JSON::true(),
     mcpd => 120000,
     mci => 0,
+    fbuf_akkuSOC => 60,
+    fbuf_pAkku => -1525,
+    fbuf_akkuMode => 1,
     ftt => 7 * 3600 + 30 * 60,
     eto => 123456,
     wh => 789,
@@ -92,7 +96,7 @@ main::Wattpilot_UpdateReadings($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 44 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 47 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

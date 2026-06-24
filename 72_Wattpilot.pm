@@ -36,7 +36,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.5';
+my $WATTPILOT_VERSION = '2.0.6';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -76,6 +76,9 @@ my %WATTPILOT_READING_NAME = (
     charging_pause_allowed  => 'chargingPauseAllowed',
     minimum_charging_pause_duration => 'minimumChargingPauseDuration',
     minimum_charging_interval => 'minimumChargingInterval',
+    pv_battery_state_of_charge => 'pvBatteryStateOfCharge',
+    pv_battery_power        => 'pvBatteryPower',
+    pv_battery_mode_code    => 'pvBatteryModeCode',
     next_trip_time          => 'nextTripTime',
     energy_total            => 'energyTotal',
     energy_since_plug_in    => 'energySincePlugIn',
@@ -794,7 +797,7 @@ sub Wattpilot_IsNumber($) {
     return $value =~ /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 }
 
-sub Wattpilot_ParseFiniteNonNegativeNumber($) {
+sub Wattpilot_ParseFiniteNumber($) {
     my ($value) = @_;
     return undef if !Wattpilot_IsNumber($value);
 
@@ -803,8 +806,21 @@ sub Wattpilot_ParseFiniteNonNegativeNumber($) {
         no warnings 'numeric';
         $number = 0 + $value;
     }
-    return undef if $number < 0;
     return undef if "$number" =~ /(?:inf|nan)/i;
+    return $number;
+}
+
+sub Wattpilot_ParseFiniteNonNegativeNumber($) {
+    my ($value) = @_;
+    my $number = Wattpilot_ParseFiniteNumber($value);
+    return undef if !defined($number) || $number < 0;
+    return $number;
+}
+
+sub Wattpilot_ParsePercentage($) {
+    my ($value) = @_;
+    my $number = Wattpilot_ParseFiniteNonNegativeNumber($value);
+    return undef if !defined($number) || $number > 100;
     return $number;
 }
 
@@ -844,7 +860,10 @@ sub Wattpilot_NormalizeStatus($$) {
     my %integer = map { $_ => 1 } qw(
         car frc ftt amp lmo modelStatus msi err ama amt mca frm psm
     );
+    my %nonnegative_integer = map { $_ => 1 } qw(fbuf_akkuMode);
     my %number = map { $_ => 1 } qw(eto wh);
+    my %finite_number = map { $_ => 1 } qw(fbuf_pAkku);
+    my %percentage = map { $_ => 1 } qw(fbuf_akkuSOC);
     my %nonnegative_number = map { $_ => 1 } qw(
         fst spl3 mpwst mptwt fmt mcpd mci
     );
@@ -857,12 +876,42 @@ sub Wattpilot_NormalizeStatus($$) {
             delete $status{$key};
         }
     }
+    for my $key (keys %nonnegative_integer) {
+        next if !exists($status{$key}) || !defined($status{$key});
+        if (!Wattpilot_IsInteger($status{$key}) || $status{$key} < 0) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+            delete $status{$key};
+        }
+    }
     for my $key (keys %number) {
         next if !exists($status{$key}) || !defined($status{$key});
         if (!Wattpilot_IsNumber($status{$key})) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
             delete $status{$key};
+        }
+    }
+    for my $key (keys %finite_number) {
+        next if !exists($status{$key}) || !defined($status{$key});
+        my $value = Wattpilot_ParseFiniteNumber($status{$key});
+        if (!defined($value)) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+            delete $status{$key};
+        } else {
+            $status{$key} = $value;
+        }
+    }
+    for my $key (keys %percentage) {
+        next if !exists($status{$key}) || !defined($status{$key});
+        my $value = Wattpilot_ParsePercentage($status{$key});
+        if (!defined($value)) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+            delete $status{$key};
+        } else {
+            $status{$key} = $value;
         }
     }
     for my $key (keys %nonnegative_number) {
@@ -1157,6 +1206,21 @@ sub Wattpilot_UpdateImmediateReadings($$) {
             Wattpilot_MillisecondsToSeconds($status->{$protocol_key}))
             if defined $status->{$protocol_key};
     }
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_state_of_charge},
+        $status->{fbuf_akkuSOC})
+        if defined $status->{fbuf_akkuSOC};
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_power},
+        $status->{fbuf_pAkku})
+        if defined $status->{fbuf_pAkku};
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_mode_code},
+        $status->{fbuf_akkuMode})
+        if defined $status->{fbuf_akkuMode};
 
     for my $field (
         [err => 'error_code'],
@@ -2302,7 +2366,10 @@ sub Wattpilot_WriteJson($$) {
     <li><code>phaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code>, or <code>unknown:&lt;raw-value&gt;</code> from <code>psm</code>.</li>
     <li><code>threePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts.</li>
     <li><code>phaseSwitchDelay</code>, <code>minimumPhaseSwitchInterval</code>, <code>minimumChargeTime</code>, <code>minimumChargingPauseDuration</code>, <code>minimumChargingInterval</code><br>Non-negative finite values from <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code>, and <code>mci</code>, converted from protocol milliseconds to public seconds.</li>
-    <li>The 21 operational status and configuration readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
+    <li><code>pvBatteryStateOfCharge</code><br>Stationary PV-battery state of charge from <code>fbuf_akkuSOC</code>, accepted only as a finite percentage from <code>0</code> through <code>100</code>.</li>
+    <li><code>pvBatteryPower</code><br>Unmodified signed finite value from <code>fbuf_pAkku</code>, exposed in watts. The module does not assign an unverified charge/discharge direction to the sign.</li>
+    <li><code>pvBatteryModeCode</code><br>Unmodified non-negative integer code from <code>fbuf_akkuMode</code>. No text enum is invented. These stationary-battery readings have no public setters in version 2.0.6; candidate writable fields such as <code>fam</code> remain excluded until verified.</li>
+    <li>The 24 operational status and configuration readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
   </ul>
   <p><b>Charging-decision compatibility mapping</b></p>
   <table class="block wide">
@@ -2520,7 +2587,10 @@ sub Wattpilot_WriteJson($$) {
     <li><code>phaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code> oder <code>unknown:&lt;Rohwert&gt;</code> aus <code>psm</code>.</li>
     <li><code>threePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt.</li>
     <li><code>phaseSwitchDelay</code>, <code>minimumPhaseSwitchInterval</code>, <code>minimumChargeTime</code>, <code>minimumChargingPauseDuration</code>, <code>minimumChargingInterval</code><br>Nicht negative, endliche Werte aus <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code> und <code>mci</code>, von Protokoll-Millisekunden in öffentliche Sekunden umgerechnet.</li>
-    <li>Die 21 operativen Status- und Konfigurationsreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
+    <li><code>pvBatteryStateOfCharge</code><br>Ladezustand des stationären PV-Speichers aus <code>fbuf_akkuSOC</code>, nur als endlicher Prozentwert von <code>0</code> bis <code>100</code> akzeptiert.</li>
+    <li><code>pvBatteryPower</code><br>Unveränderter vorzeichenbehafteter endlicher Wert aus <code>fbuf_pAkku</code>, ausgegeben in Watt. Das Modul weist dem Vorzeichen keine unbestätigte Lade-/Entladerichtung zu.</li>
+    <li><code>pvBatteryModeCode</code><br>Unveränderter nicht negativer Ganzzahlcode aus <code>fbuf_akkuMode</code>. Es wird keine Klartext-Enum erfunden. Für diese stationären Speicherreadings gibt es in Version 2.0.6 keine öffentlichen Setter; Kandidaten wie <code>fam</code> bleiben bis zur Verifikation ausgeschlossen.</li>
+    <li>Die 24 operativen Status- und Konfigurationsreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
   </ul>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
   <table class="block wide">
@@ -2585,7 +2655,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.5",
+  "version": "v2.0.6",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

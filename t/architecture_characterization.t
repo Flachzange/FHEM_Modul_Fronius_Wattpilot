@@ -58,8 +58,8 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 44,
-    'central reading definition contains all 44 public readings');
+is(scalar(keys %{$interface->{readings}}), 47,
+    'central reading definition contains all 47 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -91,6 +91,9 @@ is_deeply(
         charging_pause_allowed => 'chargingPauseAllowed',
         minimum_charging_pause_duration => 'minimumChargingPauseDuration',
         minimum_charging_interval => 'minimumChargingInterval',
+        pv_battery_state_of_charge => 'pvBatteryStateOfCharge',
+        pv_battery_power => 'pvBatteryPower',
+        pv_battery_mode_code => 'pvBatteryModeCode',
         next_trip_time => 'nextTripTime',
         energy_total => 'energyTotal',
         energy_since_plug_in => 'energySincePlugIn',
@@ -108,7 +111,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 44 public reading names match the 2.x contract');
+    'all 47 public reading names match the 2.x contract');
 is($interface->{readings}{car_state}, 'carState',
     'central reading definition exposes the 2.0 car-state name');
 is_deeply($interface->{carStates},
