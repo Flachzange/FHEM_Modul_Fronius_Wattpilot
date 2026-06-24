@@ -13,6 +13,12 @@ close $fh;
 
 my ($version) = $source =~ /my\s+\$WATTPILOT_VERSION\s*=\s*['"]([^'"]+)['"]\s*;/;
 die "Missing central WATTPILOT_VERSION in $module\n" unless defined $version;
+die "Module header original-author attribution is missing\n"
+    unless $source =~ /^# Original author: Dennis Gramespacher$/m;
+die "Module header version-2.x author attribution is missing\n"
+    unless $source =~ /^# Author of the version 2\.x redesign and implementation: Flachzange$/m;
+die "Module header AI development-assistance attribution is missing\n"
+    unless $source =~ /^# AI-assisted development support: OpenAI ChatGPT$/m;
 
 my ($json) = $source =~ m{
     =for\s+:application/json;q=META\.json\s+72_Wattpilot\.pm\s*\n
@@ -40,10 +46,23 @@ die "META license must be gpl_2 with SPDX extension GPL-2.0-or-later\n"
         && @{$meta->{license}} == 1
         && $meta->{license}[0] eq 'gpl_2'
         && ($meta->{x_spdx_license} // '') eq 'GPL-2.0-or-later';
-die "Original author must be exactly Dennis Gramespacher <>\n"
+die "META authors must be Dennis Gramespacher <> and Flachzange <>\n"
     unless ref($meta->{author}) eq 'ARRAY'
-        && @{$meta->{author}} == 1
-        && $meta->{author}[0] eq 'Dennis Gramespacher <>';
+        && @{$meta->{author}} == 2
+        && $meta->{author}[0] eq 'Dennis Gramespacher <>'
+        && $meta->{author}[1] eq 'Flachzange <>';
+die "Original-author attribution is missing\n"
+    unless ref($meta->{x_fhem_original_author}) eq 'ARRAY'
+        && @{$meta->{x_fhem_original_author}} == 1
+        && $meta->{x_fhem_original_author}[0] eq 'Dennis Gramespacher';
+die "Version-2.x author attribution is missing\n"
+    unless ref($meta->{x_fhem_version_2_author}) eq 'ARRAY'
+        && @{$meta->{x_fhem_version_2_author}} == 1
+        && $meta->{x_fhem_version_2_author}[0] eq 'Flachzange';
+die "AI development-assistance attribution is missing\n"
+    unless ref($meta->{x_development_assistance}) eq 'ARRAY'
+        && @{$meta->{x_development_assistance}} == 1
+        && $meta->{x_development_assistance}[0] eq 'OpenAI ChatGPT';
 die "Maintainer Flachzange is missing\n"
     unless ref($meta->{x_fhem_maintainer}) eq 'ARRAY'
         && grep { $_ eq 'Flachzange' } @{$meta->{x_fhem_maintainer}};

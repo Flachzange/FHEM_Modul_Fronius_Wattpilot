@@ -18,6 +18,8 @@ This repository contains the FHEM module `Wattpilot` for local communication wit
 - Global subroutines use the `Wattpilot_` prefix.
 - License: GPL-2.0-or-later
 - Original author: Dennis Gramespacher
+- Version 2.x redesign and implementation: Flachzange
+- Development assistance for version 2.x: OpenAI ChatGPT (AI-assisted design, implementation, review, testing, and documentation; technical decisions and release responsibility remain with the maintainer)
 - Repository maintainer: Flachzange
 - Release status: testing / experimental
 - Embedded META is registered through `FHEM::Meta::InitMod`.
@@ -73,6 +75,24 @@ For lifecycle changes, reproduce the relevant command-level sequences from curre
 - `UndefFn` followed by `DeleteFn`;
 - failure of `DeleteFn` after successful `UndefFn`;
 - shutdown and restart.
+
+### Reload safety as a 2.x compatibility goal
+
+Within the supported 2.x line, updating from one 2.x version to a later 2.x version with `reload 72_Wattpilot` should normally be safe without restarting FHEM or deleting and redefining the device. Treat this as a design and review goal for every change, not as an automatic claim that has been proven for all future versions.
+
+A reload-safe change must, as applicable:
+
+- preserve the existing definition, FUUID-owned credentials, attributes, and user-visible configuration;
+- ensure that old WebSocket, DevIo, authentication, command, JSON, timer, and reconnect state cannot continue operating beside the newly loaded code;
+- leave at most one active connection attempt, one live session, and one timer per timer kind;
+- reject or harmlessly ignore delayed callbacks created by the previous module generation;
+- tolerate helper-state shapes from the previous supported 2.x version, or explicitly invalidate and rebuild incompatible transient state before it is used;
+- avoid requiring a manual disable/enable cycle, device redefinition, `rereadcfg`, or FHEM restart merely to activate the new code;
+- retain existing readings unless the scoped change intentionally replaces or removes them and documents that public-interface change.
+
+Any change to callback registration, helper structures, timers, DevIo state, connection setup, authentication, request correlation, buffering, persistence, or cleanup must include an explicit reload-impact analysis. Tests must model the actual FHEM module-reload sequence from a pinned current FHEM source revision and must begin with a realistically active pre-reload device state, including an open or opening connection and pending timers where relevant. The post-reload assertions must cover stale-callback rejection, connection/timer uniqueness, preserved credentials and configuration, and successful return to a coherent lifecycle state.
+
+A stub-only test does not prove real reload safety. PR and release notes must state whether a real FHEM 2.x-to-2.x reload test was performed. If a change cannot reasonably preserve reload safety, treat that as an explicit compatibility exception requiring maintainer approval, clear upgrade instructions, and consistent documentation before merge.
 
 If FHEM retains a device after a callback error, the module must leave or restore that device to a coherent and usable runtime state. Tests that invoke only the final callback are insufficient.
 

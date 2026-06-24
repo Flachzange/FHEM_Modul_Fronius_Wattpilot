@@ -26,7 +26,7 @@ sed -E 's/^(Files=[0-9]+, Tests=[0-9]+),.*$/\1/' "$ci_raw" > "$package_dir/valid
 rm "$ci_raw"
 cat "$package_dir/validation-ci.txt"
 
-for file in 72_Wattpilot.pm API.md ARCHITECTURE.md README.md README_en.md CHANGELOG.md TESTING.md REVIEW-CHECKLIST.md LICENSE; do
+for file in 72_Wattpilot.pm API.md ARCHITECTURE.md AUTHORS.md README.md README_en.md CHANGELOG.md TESTING.md REVIEW-CHECKLIST.md LICENSE; do
     cp "$file" "$package_dir/$file"
 done
 mkdir -p "$package_dir/docs" "$package_dir/t/fixtures"
