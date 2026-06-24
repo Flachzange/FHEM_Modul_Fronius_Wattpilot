@@ -150,10 +150,10 @@ main::Wattpilot_Parse($hash, '{}');
 main::Wattpilot_Parse($hash, '{"type":[]}');
 like(logs(), qr/missing or invalid type/, 'missing and invalid type are rejected');
 
-$hash->{READINGS}{chargingCurrent}{VAL} = 16;
+$hash->{READINGS}{configChargingCurrent}{VAL} = 16;
 main::Wattpilot_Parse($hash, '{"type":"deltaStatus"}');
 main::Wattpilot_Parse($hash, '{"type":"deltaStatus","status":[]}');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 16, 'missing or invalid status leaves readings unchanged');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 16, 'missing or invalid status leaves readings unchanged');
 
 $hash->{READINGS}{power}{VAL} = '123.00';
 for my $bad_nrg (
@@ -166,35 +166,35 @@ for my $bad_nrg (
     }));
     is($hash->{READINGS}{power}{VAL}, '123.00', 'invalid nrg leaves existing electrical readings unchanged');
 }
-is($hash->{READINGS}{chargingCurrent}{VAL}, 17, 'another valid field survives invalid nrg in the same update');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 17, 'another valid field survives invalid nrg in the same update');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'deltaStatus', status => {
         car => [], frc => {}, ftt => '12:00', amp => 'sixteen', lmo => [],
         eto => 'many', wh => {},
     }
 }));
-is($hash->{READINGS}{chargingCurrent}{VAL}, 17, 'invalid known scalar values leave prior readings unchanged');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 17, 'invalid known scalar values leave prior readings unchanged');
 
 my $tricky = encode_json({
     type => 'deltaStatus', status => { amp => 18 },
     extra => "text }{ with braces { }, escaped quote \" and newline\nnext",
 });
 is(main::Wattpilot_Parse($hash, $tricky), 1, 'braces, escapes, and newlines inside strings remain one JSON document');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 18, 'tricky JSON string does not disrupt status processing');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 18, 'tricky JSON string does not disrupt status processing');
 my $joined = encode_json({ type => 'deltaStatus', status => { amp => 19 } })
     . encode_json({ type => 'deltaStatus', status => { amp => 20 } });
 is(main::Wattpilot_Parse($hash, $joined), 2, 'multiple complete concatenated JSON objects are processed');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 20, 'all concatenated objects are dispatched in order');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 20, 'all concatenated objects are dispatched in order');
 ok(!exists $hash->{buffer}, 'module does not duplicate DevIo WebSocket fragment buffering');
-$hash->{READINGS}{chargingCurrent}{VAL} = 20;
+$hash->{READINGS}{configChargingCurrent}{VAL} = 20;
 is(main::Wattpilot_Parse($hash,
     encode_json({ type => 'deltaStatus', status => { amp => 21 } }) . '{broken}'), 0,
     'malformed suffix rejects the complete decoded batch');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 20, 'malformed batch cannot apply a valid prefix partially');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 20, 'malformed batch cannot apply a valid prefix partially');
 is(main::Wattpilot_Parse($hash, '{"type":"deltaStatus"'), 0, 'incomplete decoded JSON is buffered within the limit');
 ok(exists $hash->{helper}{jsonBuffer}, 'incomplete JSON uses a distinct logical-message continuation buffer');
 is(main::Wattpilot_Parse($hash, ',"status":{"amp":22}}'), 1, 'later decoded payload completes buffered JSON');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 22, 'completed fragmented JSON is dispatched once');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 22, 'completed fragmented JSON is dispatched once');
 ok(!exists $hash->{helper}{jsonBuffer}, 'logical JSON continuation buffer clears after completion');
 is(main::Wattpilot_Parse($hash, '{not-json}'), 0, 'malformed decoded JSON is rejected');
 is(main::Wattpilot_Parse($hash, ' ' x (1024 * 1024 + 1)), 0, 'oversized decoded input is rejected');

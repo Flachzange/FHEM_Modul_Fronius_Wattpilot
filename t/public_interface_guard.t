@@ -99,15 +99,15 @@ for my $path (sort @test_files) {
 }
 
 my @public_readings = qw(
-    state firmwareVersion authHashMode carState forceState chargingCurrent
-    chargingMode chargingAllowed chargingDecisionCode chargingDecision
-    chargingDecisionInternalCode chargingDecisionInternal errorCode maximumCurrentLimit
-    temperatureCurrentLimit minimumChargingCurrent pvSurplusStartPower
-    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
-    threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
-    minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
-    minimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
-    pvBatteryModeCode nextTripTime
+    state firmwareVersion authHashMode carState configForceState configChargingCurrent
+    configChargingMode chargingAllowed chargingDecisionCode chargingDecision
+    chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
+    temperatureCurrentLimit configMinimumChargingCurrent configPvSurplusStartPower
+    configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
+    configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
+    configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
+    configMinimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
+    pvBatteryModeCode configNextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
@@ -126,10 +126,10 @@ my @migration_pairs = (
     [ 'version', 'firmwareVersion' ],
     [ 'authHashMode', 'authHashMode' ],
     [ 'CarState', 'carState' ],
-    [ 'Laden_starten', 'forceState' ],
-    [ 'Strom', 'chargingCurrent' ],
-    [ 'Modus', 'chargingMode' ],
-    [ 'Zeit_NextTrip', 'nextTripTime' ],
+    [ 'Laden_starten', 'configForceState' ],
+    [ 'Strom', 'configChargingCurrent' ],
+    [ 'Modus', 'configChargingMode' ],
+    [ 'Zeit_NextTrip', 'configNextTripTime' ],
     [ 'EnergyTotal', 'energyTotal' ],
     [ 'Energie_seit_Anstecken', 'energySincePlugIn' ],
     [ 'Voltage_L1', 'voltageL1' ],
@@ -233,7 +233,7 @@ for my $entry (@active_docs) {
 }
 like($readme_en, qr/minimumChargingInterval.*Forced charging interval/s,
     'English README distinguishes API alias from Fronius UI terminology');
-like($readme_de, qr/minimumChargingInterval.*Forced charging interval|minimumChargingInterval.*Zwangsladeintervall/s,
+like($readme_de, qr/minimumChargingInterval.*Forced charging interval|configMinimumChargingInterval.*Zwangsladeintervall/s,
     'German README distinguishes API alias from Fronius UI terminology');
 like($commandref_en, qr/reconnect.*not a <code>fullStatus<\/code> request/s,
     'English commandref does not misrepresent reconnect as polling');

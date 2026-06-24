@@ -31,15 +31,15 @@ sub fresh_device {
 }
 
 my @public_readings = qw(
-    state firmwareVersion authHashMode carState forceState chargingCurrent
-    chargingMode chargingAllowed chargingDecisionCode chargingDecision
-    chargingDecisionInternalCode chargingDecisionInternal errorCode maximumCurrentLimit
-    temperatureCurrentLimit minimumChargingCurrent pvSurplusStartPower
-    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
-    threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
-    minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
-    minimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
-    pvBatteryModeCode nextTripTime
+    state firmwareVersion authHashMode carState configForceState configChargingCurrent
+    configChargingMode chargingAllowed chargingDecisionCode chargingDecision
+    chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
+    temperatureCurrentLimit configMinimumChargingCurrent configPvSurplusStartPower
+    configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
+    configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
+    configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
+    configMinimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
+    pvBatteryModeCode configNextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
@@ -128,7 +128,7 @@ for my $case (
 ) {
     $hash = fresh_device();
     main::Wattpilot_UpdateReadings($hash, { frc => $case->[0] });
-    is($hash->{READINGS}{forceState}{VAL}, $case->[1],
+    is($hash->{READINGS}{configForceState}{VAL}, $case->[1],
         "frc=$case->[0] maps to $case->[1]");
 }
 
@@ -140,7 +140,7 @@ for my $case (
 ) {
     $hash = fresh_device();
     main::Wattpilot_UpdateReadings($hash, { lmo => $case->[0] });
-    is($hash->{READINGS}{chargingMode}{VAL}, $case->[1],
+    is($hash->{READINGS}{configChargingMode}{VAL}, $case->[1],
         "lmo=$case->[0] maps to $case->[1]");
 }
 

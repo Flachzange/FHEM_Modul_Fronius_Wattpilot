@@ -42,6 +42,8 @@ This repository contains the FHEM module `Wattpilot` for local communication wit
 - Do not invent attributes, readings, callbacks, DevIo behavior, or module mechanisms.
 - Prefer explicit documented interfaces over hidden or implicit behavior.
 - Keep existing public readings, set commands, attribute names, and command semantics stable unless the scoped issue explicitly changes them.
+- Public readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`, for example `configChargingMode`. Read-only configuration values use the same prefix as writable configuration values. Effective runtime limits, live status, telemetry, lifecycle state, identity, and diagnostics must not be prefixed merely because they are related to configuration.
+- At the current experimental development stage, public-interface changes do not provide migration code, compatibility aliases, duplicate old/new readings, automatic DbLog conversion, or transition periods. Breaking reading-name changes are documented and consumers must be adapted explicitly.
 - Treat new readings and commands as user-facing API changes that require documentation and tests.
 - Preserve the `Wattpilot_` callback prefix and keep callback registration consistent with current FHEM conventions.
 - Do not add runtime dependencies without documenting them in META and testing their availability in CI.

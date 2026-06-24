@@ -25,7 +25,7 @@ my @required = qw(
     scripts/create_zip.pl scripts/check_reproducible_release.sh
     scripts/lib/Wattpilot/RepositoryCheck.pm
     docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md
-    docs/PROTOCOL-CONFLICTS.md
+    docs/PROTOCOL-CONFLICTS.md docs/READING-CATEGORIES.md
 );
 
 my @missing = grep { !-f $_ } @required;

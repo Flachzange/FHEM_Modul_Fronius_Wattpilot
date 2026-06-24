@@ -36,7 +36,7 @@ sub inner_payload {
 my $hash = fresh_device();
 for my $case ([0, 'neutral'], [1, 'off'], [2, 'on'], [7, 'unknown:7']) {
     main::Wattpilot_UpdateReadings($hash, { frc => $case->[0] });
-    is($hash->{READINGS}{forceState}{VAL}, $case->[1], "frc=$case->[0] maps explicitly");
+    is($hash->{READINGS}{configForceState}{VAL}, $case->[1], "frc=$case->[0] maps explicitly");
 }
 
 for my $case (
@@ -62,9 +62,9 @@ main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true,
     status => { amp => 20, frc => 2 },
 }));
-is($hash->{READINGS}{chargingCurrent}{VAL}, 20,
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 20,
     'successful response updates returned amp status');
-is($hash->{READINGS}{forceState}{VAL}, 'on',
+is($hash->{READINGS}{configForceState}{VAL}, 'on',
     'successful response uses the normal frc update path');
 is($hash->{READINGS}{lastCommandStatus}{VAL}, 'success',
     'successful response completes request');
@@ -147,13 +147,13 @@ main::Wattpilot_Set($hash, 'testWallbox', 'chargingMode', 'eco');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 99, success => JSON::true, status => { frc => 2 },
 }));
-is($hash->{READINGS}{chargingCurrent}{VAL}, 18, 'unmatched response does not reset an existing reading');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 18, 'unmatched response does not reset an existing reading');
 ok(exists $hash->{helper}{pendingRequests}{1}, 'unmatched response does not consume another request');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true, status => { frc => 2 },
 }));
-is($hash->{READINGS}{chargingCurrent}{VAL}, 18, 'missing response field leaves existing reading unchanged');
-is($hash->{READINGS}{forceState}{VAL}, 'on', 'present response field updates normally');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 18, 'missing response field leaves existing reading unchanged');
+is($hash->{READINGS}{configForceState}{VAL}, 'on', 'present response field updates normally');
 
 $hash = fresh_device();
 $DevIo::NOW = 1000;

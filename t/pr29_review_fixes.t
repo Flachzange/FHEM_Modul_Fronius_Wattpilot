@@ -76,7 +76,7 @@ unlike(logs(), qr/missing or invalid type/,
 
 $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
-$hash->{READINGS}{chargingCurrent}{VAL} = 20;
+$hash->{READINGS}{configChargingCurrent}{VAL} = 20;
 my $maximum_documents = join '', map {
     encode_json({ type => 'deltaStatus', status => { amp => 20 } })
 } 1..256;
@@ -87,7 +87,7 @@ my $too_many_documents = join '', map {
 } 1..257;
 is(main::Wattpilot_Parse($hash, $too_many_documents), 0,
     '257 concatenated documents are rejected');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 20,
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 20,
     'document-count rejection is atomic');
 
 for my $attr_command ([set => 'bcrypt', 'pbkdf2'], [del => undef, 'bcrypt']) {

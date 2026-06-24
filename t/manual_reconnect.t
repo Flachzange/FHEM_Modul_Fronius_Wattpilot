@@ -54,7 +54,7 @@ sub run_now {
 
 my $hash = fresh_device();
 $hash->{READINGS}{power}{VAL} = '1234.00';
-$hash->{READINGS}{pvSurplusStartPower}{VAL} = 1400;
+$hash->{READINGS}{configPvSurplusStartPower}{VAL} = 1400;
 $hash->{helper}{jsonBuffer} = '{"partial":';
 $hash->{helper}{idleRefreshPending} = 1;
 $hash->{helper}{idleRefreshAwaitingReconnectNrg} = 1;
@@ -101,7 +101,7 @@ ok(!exists $hash->{helper}{idleRefreshPending}
     'reconnect clears all idle-refresh episode state');
 is($hash->{READINGS}{power}{VAL}, '1234.00',
     'reconnect preserves operational power readings');
-is($hash->{READINGS}{pvSurplusStartPower}{VAL}, 1400,
+is($hash->{READINGS}{configPvSurplusStartPower}{VAL}, 1400,
     'reconnect preserves configuration readings');
 is($hash->{SERIAL}, '10000047',
     'reconnect preserves the device serial');
@@ -120,7 +120,7 @@ main::Wattpilot_Parse($hash, encode_json({
 }));
 is($hash->{STATE}, 'connected',
     'device-supplied initial status completes the reconnect lifecycle');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 16,
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 16,
     'device-supplied initial status is processed normally after reconnect');
 
 $hash = fresh_device();

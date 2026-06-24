@@ -209,7 +209,7 @@ subtest 'invalid or incomplete nrg cannot consume the interval' => sub {
     }), 'delta with incomplete nrg and another valid field is accepted');
     is(reading_value($hash, 'power'), '300.00',
         'incomplete nrg leaves the existing electrical readings unchanged');
-    is(reading_value($hash, 'chargingCurrent'), 16,
+    is(reading_value($hash, 'configChargingCurrent'), 16,
         'another valid field in the same delta still updates');
     is($hash->{LAST_UPDATE}, 5_000,
         'incomplete nrg does not consume the interval');

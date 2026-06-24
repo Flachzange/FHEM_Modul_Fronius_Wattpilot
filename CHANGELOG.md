@@ -2,6 +2,17 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [v2.0.7] - 2026-06-24
+
+### Einheitliches Schema für Konfigurationsreadings
+
+- Alle 47 öffentlichen Readings wurden explizit als Lifecycle, Identität, Konfiguration, Laufzeitstatus, Telemetrie, Diagnose oder Command-Diagnose klassifiziert. Der vollständige Audit steht in `docs/READING-CATEGORIES.md` und wird über `Wattpilot_InterfaceSnapshot` automatisiert geprüft.
+- Sämtliche 18 Konfigurationsreadings verwenden nun das feste Präfix `config`: `configForceState`, `configChargingCurrent`, `configChargingMode`, `configMaximumCurrentLimit`, `configMinimumChargingCurrent`, `configPvSurplusStartPower`, `configPvSurplusEnabled`, `configZeroFeedInEnabled`, `configPvControlPreference`, `configPhaseSwitchMode`, `configThreePhaseSwitchPower`, `configPhaseSwitchDelay`, `configMinimumPhaseSwitchInterval`, `configMinimumChargeTime`, `configChargingPauseAllowed`, `configMinimumChargingPauseDuration`, `configMinimumChargingInterval` und `configNextTripTime`.
+- Die Namen und Semantik aller Set-Befehle bleiben unverändert. Beispielsweise schreibt `set <name> chargingMode eco` weiterhin die Konfiguration, während der bestätigte Gerätewert im Reading `configChargingMode` erscheint.
+- Laufzeitwerte werden nicht allein wegen eines Konfigurationsbezugs präfixiert: `temperatureCurrentLimit` bleibt ein wirksames temperaturabhängiges Limit, `authHashMode` die tatsächlich gewählte Authentifizierungsmethode und `pvBatteryModeCode` ein aktueller Statuscode.
+- Bewusst keine Migration: Es gibt keine Aliase, keine parallelen alten und neuen Readings, keine automatische Reading-Bereinigung, keine DbLog-Konvertierung und keine Übergangsfrist. DOIFs, Notifies, Plots, DbLog-/Influx-Abfragen, Dashboards und Skripte müssen auf die neuen Namen angepasst werden. Nach einem Reload können alte Reading-Einträge im bestehenden FHEM-Device als nicht mehr aktualisierte Werte erhalten bleiben und müssen bei Bedarf manuell entfernt oder durch eine frische Definition vermieden werden.
+- Deutsche und englische Commandref, beide READMEs, API-/Architektur-/Protokolldokumentation, öffentliche Interface-Guards und Tests wurden auf das neue Schema aktualisiert.
+
 ## [v2.0.6] - 2026-06-24
 
 - Drei ausschließlich lesende Readings für den stationären PV-Speicher ergänzt: `pvBatteryStateOfCharge` aus `fbuf_akkuSOC`, `pvBatteryPower` aus `fbuf_pAkku` und `pvBatteryModeCode` aus `fbuf_akkuMode`. Sie bezeichnen ausdrücklich nicht den Fahrzeugakku.

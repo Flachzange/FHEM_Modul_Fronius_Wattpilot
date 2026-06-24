@@ -49,13 +49,13 @@ ok(main::Wattpilot_Parse($hash, encode_json({
     type => 'fullStatus', partial => JSON::false,
     status => { fst => 1400 },
 })), 'fullStatus with fst is accepted');
-is(reading_value($hash, 'pvSurplusStartPower'), 1400,
-    'fullStatus exposes fst as pvSurplusStartPower');
+is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
+    'fullStatus exposes fst as configPvSurplusStartPower');
 
 ok(main::Wattpilot_Parse($hash, encode_json({
     type => 'deltaStatus', status => { fst => 1550.5 },
 })), 'deltaStatus with decimal fst is accepted');
-is(reading_value($hash, 'pvSurplusStartPower'), 1550.5,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1550.5,
     'deltaStatus preserves the device-confirmed decimal value');
 
 for my $case (
@@ -70,7 +70,7 @@ for my $case (
     ok(main::Wattpilot_Parse($hash, encode_json({
         type => 'deltaStatus', status => $status,
     })), "$label delta is processed safely");
-    is(reading_value($hash, 'pvSurplusStartPower'), 1550.5,
+    is(reading_value($hash, 'configPvSurplusStartPower'), 1550.5,
         "$label delta leaves the existing start-power reading unchanged");
 }
 
@@ -84,7 +84,7 @@ for my $case (
     $hash = fresh_device();
     is(main::Wattpilot_Set(
         $hash, 'pvStartWallbox', 'pvSurplusStartPower', $input),
-        undef, "pvSurplusStartPower accepts $input");
+        undef, "pvSurplusStartPower Set accepts $input");
     my ($outer, $inner) = inner_payload($DevIo::WRITES[0]);
     is($inner->{key}, 'fst', 'setter writes the fst protocol key');
     is($inner->{value}, $expected,
@@ -97,18 +97,18 @@ $hash = fresh_device();
 like(main::Wattpilot_Set(
         $hash, 'pvStartWallbox', 'pvSurplusStartPower', 1400, 'extra'),
     qr/^Usage:/,
-    'pvSurplusStartPower rejects an extra argument');
+    'pvSurplusStartPower Set rejects an extra argument');
 is(scalar @DevIo::WRITES, 0,
-    'extra pvSurplusStartPower argument sends no frame');
+    'extra pvSurplusStartPower Set argument sends no frame');
 
 for my $invalid (undef, -1, 'NaN', 'Inf', '-Inf', 'abc', '1e9999') {
     $hash = fresh_device();
     my @args = ('pvStartWallbox', 'pvSurplusStartPower');
     push @args, $invalid if defined $invalid;
     like(main::Wattpilot_Set($hash, @args), qr/<watts>/,
-        'invalid or missing pvSurplusStartPower value is rejected');
+        'invalid or missing pvSurplusStartPower Set value is rejected');
     is(scalar @DevIo::WRITES, 0,
-        'rejected pvSurplusStartPower value sends no frame');
+        'rejected pvSurplusStartPower Set value sends no frame');
 }
 
 $hash = fresh_device();
@@ -116,13 +116,13 @@ main::Wattpilot_UpdateReadings($hash, { fst => 1400 });
 is(main::Wattpilot_Set(
     $hash, 'pvStartWallbox', 'pvSurplusStartPower', 1600),
     undef, 'valid write is queued');
-is(reading_value($hash, 'pvSurplusStartPower'), 1400,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
     'pending write does not optimistically fabricate the reading');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true,
     status => { fst => 1600 },
 }));
-is(reading_value($hash, 'pvSurplusStartPower'), 1600,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1600,
     'successful response updates the reading through the normal status path');
 is(reading_value($hash, 'lastCommandStatus'), 'success',
     'successful setter response completes the request');
@@ -134,7 +134,7 @@ main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::false,
     message => 'synthetic rejection detail',
 }));
-is(reading_value($hash, 'pvSurplusStartPower'), 1400,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
     'failed response does not fabricate the requested start power');
 is(reading_value($hash, 'lastCommandStatus'), 'failed',
     'device rejection is exposed through command status');
@@ -148,7 +148,7 @@ main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true,
     status => { amp => 16 },
 }));
-is(reading_value($hash, 'pvSurplusStartPower'), 1400,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
     'successful response without fst leaves the prior reading unchanged');
 
 $hash = fresh_device();
@@ -158,7 +158,7 @@ main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true,
     status => { fst => 'invalid' },
 }));
-is(reading_value($hash, 'pvSurplusStartPower'), 1400,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
     'type-invalid confirmed status cannot replace the previous reading');
 
 done_testing;

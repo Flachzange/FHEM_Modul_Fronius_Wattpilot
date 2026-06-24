@@ -2,11 +2,34 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.0.6**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Aktuelle Modulversion: **2.0.7**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). Der vollständige Reading-Kategorien-Audit und das `config`-Namensschema stehen in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
 
 ## Inkompatible Änderung in 2.0
 
 Version 2.0 unterstützt ausschließlich eine frische Definition. Es gibt keine Aliase und keine automatische Migration der bisherigen Reading- oder Set-Namen. Alte Readings eines bestehenden Devices werden nicht automatisch gelöscht. DOIFs, Notifies, Plots, DbLog-/Influx-Abfragen, Dashboards und Skripte müssen manuell angepasst werden.
+
+Version 2.0.7 benennt zusätzlich jedes Konfigurationsreading auf das Schema `config...` um. Die Namen der Set-Befehle bleiben unverändert. Es gibt keine Kompatibilitätsreadings, Aliase, automatische Reading-Bereinigung oder DbLog-Migration. Nach einem Reload können alte Reading-Einträge eines bestehenden Devices als nicht mehr aktualisierte Werte erhalten bleiben; Verbraucher und gegebenenfalls diese Einträge müssen manuell angepasst beziehungsweise entfernt werden.
+
+| Reading bis 2.0.6 | Reading ab 2.0.7 |
+| :--- | :--- |
+| `forceState` | `configForceState` |
+| `chargingCurrent` | `configChargingCurrent` |
+| `chargingMode` | `configChargingMode` |
+| `maximumCurrentLimit` | `configMaximumCurrentLimit` |
+| `minimumChargingCurrent` | `configMinimumChargingCurrent` |
+| `pvSurplusStartPower` | `configPvSurplusStartPower` |
+| `pvSurplusEnabled` | `configPvSurplusEnabled` |
+| `zeroFeedInEnabled` | `configZeroFeedInEnabled` |
+| `pvControlPreference` | `configPvControlPreference` |
+| `phaseSwitchMode` | `configPhaseSwitchMode` |
+| `threePhaseSwitchPower` | `configThreePhaseSwitchPower` |
+| `phaseSwitchDelay` | `configPhaseSwitchDelay` |
+| `minimumPhaseSwitchInterval` | `configMinimumPhaseSwitchInterval` |
+| `minimumChargeTime` | `configMinimumChargeTime` |
+| `chargingPauseAllowed` | `configChargingPauseAllowed` |
+| `minimumChargingPauseDuration` | `configMinimumChargingPauseDuration` |
+| `minimumChargingInterval` | `configMinimumChargingInterval` |
+| `nextTripTime` | `configNextTripTime` |
 
 <!-- BEGIN 2.0 migration names -->
 
@@ -16,10 +39,10 @@ Version 2.0 unterstützt ausschließlich eine frische Definition. Es gibt keine 
 | Reading | `version` | `firmwareVersion` |
 | Reading | `authHashMode` | `authHashMode` |
 | Reading | `CarState` | `carState` |
-| Reading | `Laden_starten` | `forceState` |
-| Reading | `Strom` | `chargingCurrent` |
-| Reading | `Modus` | `chargingMode` |
-| Reading | `Zeit_NextTrip` | `nextTripTime` |
+| Reading | `Laden_starten` | `configForceState` |
+| Reading | `Strom` | `configChargingCurrent` |
+| Reading | `Modus` | `configChargingMode` |
+| Reading | `Zeit_NextTrip` | `configNextTripTime` |
 | Reading | `EnergyTotal` | `energyTotal` |
 | Reading | `Energie_seit_Anstecken` | `energySincePlugIn` |
 | Reading | `Voltage_L1` | `voltageL1` |
@@ -198,7 +221,7 @@ Diese zusätzlichen Setter verwenden den bestehenden gesicherten `setValue`-Pfad
 
 ### PV-Speicher-Telemetrie
 
-Die Readings `pvBatteryStateOfCharge`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus den vom Wattpilot gelieferten Feldern `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. Gültige `nrg`- und Speicherwerte werden intern gemeinsam zwischengespeichert. Sobald mindestens ein gültiger `nrg`-Stand vorliegt, kann sowohl ein gültiges `nrg`- als auch ein gültiges Speicher-Update den nächsten gemäß `interval` zugelassenen gemeinsamen Messzyklus auslösen. Dabei werden Spannung, Strom, Leistung und stationäre Speichertelemetrie innerhalb derselben FHEM-Reading-Transaktion aus dem jeweils neuesten Zwischenspeicher veröffentlicht. Es gibt nur eine gemeinsame Zeitbasis in `LAST_UPDATE`; innerhalb des Intervalls eintreffende Werte aktualisieren nur den Zwischenspeicher. `pvBatteryStateOfCharge` wird mit genau einer Nachkommastelle ausgegeben. Für diese drei Werte gibt es in Version 2.0.6 bewusst keine Setter. Insbesondere werden weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung für die Speicherleistung erfunden. Schreibbare Speicherparameter wie `fam` bleiben bis zur eindeutigen Feld- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
+Die Readings `pvBatteryStateOfCharge`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus den vom Wattpilot gelieferten Feldern `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. Gültige `nrg`- und Speicherwerte werden intern gemeinsam zwischengespeichert. Sobald mindestens ein gültiger `nrg`-Stand vorliegt, kann sowohl ein gültiges `nrg`- als auch ein gültiges Speicher-Update den nächsten gemäß `interval` zugelassenen gemeinsamen Messzyklus auslösen. Dabei werden Spannung, Strom, Leistung und stationäre Speichertelemetrie innerhalb derselben FHEM-Reading-Transaktion aus dem jeweils neuesten Zwischenspeicher veröffentlicht. Es gibt nur eine gemeinsame Zeitbasis in `LAST_UPDATE`; innerhalb des Intervalls eintreffende Werte aktualisieren nur den Zwischenspeicher. `pvBatteryStateOfCharge` wird mit genau einer Nachkommastelle ausgegeben. Für diese drei Werte gibt es bewusst keine Setter. Insbesondere werden weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung für die Speicherleistung erfunden. Schreibbare Speicherparameter wie `fam` bleiben bis zur eindeutigen Feld- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
 
 ### Verbindung kontrolliert neu aufbauen
 
@@ -286,34 +309,34 @@ Das Modul stellt exakt folgende 47 öffentlichen Readings bereit:
 | `firmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. |
 | `authHashMode` | Tatsächlich verwendetes Verfahren: `pbkdf2` oder `bcrypt`. |
 | `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error` oder `unknown:<Rohwert>`. |
-| `forceState` | `neutral`, `off`, `on` oder `unknown:<Rohwert>`. |
-| `chargingCurrent` | Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert. |
-| `chargingMode` | `default`, `eco`, `nextTrip` oder `unknown:<Rohwert>`. |
+| `configForceState` | `neutral`, `off`, `on` oder `unknown:<Rohwert>`. |
+| `configChargingCurrent` | Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert. |
+| `configChargingMode` | `default`, `eco`, `nextTrip` oder `unknown:<Rohwert>`. |
 | `chargingAllowed` | Boolesches Feld `alw`, ausgegeben als `0` oder `1`. Die Bedeutung als aktuelle Ladefreigabe stammt aus gepinnter Wattpilot-Drittquellenevidenz; der Flex-Mitschnitt bestätigt Feld und Typ. |
 | `chargingDecisionCode` | Unveränderter Ganzzahlwert aus `modelStatus`. |
 | `chargingDecision` | Klartextzuordnung zu `chargingDecisionCode`; unbekannte Codes erscheinen als `unknown:<Code>`. |
 | `chargingDecisionInternalCode` | Unveränderter Ganzzahlwert aus `msi`. |
 | `chargingDecisionInternal` | Klartextzuordnung zu `chargingDecisionInternalCode`; unbekannte Codes erscheinen als `unknown:<Code>`. |
 | `errorCode` | Unveränderter Ganzzahlwert aus `err`; keine unbestätigte Fehler-Enum. |
-| `maximumCurrentLimit` | Unveränderter Ganzzahlwert aus `ama`; als maximale Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
+| `configMaximumCurrentLimit` | Unveränderter Ganzzahlwert aus `ama`; als maximale Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
 | `temperatureCurrentLimit` | Unveränderter Ganzzahlwert aus `amt`; als temperaturbedingte Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
-| `minimumChargingCurrent` | Unveränderter Ganzzahlwert aus `mca`; als Mindestladestrom in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
-| `pvSurplusStartPower` | Nicht negativer, endlicher Zahlenwert aus `fst`, ausgegeben in Watt. Gepinnte go-e-API-Metadaten und Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; Lesen und Schreiben wurden auf einem Flex 43.4 bestätigt. Dies ist keine offizielle Fronius-Flex-WebSocket-Spezifikation. |
-| `pvSurplusEnabled` | Boolesches Feld `fup`, ausgegeben als `0` oder `1`. |
-| `zeroFeedInEnabled` | Boolesches Feld `fzf`, ausgegeben als `0` oder `1`. |
-| `pvControlPreference` | `preferFromGrid`, `default`, `preferToGrid` oder `unknown:<Rohwert>` aus `frm`. |
-| `phaseSwitchMode` | `auto`, `force1`, `force3` oder `unknown:<Rohwert>` aus `psm`. |
-| `threePhaseSwitchPower` | Nicht negativer Zahlenwert aus `spl3`, ausgegeben in Watt. |
-| `phaseSwitchDelay` | `mpwst` von Millisekunden in Sekunden umgerechnet. |
-| `minimumPhaseSwitchInterval` | `mptwt` von Millisekunden in Sekunden umgerechnet. |
-| `minimumChargeTime` | `fmt` von Millisekunden in Sekunden umgerechnet. |
-| `chargingPauseAllowed` | Boolesches Feld `fap`, ausgegeben als `0` oder `1`. |
-| `minimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
-| `minimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
+| `configMinimumChargingCurrent` | Unveränderter Ganzzahlwert aus `mca`; als Mindestladestrom in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
+| `configPvSurplusStartPower` | Nicht negativer, endlicher Zahlenwert aus `fst`, ausgegeben in Watt. Gepinnte go-e-API-Metadaten und Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; Lesen und Schreiben wurden auf einem Flex 43.4 bestätigt. Dies ist keine offizielle Fronius-Flex-WebSocket-Spezifikation. |
+| `configPvSurplusEnabled` | Boolesches Feld `fup`, ausgegeben als `0` oder `1`. |
+| `configZeroFeedInEnabled` | Boolesches Feld `fzf`, ausgegeben als `0` oder `1`. |
+| `configPvControlPreference` | `preferFromGrid`, `default`, `preferToGrid` oder `unknown:<Rohwert>` aus `frm`. |
+| `configPhaseSwitchMode` | `auto`, `force1`, `force3` oder `unknown:<Rohwert>` aus `psm`. |
+| `configThreePhaseSwitchPower` | Nicht negativer Zahlenwert aus `spl3`, ausgegeben in Watt. |
+| `configPhaseSwitchDelay` | `mpwst` von Millisekunden in Sekunden umgerechnet. |
+| `configMinimumPhaseSwitchInterval` | `mptwt` von Millisekunden in Sekunden umgerechnet. |
+| `configMinimumChargeTime` | `fmt` von Millisekunden in Sekunden umgerechnet. |
+| `configChargingPauseAllowed` | Boolesches Feld `fap`, ausgegeben als `0` oder `1`. |
+| `configMinimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
+| `configMinimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
 | `pvBatteryStateOfCharge` | Ladezustand des stationären PV-Speichers aus `fbuf_akkuSOC`, als Prozentwert von `0` bis `100` mit genau einer Nachkommastelle. Fehlende oder ungültige Werte verändern das Reading nicht. |
 | `pvBatteryPower` | Vorzeichenbehafteter Zahlenwert aus `fbuf_pAkku`, ausgegeben in Watt und grundsätzlich auf zwei Nachkommastellen formatiert. Die Vorzeichenrichtung für Laden und Entladen ist noch nicht durch einen kontrollierten Flex-Realtest bestätigt; das Modul deutet das Vorzeichen daher nicht um. |
 | `pvBatteryModeCode` | Unveränderter nicht negativer Ganzzahlcode aus `fbuf_akkuMode`. Mangels belastbarer Enum wird bewusst kein Klartextmodus erfunden. |
-| `nextTripTime` | Protokollwert als `HH:MM`; als Sekunden nach Mitternacht interpretiert. |
+| `configNextTripTime` | Protokollwert als `HH:MM`; als Sekunden nach Mitternacht interpretiert. |
 | `energyTotal` | `eto / 1000`, mit zwei Nachkommastellen. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen. |
 | `energySincePlugIn` | `wh`, mit zwei Nachkommastellen; als Wh interpretiert. |
 | `voltageL1`, `voltageL2`, `voltageL3` | `nrg[0..2]`, als Volt interpretiert. |
