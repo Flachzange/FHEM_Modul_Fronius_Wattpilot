@@ -1207,21 +1207,6 @@ sub Wattpilot_UpdateImmediateReadings($$) {
             if defined $status->{$protocol_key};
     }
 
-    readingsBulkUpdate(
-        $hash, $WATTPILOT_READING_NAME{pv_battery_state_of_charge},
-        $status->{fbuf_akkuSOC})
-        if defined $status->{fbuf_akkuSOC};
-
-    readingsBulkUpdate(
-        $hash, $WATTPILOT_READING_NAME{pv_battery_power},
-        $status->{fbuf_pAkku})
-        if defined $status->{fbuf_pAkku};
-
-    readingsBulkUpdate(
-        $hash, $WATTPILOT_READING_NAME{pv_battery_mode_code},
-        $status->{fbuf_akkuMode})
-        if defined $status->{fbuf_akkuMode};
-
     for my $field (
         [err => 'error_code'],
         [ama => 'maximum_current_limit'],
@@ -1234,6 +1219,60 @@ sub Wattpilot_UpdateImmediateReadings($$) {
             int($status->{$protocol_key}))
             if defined $status->{$protocol_key};
     }
+}
+
+sub Wattpilot_HasBatteryTelemetry($) {
+    my ($status) = @_;
+    return 1 if defined $status->{fbuf_akkuSOC};
+    return 1 if defined $status->{fbuf_pAkku};
+    return 1 if defined $status->{fbuf_akkuMode};
+    return 0;
+}
+
+sub Wattpilot_ShouldProcessVolatileTelemetry($) {
+    my ($hash) = @_;
+    return 1 if ($hash->{helper}{car_state} // 0) == 2;
+    return AttrVal($hash->{NAME}, 'update_while_idle', 0) eq '1';
+}
+
+sub Wattpilot_ShouldProcessBatteryReadings($$$$) {
+    my ($hash, $status, $message_type, $now) = @_;
+    return 0 if !Wattpilot_HasBatteryTelemetry($status);
+    return 0 if !Wattpilot_ShouldProcessVolatileTelemetry($hash);
+
+    my $is_initial_full_status = $message_type eq 'fullStatus'
+        && !$status->{partial};
+    my $is_confirming_response = $message_type eq 'response';
+    my $interval = AttrVal($hash->{NAME}, 'interval', 0);
+    my $last_update = $hash->{LAST_BATTERY_UPDATE} // 0;
+    my $rate_limited = $interval > 0
+        && ($now - $last_update < $interval);
+
+    return 0 if $rate_limited
+        && !$is_initial_full_status
+        && !$is_confirming_response;
+
+    $hash->{LAST_BATTERY_UPDATE} = $now;
+    return 1;
+}
+
+sub Wattpilot_UpdateBatteryReadings($$) {
+    my ($hash, $status) = @_;
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_state_of_charge},
+        $status->{fbuf_akkuSOC})
+        if defined $status->{fbuf_akkuSOC};
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_power},
+        sprintf("%.2f", $status->{fbuf_pAkku}))
+        if defined $status->{fbuf_pAkku};
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_mode_code},
+        $status->{fbuf_akkuMode})
+        if defined $status->{fbuf_akkuMode};
 }
 
 sub Wattpilot_HandleCarTransition($$) {
@@ -1263,8 +1302,8 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
     my $last_update = $hash->{LAST_UPDATE} // 0;
     my $suppress_electrical =
         $interval > 0 && ($now - $last_update < $interval);
-    my $is_charging = ($hash->{helper}{car_state} // 0) == 2;
-    my $update_while_idle = AttrVal($name, "update_while_idle", 0);
+    my $volatile_telemetry_allowed =
+        Wattpilot_ShouldProcessVolatileTelemetry($hash);
     my $idle_bypass = ($hash->{helper}{idleRefreshPending}
         || $hash->{helper}{idleRefreshAwaitingReconnectNrg})
         && $has_valid_nrg;
@@ -1274,8 +1313,7 @@ sub Wattpilot_ShouldProcessElectricalReadings($$$$) {
         $process_electrical = 1;
         Wattpilot_StopIdleRefresh($hash);
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
-    } elsif (!$suppress_electrical
-        && ($is_charging || $update_while_idle)) {
+    } elsif (!$suppress_electrical && $volatile_telemetry_allowed) {
         $process_electrical = 1;
     }
 
@@ -1330,6 +1368,10 @@ sub Wattpilot_UpdateReadings($$;$) {
 
     readingsBeginUpdate($hash);
     Wattpilot_UpdateImmediateReadings($hash, $status);
+    if (Wattpilot_ShouldProcessBatteryReadings(
+            $hash, $status, $message_type, $now)) {
+        Wattpilot_UpdateBatteryReadings($hash, $status);
+    }
     Wattpilot_HandleCarTransition($hash, $previous_car_state);
     Wattpilot_UpdateEnergyReadings($hash, $status);
     if (Wattpilot_ShouldProcessElectricalReadings(
@@ -2326,9 +2368,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        Rate limit for the voltage, current, and power group derived from <code>nrg</code>. <code>0</code> disables rate limiting.</li>
+        Rate limit for the voltage, current, and power group derived from <code>nrg</code> and, independently, for <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code>, and <code>pvBatteryModeCode</code>. <code>0</code> disables rate limiting. A complete initial status and a matched device response may bypass the stationary-battery interval gate, but not the idle gate.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps voltage, current, and power readings derived from <code>nrg</code> passive while not charging. <code>1</code> processes real incoming idle values. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
+        <code>0</code> keeps both the <code>nrg</code>-derived voltage/current/power group and the stationary-PV-battery telemetry passive while not charging. <code>1</code> processes real incoming idle values for both groups, each still subject to its own <code>interval</code> history. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2367,9 +2409,9 @@ sub Wattpilot_WriteJson($$) {
     <li><code>threePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts.</li>
     <li><code>phaseSwitchDelay</code>, <code>minimumPhaseSwitchInterval</code>, <code>minimumChargeTime</code>, <code>minimumChargingPauseDuration</code>, <code>minimumChargingInterval</code><br>Non-negative finite values from <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code>, and <code>mci</code>, converted from protocol milliseconds to public seconds.</li>
     <li><code>pvBatteryStateOfCharge</code><br>Stationary PV-battery state of charge from <code>fbuf_akkuSOC</code>, accepted only as a finite percentage from <code>0</code> through <code>100</code>.</li>
-    <li><code>pvBatteryPower</code><br>Unmodified signed finite value from <code>fbuf_pAkku</code>, exposed in watts. The module does not assign an unverified charge/discharge direction to the sign.</li>
+    <li><code>pvBatteryPower</code><br>Signed finite value from <code>fbuf_pAkku</code>, exposed in watts and formatted to two decimal places. The module does not assign an unverified charge/discharge direction to the sign.</li>
     <li><code>pvBatteryModeCode</code><br>Unmodified non-negative integer code from <code>fbuf_akkuMode</code>. No text enum is invented. These stationary-battery readings have no public setters in version 2.0.6; candidate writable fields such as <code>fam</code> remain excluded until verified.</li>
-    <li>The 24 operational status and configuration readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
+    <li>Operational status and configuration readings other than the three stationary-battery readings update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. The three stationary-battery readings and the <code>nrg</code>-derived group use the same idle policy but independent <code>interval</code> histories. A complete initial status and a matched device response may bypass the battery interval gate only when idle updates are allowed. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
   </ul>
   <p><b>Charging-decision compatibility mapping</b></p>
   <table class="block wide">
@@ -2413,7 +2455,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>nextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
     <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
     <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
-    <li>The two energy readings update independently of <code>interval</code> and <code>update_while_idle</code>. Those controls apply only to the <code>nrg</code>-derived voltage, current, and power group.</li>
+    <li>The two energy readings update independently of <code>interval</code> and <code>update_while_idle</code>. Those controls apply to the <code>nrg</code>-derived voltage/current/power group and the three stationary-PV-battery readings.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Values from <code>nrg[0..2]</code>, interpreted as volts.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Values from <code>nrg[4..6]</code>, interpreted as amperes.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
@@ -2547,9 +2589,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Rate-Limit für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe. <code>0</code> deaktiviert die Begrenzung.</li>
+        Rate-Limit für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe und unabhängig davon für <code>pvBatteryStateOfCharge</code>, <code>pvBatteryPower</code> und <code>pvBatteryModeCode</code>. <code>0</code> deaktiviert die Begrenzung. Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen, nicht jedoch das Idle-Gate.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
+        <code>0</code> belässt sowohl die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings als auch die stationäre PV-Speichertelemetrie im nicht ladenden Zustand passiv. <code>1</code> verarbeitet für beide Gruppen echte eingehende Idle-Werte, jeweils weiterhin unter Beachtung ihrer eigenen <code>interval</code>-Zeitbasis. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2588,9 +2630,9 @@ sub Wattpilot_WriteJson($$) {
     <li><code>threePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt.</li>
     <li><code>phaseSwitchDelay</code>, <code>minimumPhaseSwitchInterval</code>, <code>minimumChargeTime</code>, <code>minimumChargingPauseDuration</code>, <code>minimumChargingInterval</code><br>Nicht negative, endliche Werte aus <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code> und <code>mci</code>, von Protokoll-Millisekunden in öffentliche Sekunden umgerechnet.</li>
     <li><code>pvBatteryStateOfCharge</code><br>Ladezustand des stationären PV-Speichers aus <code>fbuf_akkuSOC</code>, nur als endlicher Prozentwert von <code>0</code> bis <code>100</code> akzeptiert.</li>
-    <li><code>pvBatteryPower</code><br>Unveränderter vorzeichenbehafteter endlicher Wert aus <code>fbuf_pAkku</code>, ausgegeben in Watt. Das Modul weist dem Vorzeichen keine unbestätigte Lade-/Entladerichtung zu.</li>
+    <li><code>pvBatteryPower</code><br>Vorzeichenbehafteter endlicher Wert aus <code>fbuf_pAkku</code>, ausgegeben in Watt und auf zwei Nachkommastellen formatiert. Das Modul weist dem Vorzeichen keine unbestätigte Lade-/Entladerichtung zu.</li>
     <li><code>pvBatteryModeCode</code><br>Unveränderter nicht negativer Ganzzahlcode aus <code>fbuf_akkuMode</code>. Es wird keine Klartext-Enum erfunden. Für diese stationären Speicherreadings gibt es in Version 2.0.6 keine öffentlichen Setter; Kandidaten wie <code>fam</code> bleiben bis zur Verifikation ausgeschlossen.</li>
-    <li>Die 24 operativen Status- und Konfigurationsreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
+    <li>Die operativen Status- und Konfigurationsreadings außerhalb der drei stationären Speicherreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Die drei Speicherreadings und die aus <code>nrg</code> abgeleitete Gruppe verwenden dieselbe Idle-Regel, aber voneinander unabhängige <code>interval</code>-Zeitbasen. Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen nur bei erlaubten Idle-Updates das Speicher-Intervall umgehen. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
   </ul>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
   <table class="block wide">
@@ -2634,7 +2676,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>nextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
     <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
     <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>
-    <li>Die beiden Energie-Readings werden unabhängig von <code>interval</code> und <code>update_while_idle</code> aktualisiert. Diese Steuerungen gelten nur für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe.</li>
+    <li>Die beiden Energie-Readings werden unabhängig von <code>interval</code> und <code>update_while_idle</code> aktualisiert. Diese Steuerungen gelten für die aus <code>nrg</code> abgeleitete Spannungs-/Strom-/Leistungsgruppe und die drei stationären PV-Speicherreadings.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Werte aus <code>nrg[0..2]</code>, als Volt interpretiert.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Werte aus <code>nrg[4..6]</code>, als Ampere interpretiert.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>

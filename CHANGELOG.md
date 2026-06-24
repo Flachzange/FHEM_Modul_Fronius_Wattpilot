@@ -5,8 +5,9 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 ## [v2.0.6] - 2026-06-24
 
 - Drei ausschließlich lesende Readings für den stationären PV-Speicher ergänzt: `pvBatteryStateOfCharge` aus `fbuf_akkuSOC`, `pvBatteryPower` aus `fbuf_pAkku` und `pvBatteryModeCode` aus `fbuf_akkuMode`. Sie bezeichnen ausdrücklich nicht den Fahrzeugakku.
-- `pvBatteryStateOfCharge` akzeptiert nur endliche Werte von 0 bis 100 Prozent. `pvBatteryPower` bewahrt den vorzeichenbehafteten Wattwert unverändert; mangels kontrolliert bestätigter Vorzeichenrichtung wird Laden/Entladen nicht umgedeutet. `pvBatteryModeCode` bewahrt den nicht negativen Rohcode; mangels belastbarer Enum wird kein Klartextmodus erfunden.
+- `pvBatteryStateOfCharge` akzeptiert nur endliche Werte von 0 bis 100 Prozent. `pvBatteryPower` gibt den vorzeichenbehafteten Wattwert grundsätzlich mit zwei Nachkommastellen aus; mangels kontrolliert bestätigter Vorzeichenrichtung wird Laden/Entladen nicht umgedeutet. `pvBatteryModeCode` bewahrt den nicht negativen Rohcode; mangels belastbarer Enum wird kein Klartextmodus erfunden.
 - Fehlende, `null`-, typfalsche, NaN-, unendliche oder außerhalb des belegten SOC-Bereichs liegende Batteriefelder verändern vorhandene Readings nicht.
+- Die drei neuen Speicherreadings unterliegen bei normalen `deltaStatus`-Nachrichten nun dem Attribut `interval`, verwenden dafür aber eine vom `nrg`-Block unabhängige Zeitbasis. Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen. `update_while_idle` gilt nun ohne Sonderfall einheitlich für `nrg` und stationäre Speichertelemetrie.
 - Bewusst keine Batterie-Setter ergänzt: `fam` und die Rohschlüssel hinter den neueren Fronius-App-Einstellungen bleiben bis zur eindeutigen Semantik- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
 - Dokumentation und Tests halten nun den erfolgreichen Realgerätetest von Version 2.0.5 fest: alle elf Konfigurationssetter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, bestätigt und zurückgesetzt; `set reconnect` stellte die Sitzung erfolgreich neu her.
 

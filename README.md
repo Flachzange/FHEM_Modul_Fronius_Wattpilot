@@ -198,7 +198,7 @@ Diese zusätzlichen Setter verwenden den bestehenden gesicherten `setValue`-Pfad
 
 ### PV-Speicher-Telemetrie
 
-Die Readings `pvBatteryStateOfCharge`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus den vom Wattpilot gelieferten Feldern `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. Für diese drei Werte gibt es in Version 2.0.6 bewusst keine Setter. Insbesondere werden weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung für die Speicherleistung erfunden. Schreibbare Speicherparameter wie `fam` bleiben bis zur eindeutigen Feld- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
+Die Readings `pvBatteryStateOfCharge`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus den vom Wattpilot gelieferten Feldern `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. Normale `deltaStatus`-Aktualisierungen dieser drei Readings werden durch `interval` begrenzt, jedoch unabhängig vom `nrg`-Messwertblock. Ein vollständiger Initialstatus nach dem Verbindungsaufbau und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen, aber nur wenn `update_while_idle` die Verarbeitung im aktuellen Fahrzeugzustand erlaubt. Damit gilt dieselbe Idle-Regel einheitlich für `nrg` und stationäre Speichertelemetrie. Für diese drei Werte gibt es in Version 2.0.6 bewusst keine Setter. Insbesondere werden weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung für die Speicherleistung erfunden. Schreibbare Speicherparameter wie `fam` bleiben bis zur eindeutigen Feld- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
 
 ### Verbindung kontrolliert neu aufbauen
 
@@ -222,21 +222,23 @@ Sie können das Verhalten des Moduls über "Attribute" anpassen.
 
 ### `interval` (in Sekunden)
 
-Legt fest, wie oft **hochfrequente Messwerte** (Spannung, Leistung, aktueller Strom) aktualisiert werden.
+Legt fest, wie oft **hochfrequente Messwerte** aktualisiert werden. Dazu gehören die aus `nrg` abgeleiteten Spannungs-, Strom- und Leistungsreadings sowie die drei Readings der stationären PV-Speichertelemetrie.
 
 * Standard: `0` (Jede Änderung wird sofort angezeigt -> kann das Log füllen "Spam").
 * Empfehlung: `10` oder `60`.
 * *Hinweis:* Wichtige Änderungen (Ladevorgang startet, Auto angesteckt) werden immer **sofort** angezeigt, unabhängig vom Intervall.
+* Die Speichertelemetrie besitzt eine eigene Intervall-Zeitbasis. Dadurch begrenzen sich Speicher- und `nrg`-Updates nicht gegenseitig.
+* Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen das Speicher-Intervall umgehen, nicht jedoch `update_while_idle`.
 
 ### `update_while_idle` (0 oder 1)
 
-Steuert, wie hochfrequente elektrische Messwerte verarbeitet werden, wenn das Auto **nicht** lädt.
+Steuert einheitlich, wie die beiden hochfrequenten Telemetriegruppen verarbeitet werden, wenn das Auto **nicht** lädt: die aus `nrg` abgeleiteten Spannungs-, Strom- und Leistungsreadings sowie die stationäre PV-Speichertelemetrie.
 
-* `0` (Standard): Idle-`nrg`-, Leistungs- und Stromwerte bleiben passiv und können weiter durch `interval` begrenzt oder übersprungen werden.
-* `1`: Echte eingehende Idle-Werte werden verarbeitet, weiterhin unter Beachtung von `interval`. Beim Wechsel von `car=2` zu einem gültigen nicht ladenden Zustand darf ein echtes `nrg` in derselben Nachricht oder innerhalb von 30 Sekunden einmalig das Rate-Limit umgehen, damit vom Gerät gelieferte Nullwerte stale Readings korrigieren.
+* `0` (Standard): Beide Telemetriegruppen bleiben im Idle-Zustand passiv.
+* `1`: Echte eingehende Idle-Werte beider Gruppen werden verarbeitet, jeweils weiterhin unter Beachtung ihrer eigenen `interval`-Zeitbasis. Beim Wechsel von `car=2` zu einem gültigen nicht ladenden Zustand darf ein echtes `nrg` in derselben Nachricht oder innerhalb von 30 Sekunden einmalig das Rate-Limit umgehen, damit vom Gerät gelieferte Nullwerte stale Readings korrigieren.
 * Es gibt keinen belegten expliziten Wattpilot-WebSocket-Status-Request; das Modul sendet deshalb kein `getAllValues` und erfindet kein Polling-Kommando. Wenn in dem 30-Sekunden-Fenster kein gültiges `nrg` kommt, wird höchstens ein kontrollierter Reconnect für diese Idle-Episode geplant. Dieser Reconnect ist ein begrenzter, aus Drittquellen abgeleiteter Fallback und kein offizielles Fronius-Protokollfeature.
 * Fehlende Werte werden niemals als null interpretiert. Echte Nullwerte werden nur verarbeitet, wenn das Gerät sie in einem gültigen `nrg` liefert.
-* `energyTotal` und `energySincePlugIn` werden bei eingehenden `eto`-/`wh`-Feldern unabhängig von `interval` und `update_while_idle` aktualisiert. Das Idle-Gate betrifft nur die aus `nrg` abgeleiteten Spannungs-, Strom- und Leistungsreadings.
+* `energyTotal` und `energySincePlugIn` werden bei eingehenden `eto`-/`wh`-Feldern unabhängig von `interval` und `update_while_idle` aktualisiert. Das Idle-Gate betrifft beide hochfrequenten Telemetriegruppen; der spezielle 30-Sekunden-Refresh-Fallback bleibt ausschließlich an ein fehlendes gültiges `nrg` gebunden.
 
 ### `disable` (0 oder 1)
 
@@ -308,7 +310,7 @@ Das Modul stellt exakt folgende 47 öffentlichen Readings bereit:
 | `minimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
 | `minimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
 | `pvBatteryStateOfCharge` | Ladezustand des stationären PV-Speichers aus `fbuf_akkuSOC`, als Prozentwert von `0` bis `100`. Fehlende oder ungültige Werte verändern das Reading nicht. |
-| `pvBatteryPower` | Unveränderter vorzeichenbehafteter Zahlenwert aus `fbuf_pAkku`, ausgegeben in Watt. Die Vorzeichenrichtung für Laden und Entladen ist noch nicht durch einen kontrollierten Flex-Realtest bestätigt; das Modul deutet das Vorzeichen daher nicht um. |
+| `pvBatteryPower` | Vorzeichenbehafteter Zahlenwert aus `fbuf_pAkku`, ausgegeben in Watt und grundsätzlich auf zwei Nachkommastellen formatiert. Die Vorzeichenrichtung für Laden und Entladen ist noch nicht durch einen kontrollierten Flex-Realtest bestätigt; das Modul deutet das Vorzeichen daher nicht um. |
 | `pvBatteryModeCode` | Unveränderter nicht negativer Ganzzahlcode aus `fbuf_akkuMode`. Mangels belastbarer Enum wird bewusst kein Klartextmodus erfunden. |
 | `nextTripTime` | Protokollwert als `HH:MM`; als Sekunden nach Mitternacht interpretiert. |
 | `energyTotal` | `eto / 1000`, mit zwei Nachkommastellen. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen. |
@@ -321,7 +323,7 @@ Das Modul stellt exakt folgende 47 öffentlichen Readings bereit:
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. |
 
-Die 24 operativen Status- und Konfigurations-Readings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
+Die operativen Status- und Konfigurations-Readings außerhalb der drei PV-Speicherreadings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Die drei PV-Speicherreadings und die `nrg`-Gruppe unterliegen derselben `update_while_idle`-Regel, verwenden für `interval` aber voneinander unabhängige Zeitbasen. Ein vollständiger Initialstatus und eine zugeordnete Geräteantwort dürfen nur das Speicher-Intervall umgehen, nicht das Idle-Gate. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
 
 Die Klartextwerte verwenden eine Kompatibilitätszuordnung aus der gepinnten offiziellen go-e-Enum für `modelStatus`. Für `msi` wird dieselbe Wertetabelle verwendet, weil die gepinnte Wattpilot-spezifische Quelle das Feld als interne Entscheidungsvariante beschreibt. Dies ist keine offizielle Fronius-Flex-Spezifikation; deshalb bleiben beide Rohcodes erhalten und nicht zugeordnete Werte ausdrücklich sichtbar. Die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von `cpDisabledRequest` sind für Wattpilot Flex nicht bestätigt. Insbesondere behauptet das Modul weder, dass `modelStatus` zwingend die abschließende/wirksame Entscheidung ist, noch dass `msi` zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus dieser Dokumentation darf keine Kausalkette abgeleitet werden.
 

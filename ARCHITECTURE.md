@@ -70,6 +70,7 @@ module reconnect.
 | `car_state` | current device-hash runtime state |
 | idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single automatic refresh reconnect, while a manual reconnect clears the episode state |
 | `LAST_UPDATE` | current device-hash rate-limit history |
+| `LAST_BATTERY_UPDATE` | current device-hash rate-limit history for stationary-PV-battery telemetry; independent of `LAST_UPDATE` |
 | `msg_id` | current device-hash request sequence |
 
 ## Status and reading pipeline
@@ -79,16 +80,20 @@ Incoming status data is copied and normalized once by
 unknown fields are preserved, and the caller's structure is never mutated.
 
 `Wattpilot_UpdateReadings` owns one FHEM bulk-reading transaction and delegates
-to narrow helpers for immediate readings, car transitions, energy values,
-electrical-update gating, and `nrg` phase/total readings. Energy counters are
-processed before the gate; `interval` and `update_while_idle` apply only to the
-`nrg`-derived voltage, current, and power group. Missing partial-update fields
+to narrow helpers for immediate readings, stationary-battery gating, car
+transitions, energy values, electrical-update gating, and `nrg` phase/total
+readings. Energy counters are processed independently. `update_while_idle`
+applies uniformly to the `nrg`-derived voltage/current/power group and the three
+stationary-battery readings. `interval` uses separate histories for the two
+groups, so neither group can suppress the other. A complete non-partial
+`fullStatus` and a matched `response` may bypass the battery interval gate, but
+not the shared idle gate; normal `deltaStatus` updates are rate-limited. Missing partial-update fields
 never reset readings, and only real device-supplied zero values create zero
 readings. `modelStatus` and `msi` each produce both an unmodified numeric code
 and a lowerCamelCase text reading. The text table is a compatibility mapping
 from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
 based on pinned Wattpilot-specific evidence that it is the internal variant of
-the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields are handled in the same immediate pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100, `fbuf_pAkku` is preserved as a signed finite watt value without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. No battery setter is present in version 2.0.6; candidate fields such as `fam` remain outside the public interface until their current Flex semantics and writability are independently verified.
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields use a separate rate-limited pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100, `fbuf_pAkku` is preserved as a signed finite watt value, formatted to two decimal places, without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. No battery setter is present in version 2.0.6; candidate fields such as `fam` remain outside the public interface until their current Flex semantics and writability are independently verified.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during
