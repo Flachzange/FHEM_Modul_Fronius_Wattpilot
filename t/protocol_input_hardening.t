@@ -203,7 +203,10 @@ is(main::Wattpilot_Parse($hash, ' ' x (1024 * 1024 + 1)), 0, 'oversized decoded 
 is(main::Wattpilot_Parse($hash, encode_json({
     type => 'futureMessage', extra => 'SYNTHETIC-SENSITIVE-VALUE'
 })), 1, 'unknown message type and extra fields are non-fatal');
-unlike(logs(), qr/SYNTHETIC-SENSITIVE-VALUE|futureMessage/, 'normal unknown-message log suppresses untrusted type and fields');
+like(logs(), qr/Ignoring unsupported JSON message type=futureMessage/,
+    'normal unknown-message log names a bounded safe type');
+unlike(logs(), qr/SYNTHETIC-SENSITIVE-VALUE/,
+    'normal unknown-message log suppresses extra payload fields');
 
 $hash = fresh_device();
 seed_auth_state($hash);

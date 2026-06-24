@@ -4,7 +4,7 @@ This file is the stable entry point for the repository's JSON/WebSocket API docu
 
 ## Public FHEM interface
 
-The active public interface of version 2.0.2 is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands.
+The active public interface of version 2.0.3 is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands. The Internal `VERSION` reports the module version; wallbox firmware remains separate in `firmwareVersion`.
 
 Old 1.x public names appear only in explicit breaking-change or historical mapping sections. Version 2.0 provides no aliases or automatic migration for them.
 
@@ -24,7 +24,7 @@ This fixture is the single canonical JSON copy used both by the documentation an
 
 ## Current empirical Flex reference
 
-Use [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md) for the sanitized observation from a Wattpilot Flex Home 22 C6 with firmware 43.4 and protocol 4. It is authoritative only for the observed key presence, nesting, array shape, JSON types, and sanitized representative values in that capture.
+Use [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md) for the sanitized observation from a Wattpilot Flex Home 22 C6 with firmware 43.4 and observed status field `proto=4`. A separate live FHEM observation derived `hello.protocol=2`; the two fields are documented separately and no semantic relationship is assumed. The reference is authoritative only for the observed key presence, nesting, array shape, JSON types, and sanitized representative values in the fullStatus capture.
 
 ## Field names and description candidates
 

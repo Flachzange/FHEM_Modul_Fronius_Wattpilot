@@ -36,7 +36,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.2';
+my $WATTPILOT_VERSION = '2.0.3';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -148,6 +148,15 @@ eval {
 
 sub Wattpilot_Initialize($) {
     my ($hash) = @_;
+
+    # FHEM CommandReload calls Initialize while existing device hashes remain
+    # in %defs. Refresh only the module-version Internal; do not alter runtime
+    # state, connections, credentials, timers, or readings.
+    for my $device_hash (values %defs) {
+        next if ref($device_hash) ne 'HASH';
+        next if ($device_hash->{TYPE} // '') ne 'Wattpilot';
+        $device_hash->{VERSION} = $WATTPILOT_VERSION;
+    }
 
     $hash->{DefFn}    = \&Wattpilot_Define;
     $hash->{UndefFn}  = \&Wattpilot_Undefine;
@@ -359,6 +368,7 @@ sub Wattpilot_Define($$) {
 
     # DevIo WebSocket URL Format: ws:host:port/path
     $hash->{DeviceName} = "ws:$ip:80/ws";
+    $hash->{VERSION} = $WATTPILOT_VERSION;
     $hash->{SERIAL} = $serial;
     # DevIo privacy masks only its initial opening line. devioLoglevel reduces
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
@@ -669,6 +679,15 @@ sub Wattpilot_IsJsonString($) {
     return ($flags & (SVf_POK | SVp_POK)) ? 1 : 0;
 }
 
+sub Wattpilot_MessageTypeForLog($) {
+    my ($type) = @_;
+    return 'redacted'
+        if !Wattpilot_IsJsonString($type)
+        || bytes::length($type) > 64
+        || $type !~ /\A[A-Za-z][A-Za-z0-9_.:-]{0,63}\z/;
+    return $type;
+}
+
 sub Wattpilot_IsNumber($) {
     my ($value) = @_;
     return 0 if !Wattpilot_IsScalarString($value);
@@ -747,8 +766,8 @@ sub Wattpilot_DispatchMessage($$) {
     }
 
     my $type = $json->{type};
-    my %known_type = map { $_ => 1 } qw(hello authRequired authSuccess authError fullStatus deltaStatus response);
-    Log3 $name, 4, "Wattpilot ($name) - Received JSON message type=" . ($known_type{$type} ? $type : "unknown");
+    my $type_for_log = Wattpilot_MessageTypeForLog($type);
+    Log3 $name, 4, "Wattpilot ($name) - Received JSON message type=$type_for_log";
 
     if ($type eq 'hello') {
         $hash->{helper}{deviceType} = $json->{devicetype}
@@ -758,7 +777,6 @@ sub Wattpilot_DispatchMessage($$) {
         $hash->{SERIAL} = $json->{serial}
             if (!$hash->{SERIAL} && Wattpilot_IsScalarString($json->{serial}) && $json->{serial} =~ /^\d+$/);
         if (Wattpilot_IsScalarString($json->{version})) {
-            $hash->{VERSION} = $json->{version};
             readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{firmware_version}, $json->{version}, 1);
         }
         Log3 $name, 4, "Wattpilot ($name) - Hello received";
@@ -812,7 +830,7 @@ sub Wattpilot_DispatchMessage($$) {
         }
         Wattpilot_HandleResponse($hash, $json);
     } else {
-        Log3 $name, 3, "Wattpilot ($name) - Ignoring unsupported JSON message type=unknown";
+        Log3 $name, 3, "Wattpilot ($name) - Ignoring unsupported JSON message type=$type_for_log";
     }
     return 1;
 }
@@ -1039,9 +1057,9 @@ sub Wattpilot_UpdateReadings($$;$) {
     readingsBeginUpdate($hash);
     Wattpilot_UpdateImmediateReadings($hash, $status);
     Wattpilot_HandleCarTransition($hash, $previous_car_state);
+    Wattpilot_UpdateEnergyReadings($hash, $status);
     if (Wattpilot_ShouldProcessElectricalReadings(
             $hash, $status, $message_type, $now)) {
-        Wattpilot_UpdateEnergyReadings($hash, $status);
         Wattpilot_UpdateNrgReadings($hash, $status);
     }
     readingsEndUpdate($hash, 1);
@@ -1788,7 +1806,9 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>This module controls a Fronius Wattpilot wallbox through the local WebSocket API.</li>
   <li>The public 2.0 interface uses English <code>lowerCamelCase</code> reading and set-command names.</li>
+  <li>The device Internal <code>VERSION</code> reports the module version. Firmware reported by the wallbox remains separate in <code>firmwareVersion</code>.</li>
   <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents. Known fields are type-checked, omitted partial-update fields remain unchanged, and missing values are never converted to zero.</li>
+  <li>Unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -1875,9 +1895,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        Rate limit for the electrical reading group. <code>0</code> disables rate limiting.</li>
+        Rate limit for the voltage, current, and power group derived from <code>nrg</code>. <code>0</code> disables rate limiting.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps electrical readings passive while not charging. <code>1</code> processes real incoming idle values. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented.</li>
+        <code>0</code> keeps voltage, current, and power readings derived from <code>nrg</code> passive while not charging. <code>1</code> processes real incoming idle values. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -1912,6 +1932,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>nextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
     <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
     <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
+    <li>The two energy readings update independently of <code>interval</code> and <code>update_while_idle</code>. Those controls apply only to the <code>nrg</code>-derived voltage, current, and power group.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Values from <code>nrg[0..2]</code>, interpreted as volts.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Values from <code>nrg[4..6]</code>, interpreted as amperes.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
@@ -1930,7 +1951,9 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>Dieses Modul steuert eine Fronius-Wattpilot-Wallbox über die lokale WebSocket-API.</li>
   <li>Die öffentliche 2.0-Schnittstelle verwendet englische Reading- und Set-Namen in <code>lowerCamelCase</code>.</li>
+  <li>Das Device-Internal <code>VERSION</code> zeigt die Modulversion. Die von der Wallbox gemeldete Firmware bleibt separat im Reading <code>firmwareVersion</code>.</li>
   <li>Decodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt. Bekannte Felder werden typgeprüft, ausgelassene Teil-Updates bleiben unverändert und fehlende Werte werden niemals als Null behandelt.</li>
+  <li>Nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -2017,9 +2040,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Rate-Limit für die Gruppe der elektrischen Readings. <code>0</code> deaktiviert die Begrenzung.</li>
+        Rate-Limit für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe. <code>0</code> deaktiviert die Begrenzung.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt elektrische Readings im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden.</li>
+        <code>0</code> belässt die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2054,6 +2077,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>nextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
     <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
     <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>
+    <li>Die beiden Energie-Readings werden unabhängig von <code>interval</code> und <code>update_while_idle</code> aktualisiert. Diese Steuerungen gelten nur für die aus <code>nrg</code> abgeleitete Spannungs-, Strom- und Leistungsgruppe.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Werte aus <code>nrg[0..2]</code>, als Volt interpretiert.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Werte aus <code>nrg[4..6]</code>, als Ampere interpretiert.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>
@@ -2074,7 +2098,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.2",
+  "version": "v2.0.3",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

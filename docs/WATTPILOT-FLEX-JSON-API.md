@@ -7,27 +7,28 @@
 - Model/group: `Wattpilot Flex Home 22 C6`
 - Device type: `wattpilot_flex`
 - Firmware: `43.4`
-- Protocol: `4`
+- Observed `fullStatus` field `status.proto`: `4`
 - Authentication mode reported in status: `bcrypt`
 - Capture date: 2026-06-21
 - Source: maintainer-provided FHEM log capture, published only after sanitization in Issue #11
+- Separate live FHEM observation on 2026-06-24: the module helper derived from `hello.protocol` was `2`. This is distinct from `status.proto=4`; no equality or semantic relationship is assumed.
 - Observed message: one `fullStatus` with `partial:false` and exactly 558 direct status keys
 - Fixture: [`t/fixtures/fullStatus-flex-observed.json`](../t/fixtures/fullStatus-flex-observed.json)
 - Fixture SHA-256 (UTF-8, Python `json.dumps(..., indent=2)`, final LF): `ca8f70cd954ebd70684744386660b80b4ce6a2cc0a5ab7751c27b59676b09d33`
 
 The original raw capture is not published. Sanitization replaced identifiers, network coordinates, authentication material, exact operational counters, market data, and installation-specific labels while preserving the complete key set, object nesting, array lengths, null positions, JSON scalar types, and representative values. Therefore examples prove shape and type, not original live values.
 
-No real protocol exchange was performed for this documentation change. The capture does not establish behavior on other models, firmware, protocol versions, configurations, or runtime states. A key name, value, historical alias, current implementation, or third-party library does not by itself prove meaning or writability.
+The original 2026-06-21 fullStatus documentation did not perform an additional protocol exchange. The separate 2026-06-24 live observation confirms only the explicitly recorded FHEM runtime facts above. Neither observation establishes behavior on other models, firmware, protocol versions, configurations, or runtime states. A key name, value, historical alias, current implementation, or third-party library does not by itself prove meaning or writability.
 
 ## Evidence and confidence classes
 
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.1 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.3 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.0.1; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.0.3; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
@@ -40,10 +41,10 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `hello`
 
 - Direction: device → client in the historical flow.
-- Observed/required fields: not present in the accepted capture. Current code handles `type`, reads `serial` if no serial is configured, and exposes `version` as the FHEM reading `firmwareVersion`.
-- Example: `{"type":"hello","serial":"10000001","version":"43.4"}`
-- Evidence: current implementation behavior plus historical compilation; not observed in the Issue #11 dataset.
-- Open questions: actual Flex 43.4 field set, ordering, requiredness, `protocol`, `secured`, and relationship to status identity fields are unknown.
+- Observed/required fields: not present in the accepted fullStatus capture. Current code handles `type`, reads `serial` if no serial is configured, stores integer `protocol` as the connection helper, and exposes `version` as the FHEM reading `firmwareVersion`.
+- Example: `{"type":"hello","serial":"10000001","version":"43.4","protocol":2}`
+- Evidence: current implementation behavior plus historical compilation. A separate live FHEM observation on 2026-06-24 showed helper value `protocol=2`; current code assigns that helper only from `hello.protocol`. No raw `hello` frame from that session was retained.
+- Open questions: the complete Flex 43.4 field set, ordering, requiredness, `secured`, and the semantic relationship between `hello.protocol` and `status.proto` remain unknown.
 
 ### `authRequired`
 
@@ -179,7 +180,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 - **Observed Flex 43.4 capture:** `frc` is numeric and the sanitized sample contains `0`. This proves neither the enum meaning nor writability.
 - **Current module behavior:** maps `0=neutral`, `1=off`, and `2=on`; the matching Set command sends those values.
 - **Pinned Wattpilot-specific third-party evidence:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` and `ruaan-deysel/wattpilot-api` commit `498aa8709f198fcde2b41159ad99dc02e57accc9` also describe `0=Neutral`, `1=Off`, and `2=On`, and mark the field R/W.
-- **Remaining uncertainty:** these sources are not official Fronius documentation, and the enum plus write behavior have not been reproduced on the captured Flex Home 22 C6 with firmware 43.4/protocol 4.
+- **Remaining uncertainty:** these sources are not official Fronius documentation, and the enum plus write behavior have not been reproduced on the captured Flex Home 22 C6 with firmware 43.4 and observed status field `proto=4`.
 
 ### `amp` range, unit, and writability
 
@@ -632,7 +633,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `pha` | array | `[false,false,false,true,true,true]` | unknown phase-status flags | unknown | observation only; no writability evidence | array values observed; index and enum semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `pnp` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `po` | number | `-300` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `proto` | number | `4` | Protocol identity value in the observed payload. | unknown | observation only; no writability evidence | empirical value; maintainer records protocol 4 | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `proto` | number | `4` | Status-level protocol identity value in the observed fullStatus payload. It is distinct from the separately observed `hello.protocol=2`. | unknown | observation only; no writability evidence | empirical status value only; relationship to hello protocol unknown | Issue #11 sanitized capture plus separate 2026-06-24 live FHEM observation. |
 | `psh` | number | `500` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `psm` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `psmd` | number | `10000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -785,4 +786,4 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 
 ## Remaining limitations
 
-All fields marked `unknown`, and every unit, enum, or write claim described as inferred/current implementation, remain unverified. In particular, this capture cannot prove set-command acceptance, authentication exchange details, response handling, `partial:true`, delta behavior, array index semantics, or behavior outside one Flex Home 22 C6 on firmware 43.4/protocol 4. Real FHEM, Wattpilot, network, WebSocket, authentication, persistence, rename, reload, delete, reconnect, command-response, and live-reading integration tests were not performed.
+All fields marked `unknown`, and every unit, enum, or write claim described as inferred/current implementation, remain unverified. In particular, the fullStatus capture cannot prove set-command acceptance, authentication exchange details, response handling, `partial:true`, delta behavior, array index semantics, or behavior outside one Flex Home 22 C6 on firmware 43.4 with observed status field `proto=4`. The separate pre-fix observation exercised one real FHEM connection, WebSocket authentication, reconnect, and live readings, but no post-fix version-2.0.3 hardware, predecessor-device, rename, reload, delete, charging, secured-command, or command-response integration test was performed.
