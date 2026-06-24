@@ -46,6 +46,7 @@ my %expected_from_observed = (
     maximumCurrentLimit => 32,
     temperatureCurrentLimit => 32,
     minimumChargingCurrent => 6,
+    pvSurplusStartPower => 1400,
 );
 
 my $fixture_path = File::Spec->catfile(
@@ -96,6 +97,7 @@ main::Wattpilot_DispatchMessage($hash, {
         ama => undef,
         amt => undef,
         mca => undef,
+        fst => undef,
     },
 });
 is(reading_value($hash, 'chargingAllowed'), 1,
@@ -118,6 +120,7 @@ main::Wattpilot_DispatchMessage($hash, {
         ama => 31.5,
         amt => '32A',
         mca => JSON::true,
+        fst => -1,
     },
 });
 is(reading_value($hash, 'chargingAllowed'), 1,
@@ -140,6 +143,8 @@ is(reading_value($hash, 'temperatureCurrentLimit'), 32,
     'unit-suffixed temperature-current input is ignored');
 is(reading_value($hash, 'minimumChargingCurrent'), 6,
     'boolean minimum-current input is ignored');
+is(reading_value($hash, 'pvSurplusStartPower'), 1400,
+    'negative start-power input is ignored');
 
 $hash = fresh_device();
 $attr{$hash->{NAME}}{interval} = 300;
@@ -156,13 +161,14 @@ main::Wattpilot_DispatchMessage($hash, {
         ama => 0,
         amt => 0,
         mca => 0,
+        fst => 0,
         nrg => [230, 230, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     },
 });
 for my $reading (qw(
     chargingAllowed chargingDecisionCode chargingDecisionInternalCode
     errorCode maximumCurrentLimit temperatureCurrentLimit
-    minimumChargingCurrent
+    minimumChargingCurrent pvSurplusStartPower
 )) {
     is(reading_value($hash, $reading), 0,
         "$reading preserves an authoritative device-supplied zero");

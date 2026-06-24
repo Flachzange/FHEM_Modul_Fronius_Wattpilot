@@ -34,7 +34,7 @@ my @public_readings = qw(
     state firmwareVersion authHashMode carState forceState chargingCurrent
     chargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode maximumCurrentLimit
-    temperatureCurrentLimit minimumChargingCurrent nextTripTime
+    temperatureCurrentLimit minimumChargingCurrent pvSurplusStartPower nextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
@@ -68,6 +68,7 @@ main::Wattpilot_UpdateReadings($hash, {
     ama => 32,
     amt => 31,
     mca => 6,
+    fst => 1400,
     ftt => 7 * 3600 + 30 * 60,
     eto => 123456,
     wh => 789,
@@ -76,7 +77,7 @@ main::Wattpilot_UpdateReadings($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 32 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 33 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

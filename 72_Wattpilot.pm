@@ -36,7 +36,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.3';
+my $WATTPILOT_VERSION = '2.0.4';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -64,6 +64,7 @@ my %WATTPILOT_READING_NAME = (
     maximum_current_limit   => 'maximumCurrentLimit',
     temperature_current_limit => 'temperatureCurrentLimit',
     minimum_charging_current => 'minimumChargingCurrent',
+    pv_surplus_start_power  => 'pvSurplusStartPower',
     next_trip_time          => 'nextTripTime',
     energy_total            => 'energyTotal',
     energy_since_plug_in    => 'energySincePlugIn',
@@ -87,6 +88,7 @@ my %WATTPILOT_COMMAND_NAME = (
     force_state      => 'forceState',
     charging_current => 'chargingCurrent',
     charging_mode    => 'chargingMode',
+    pv_surplus_start_power => 'pvSurplusStartPower',
     next_trip_time   => 'nextTripTime',
 );
 
@@ -740,6 +742,20 @@ sub Wattpilot_IsNumber($) {
     return $value =~ /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 }
 
+sub Wattpilot_ParseFiniteNonNegativeNumber($) {
+    my ($value) = @_;
+    return undef if !Wattpilot_IsNumber($value);
+
+    my $number;
+    {
+        no warnings 'numeric';
+        $number = 0 + $value;
+    }
+    return undef if $number < 0;
+    return undef if "$number" =~ /(?:inf|nan)/i;
+    return $number;
+}
+
 sub Wattpilot_IsInteger($) {
     my ($value) = @_;
     return Wattpilot_IsScalarString($value) && $value =~ /^-?(?:0|[1-9]\d*)$/;
@@ -775,6 +791,16 @@ sub Wattpilot_NormalizeStatus($$) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
             delete $status{$key};
+        }
+    }
+    if (exists($status{fst}) && defined($status{fst})) {
+        my $value = Wattpilot_ParseFiniteNonNegativeNumber($status{fst});
+        if (!defined($value)) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=fst";
+            delete $status{fst};
+        } else {
+            $status{fst} = $value;
         }
     }
     for my $key (keys %boolean) {
@@ -1008,6 +1034,11 @@ sub Wattpilot_UpdateImmediateReadings($$) {
             $hash, $WATTPILOT_READING_NAME{$text_reading_key},
             $WATTPILOT_CHARGING_DECISION{$value} // 'unknown:' . $value);
     }
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{pv_surplus_start_power},
+        $status->{fst})
+        if defined $status->{fst};
 
     for my $field (
         [err => 'error_code'],
@@ -1288,6 +1319,13 @@ sub Wattpilot_Set($@) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_current} <6-32>"
             if !defined($val) || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/;
         return Wattpilot_SendSecure($hash, "amp", int($val));
+    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{pv_surplus_start_power}) {
+        my $watts = defined($val)
+            ? Wattpilot_ParseFiniteNonNegativeNumber($val)
+            : undef;
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_surplus_start_power} <watts>"
+            if !defined($watts);
+        return Wattpilot_SendSecure($hash, "fst", $watts);
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_mode}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_mode} <default|eco|nextTrip>"
             if !defined $val;
@@ -1320,6 +1358,7 @@ sub Wattpilot_Set($@) {
         . "$WATTPILOT_COMMAND_NAME{force_state}:neutral,off,on "
         . "$WATTPILOT_COMMAND_NAME{charging_current}:slider,6,1,32 "
         . "$WATTPILOT_COMMAND_NAME{charging_mode}:default,eco,nextTrip "
+        . "$WATTPILOT_COMMAND_NAME{pv_surplus_start_power} "
         . "$WATTPILOT_COMMAND_NAME{next_trip_time}";
 }
 
@@ -1869,7 +1908,7 @@ sub Wattpilot_WriteJson($$) {
   <li>The public 2.0 interface uses English <code>lowerCamelCase</code> reading and set-command names.</li>
   <li>The device Internal <code>VERSION</code> reports the module version. Firmware reported by the wallbox remains separate in <code>firmwareVersion</code>.</li>
   <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents. Known fields are type-checked, omitted partial-update fields remain unchanged, and missing values are never converted to zero.</li>
-  <li>The empirically observed Flex startup message types <code>clearInverters</code>, <code>updateInverter</code>, and <code>clearSmips</code> are deliberately ignored because version 2.0.3 does not use their payloads. They remain visible in the level-4 received-type trace but do not produce a level-3 unsupported-type warning. Other unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
+  <li>The empirically observed Flex startup message types <code>clearInverters</code>, <code>updateInverter</code>, and <code>clearSmips</code> are deliberately ignored because the module does not use their payloads. They remain visible in the level-4 received-type trace but do not produce a level-3 unsupported-type warning. Other unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -1939,6 +1978,8 @@ sub Wattpilot_WriteJson($$) {
         Sends <code>frc=0</code>, <code>frc=1</code>, or <code>frc=2</code>.</li>
     <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
         Sends <code>lmo=3</code>, <code>lmo=4</code>, or <code>lmo=5</code>.</li>
+    <li><code>set &lt;name&gt; pvSurplusStartPower &lt;watts&gt;</code><br>
+        Sends the non-negative finite numeric value through protocol key <code>fst</code>. The module applies no unverified upper limit; device rejection is reported through the command-status readings. The public unit is watts.</li>
     <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
         Requires exactly two-digit <code>HH:MM</code> and sends protocol key <code>ftt</code> as seconds after midnight.</li>
   </ul>
@@ -1990,7 +2031,8 @@ sub Wattpilot_WriteJson($$) {
     <li><code>chargingDecision</code>, <code>chargingDecisionInternal</code><br>Compatibility text mappings for the two raw codes. Unknown values are exposed as <code>unknown:&lt;code&gt;</code>. The mapping is derived from the pinned official go-e <code>modelStatus</code> enum and Wattpilot-specific third-party evidence for <code>msi</code>; it is not an official Fronius Flex specification. The pinned third-party source calls <code>msi</code> an internal decision variant, but the exact relationship, evaluation order, precedence, and any role of <code>cpDisabledRequest</code> are not confirmed for Wattpilot Flex. In particular, the module does not claim that <code>modelStatus</code> is necessarily the final/effective decision or that <code>msi</code> is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values; do not infer a causal chain from the module documentation.</li>
     <li><code>errorCode</code><br>Raw integer value from <code>err</code>; no error enum is assumed.</li>
     <li><code>maximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>minimumChargingCurrent</code><br>Raw integer values from <code>ama</code>, <code>amt</code>, and <code>mca</code>. Their current-limit interpretation and ampere unit come from pinned third-party Wattpilot evidence and are not independently proven by the sanitized Flex capture.</li>
-    <li>The nine operational status readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
+    <li><code>pvSurplusStartPower</code><br>Non-negative finite numeric value from <code>fst</code>, exposed in watts. Pinned official go-e API metadata and pinned Wattpilot-specific evidence describe it as the PV-surplus start power and as writable; the observed Wattpilot Flex 43.4 value is <code>1400</code>. This evidence supports the compatibility mapping but is not an official Fronius Flex API specification.</li>
+    <li>The ten operational status readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
   </ul>
   <p><b>Charging-decision compatibility mapping</b></p>
   <table class="block wide">
@@ -2055,7 +2097,7 @@ sub Wattpilot_WriteJson($$) {
   <li>Die öffentliche 2.0-Schnittstelle verwendet englische Reading- und Set-Namen in <code>lowerCamelCase</code>.</li>
   <li>Das Device-Internal <code>VERSION</code> zeigt die Modulversion. Die von der Wallbox gemeldete Firmware bleibt separat im Reading <code>firmwareVersion</code>.</li>
   <li>Decodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt. Bekannte Felder werden typgeprüft, ausgelassene Teil-Updates bleiben unverändert und fehlende Werte werden niemals als Null behandelt.</li>
-  <li>Die empirisch beobachteten Flex-Startnachrichtentypen <code>clearInverters</code>, <code>updateInverter</code> und <code>clearSmips</code> werden bewusst ignoriert, weil Version 2.0.3 ihre Payloads nicht verwendet. Sie bleiben im Level-4-Empfangs-Trace sichtbar, erzeugen aber keine Level-3-Warnung wegen eines nicht unterstützten Typs. Andere nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
+  <li>Die empirisch beobachteten Flex-Startnachrichtentypen <code>clearInverters</code>, <code>updateInverter</code> und <code>clearSmips</code> werden bewusst ignoriert, weil das Modul ihre Payloads nicht verwendet. Sie bleiben im Level-4-Empfangs-Trace sichtbar, erzeugen aber keine Level-3-Warnung wegen eines nicht unterstützten Typs. Andere nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -2125,6 +2167,8 @@ sub Wattpilot_WriteJson($$) {
         Sendet <code>frc=0</code>, <code>frc=1</code> oder <code>frc=2</code>.</li>
     <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
         Sendet <code>lmo=3</code>, <code>lmo=4</code> oder <code>lmo=5</code>.</li>
+    <li><code>set &lt;name&gt; pvSurplusStartPower &lt;Watt&gt;</code><br>
+        Sendet den nicht negativen, endlichen Zahlenwert über den Protokollschlüssel <code>fst</code>. Das Modul setzt keine unbelegte Obergrenze; eine Ablehnung des Geräts erscheint in den Command-Status-Readings. Die öffentliche Einheit ist Watt.</li>
     <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
         Erfordert exakt zweistelliges <code>HH:MM</code> und sendet <code>ftt</code> als Sekunden nach Mitternacht.</li>
   </ul>
@@ -2176,7 +2220,8 @@ sub Wattpilot_WriteJson($$) {
     <li><code>chargingDecision</code>, <code>chargingDecisionInternal</code><br>Kompatibilitäts-Klartextwerte für die beiden Rohcodes. Unbekannte Werte erscheinen als <code>unknown:&lt;Code&gt;</code>. Die Zuordnung stammt aus der gepinnten offiziellen go-e-Enum für <code>modelStatus</code> und Wattpilot-spezifischer Drittquellenevidenz für <code>msi</code>; sie ist keine offizielle Fronius-Flex-Spezifikation. Die gepinnte Drittquelle bezeichnet <code>msi</code> als interne Entscheidungsvariante; die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von <code>cpDisabledRequest</code> sind für Wattpilot Flex jedoch nicht bestätigt. Insbesondere behauptet das Modul weder, dass <code>modelStatus</code> zwingend die abschließende/wirksame Entscheidung ist, noch dass <code>msi</code> zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus der Moduldokumentation darf keine Kausalkette abgeleitet werden.</li>
     <li><code>errorCode</code><br>Unveränderter Ganzzahlwert aus <code>err</code>; es wird keine Fehler-Enum angenommen.</li>
     <li><code>maximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>minimumChargingCurrent</code><br>Unveränderte Ganzzahlwerte aus <code>ama</code>, <code>amt</code> und <code>mca</code>. Die Interpretation als Stromgrenzen in Ampere stammt aus gepinnter Wattpilot-Drittquellenevidenz und ist durch den bereinigten Flex-Mitschnitt nicht unabhängig bewiesen.</li>
-    <li>Die neun operativen Status-Readings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
+    <li><code>pvSurplusStartPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>fst</code>, ausgegeben in Watt. Gepinnte offizielle go-e-API-Metadaten und gepinnte Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; beim beobachteten Wattpilot Flex 43.4 betrug der Wert <code>1400</code>. Diese Evidenz trägt die Kompatibilitätszuordnung, ist aber keine offizielle Fronius-Flex-API-Spezifikation.</li>
+    <li>Die zehn operativen Status-Readings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
   </ul>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
   <table class="block wide">
@@ -2241,7 +2286,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.3",
+  "version": "v2.0.4",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

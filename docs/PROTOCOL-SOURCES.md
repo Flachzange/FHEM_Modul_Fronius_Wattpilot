@@ -57,3 +57,11 @@ The authoritative empirical reference and [`PROTOCOL-CONFLICTS.md`](PROTOCOL-CON
 ## Use in future changes
 
 For every proposed protocol-field change, record the source revision, applicable device and firmware, confidence class, and any conflicting evidence. If evidence is incomplete, preserve the field as inferred or unknown and do not add a set command. Real captures must be sanitized before they enter tests, logs, issues, or fixtures.
+
+## PV-surplus start-power evidence for version 2.0.4
+
+- The sanitized Wattpilot Flex Home 22 C6 capture with firmware 43.4 contains the numeric field `fst=1400`. This proves field presence, JSON number shape, and one observed value only.
+- Pinned official go-e API revision `6a12380798b24e8f40d8fbb260a4ae24c3ce42fb` describes `fst` as R/W float configuration `startingPower` in watts. This is official go-e documentation, not official Fronius documentation.
+- Pinned Wattpilot-specific revision `4712ba3b8409fda55303870c047038b1b221d7ff` also maps `fst` to writable `startingPower` in watts and describes it as the minimum power at which charging can start. This is third-party Wattpilot implementation evidence.
+- Version 2.0.4 therefore exposes `pvSurplusStartPower` and sends `fst` as a compatibility implementation with explicit provenance limits. It accepts only non-negative finite numeric values, applies no unverified upper bound, and confirms readings only from returned device status.
+- No real Wattpilot Flex write/response/restore test for `fst` had been performed when this implementation was prepared. Device acceptance, persistence, rounding, model scope, and firmware scope remain to be verified before merge.
