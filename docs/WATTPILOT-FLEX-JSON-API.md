@@ -11,7 +11,7 @@
 - Authentication mode reported in status: `bcrypt`
 - Capture date: 2026-06-21
 - Source: maintainer-provided FHEM log capture, published only after sanitization in Issue #11
-- Separate live FHEM observation on 2026-06-24: the module helper derived from `hello.protocol` was `2`. This is distinct from `status.proto=4`; no equality or semantic relationship is assumed.
+- Separate live FHEM observations on 2026-06-24: the module helper derived from `hello.protocol` was `2`, which is distinct from `status.proto=4`; no equality or semantic relationship is assumed. A post-fix connection with module 2.0.3 also recorded the startup message types `clearInverters`, `updateInverter` (twice), and `clearSmips` after `fullStatus` and before the first `deltaStatus`.
 - Observed message: one `fullStatus` with `partial:false` and exactly 558 direct status keys
 - Fixture: [`t/fixtures/fullStatus-flex-observed.json`](../t/fixtures/fullStatus-flex-observed.json)
 - Fixture SHA-256 (UTF-8, Python `json.dumps(..., indent=2)`, final LF): `ca8f70cd954ebd70684744386660b80b4ce6a2cc0a5ab7751c27b59676b09d33`
@@ -94,6 +94,30 @@ Examples in this section are minimal synthetic documentation values unless expli
 - Evidence: current implementation behavior and an explicitly synthetic existing fixture; not observed in the accepted capture.
 - Repository invariant: an omitted key is an absent partial update and must not delete or reset an existing reading.
 - Open questions: actual Flex 43.4 delta shapes, whether `partial` occurs, batching, and ordering.
+
+### Observed but unused Flex startup messages
+
+A live FHEM connection on 2026-06-24 with module 2.0.3, a Wattpilot Flex, and firmware 43.4 produced this startup sequence after successful bcrypt authentication:
+
+```text
+hello
+authRequired
+authSuccess
+fullStatus
+clearInverters
+updateInverter
+updateInverter
+clearSmips
+deltaStatus
+```
+
+| Type | Direction | Observed count in that connection | Current module behavior | Established meaning |
+| --- | --- | ---: | --- | --- |
+| `clearInverters` | device → client | 1 | Deliberately ignored; visible only in the level-4 received-type trace. | Unknown. No payload was retained or interpreted. |
+| `updateInverter` | device → client | 2 | Deliberately ignored; visible only in the level-4 received-type trace. | Unknown. No payload was retained or interpreted. |
+| `clearSmips` | device → client | 1 | Deliberately ignored; visible only in the level-4 received-type trace. | Unknown. No payload was retained or interpreted. |
+
+These names and their ordering are empirical observations from one connection only. They do not prove payload shape, requiredness, ordering guarantees, relation to physical inverters or SMIPs, behavior on predecessor devices, or any action the client should perform. Version 2.0.3 does not use their payloads and suppresses the level-3 unsupported-type warning for exactly these three observed message types. All other unknown types continue to be ignored with a bounded/redacted diagnostic and without payload logging.
 
 ### `setValue`
 
@@ -201,8 +225,8 @@ The names below are implemented by version 2.0.1. They describe FHEM behavior on
 | `amp` | `chargingCurrent` | copied immediately; Set accepts integers 6–32 | implementation plus conflicting historical range evidence |
 | `lmo` | `chargingMode` | 3 `default`, 4 `eco`, 5 `nextTrip`; other values become `unknown:<raw-value>` | current implementation; writability unverified |
 | `alw` | `chargingAllowed` | boolean normalized to `0` or `1` | current implementation plus pinned third-party meaning candidate; Flex capture confirms type only |
-| `modelStatus` | `chargingDecisionCode` | raw integer; no text enum | current implementation; enum meaning deliberately unconfirmed |
-| `msi` | `chargingDecisionInternalCode` | raw integer; no text enum | current implementation; field meaning remains third-party evidence |
+| `modelStatus` | `chargingDecisionCode`, `chargingDecision` | raw integer plus go-e-enum text mapping; unknown codes remain `unknown:<code>` | current implementation; mapping is useful for automation but not an official Fronius Flex specification |
+| `msi` | `chargingDecisionInternalCode`, `chargingDecisionInternal` | raw integer plus the same go-e-enum text mapping; unknown codes remain `unknown:<code>` | current implementation; exact distinction from `modelStatus` remains unconfirmed |
 | `err` | `errorCode` | raw integer; no text enum | current implementation; error enum deliberately unconfirmed |
 | `ama` | `maximumCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
 | `amt` | `temperatureCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
@@ -537,14 +561,14 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `mcpea` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `men` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mnt` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `modelStatus` | number | `23` | Version 2.0.1 exposes the raw integer as `chargingDecisionCode`; no text enum is applied. | none | observation only; no writability evidence | empirical numeric value plus current FHEM mapping; enum meaning unknown | Issue #11 sanitized capture; historical decision enum is not promoted to a Flex fact. |
+| `modelStatus` | number | `23` | Version 2.0.3 exposes the raw integer as `chargingDecisionCode` and the go-e-enum mapping as `chargingDecision`. | none | observation only; no writability evidence | empirical numeric value plus current FHEM mapping; text enum is imported from pinned official go-e documentation and is not promoted to an official Fronius fact | Issue #11 sanitized capture; the go-e decision enum is exposed as a clearly qualified implementation mapping, not promoted to an official Fronius Flex fact. |
 | `mptwt` | number | `600000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mpwst` | number | `120000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mro` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `msb` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `msca` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mscs` | number | `1` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `msi` | number | `27` | Version 2.0.1 exposes the raw integer as `chargingDecisionInternalCode`; no text enum is applied. | none | observation only; no writability evidence | empirical numeric value plus current FHEM mapping; detailed meaning unknown | Issue #11 sanitized capture; pinned third-party alias remains implementation evidence only. |
+| `msi` | number | `27` | Version 2.0.3 exposes the raw integer as `chargingDecisionInternalCode` and the same go-e-enum mapping as `chargingDecisionInternal`. | none | observation only; no writability evidence | empirical numeric value plus current FHEM mapping; detailed meaning unknown | Issue #11 sanitized capture; pinned third-party alias remains implementation evidence only. |
 | `msr` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mstr` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mstw` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |

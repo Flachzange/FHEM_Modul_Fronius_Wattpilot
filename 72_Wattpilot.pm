@@ -57,7 +57,9 @@ my %WATTPILOT_READING_NAME = (
     charging_mode           => 'chargingMode',
     charging_allowed        => 'chargingAllowed',
     charging_decision_code  => 'chargingDecisionCode',
+    charging_decision        => 'chargingDecision',
     charging_decision_internal_code => 'chargingDecisionInternalCode',
+    charging_decision_internal => 'chargingDecisionInternal',
     error_code              => 'errorCode',
     maximum_current_limit   => 'maximumCurrentLimit',
     temperature_current_limit => 'temperatureCurrentLimit',
@@ -88,6 +90,12 @@ my %WATTPILOT_COMMAND_NAME = (
     next_trip_time   => 'nextTripTime',
 );
 
+my %WATTPILOT_OBSERVED_IGNORED_MESSAGE_TYPE = map { $_ => 1 } qw(
+    clearInverters
+    updateInverter
+    clearSmips
+);
+
 my %WATTPILOT_CAR_STATE = (
     0 => 'unknown',
     1 => 'idle',
@@ -107,6 +115,43 @@ my %WATTPILOT_CHARGING_MODE = (
     3 => 'default',
     4 => 'eco',
     5 => 'nextTrip',
+);
+
+my %WATTPILOT_CHARGING_DECISION = (
+    0  => 'notChargingBecauseNoChargeCtrlData',
+    1  => 'notChargingBecauseOvertemperature',
+    2  => 'notChargingBecauseAccessControlWait',
+    3  => 'chargingBecauseForceStateOn',
+    4  => 'notChargingBecauseForceStateOff',
+    5  => 'notChargingBecauseScheduler',
+    6  => 'notChargingBecauseEnergyLimit',
+    7  => 'chargingBecauseAwattarPriceLow',
+    8  => 'chargingBecauseAutomaticStopTestLadung',
+    9  => 'chargingBecauseAutomaticStopNotEnoughTime',
+    10 => 'chargingBecauseAutomaticStop',
+    11 => 'chargingBecauseAutomaticStopNoClock',
+    12 => 'chargingBecausePvSurplus',
+    13 => 'chargingBecauseFallbackGoEDefault',
+    14 => 'chargingBecauseFallbackGoEScheduler',
+    15 => 'chargingBecauseFallbackDefault',
+    16 => 'notChargingBecauseFallbackGoEAwattar',
+    17 => 'notChargingBecauseFallbackAwattar',
+    18 => 'notChargingBecauseFallbackAutomaticStop',
+    19 => 'chargingBecauseCarCompatibilityKeepAlive',
+    20 => 'chargingBecauseChargePauseNotAllowed',
+    22 => 'notChargingBecauseSimulateUnplugging',
+    23 => 'notChargingBecausePhaseSwitch',
+    24 => 'notChargingBecauseMinPauseDuration',
+    26 => 'notChargingBecauseError',
+    27 => 'notChargingBecauseLoadManagementDoesntWant',
+    28 => 'notChargingBecauseOcppDoesntWant',
+    29 => 'notChargingBecauseReconnectDelay',
+    30 => 'notChargingBecauseAdapterBlocking',
+    31 => 'notChargingBecauseUnderfrequencyControl',
+    32 => 'notChargingBecauseUnbalancedLoad',
+    33 => 'chargingBecauseDischargingPvBattery',
+    34 => 'notChargingBecauseGridMonitoring',
+    35 => 'notChargingBecauseOcppFallback',
 );
 
 my %WATTPILOT_FORCE_COMMAND_VALUE = (
@@ -184,8 +229,9 @@ sub Wattpilot_InterfaceSnapshot() {
         commands       => { %WATTPILOT_COMMAND_NAME },
         carStates      => { %WATTPILOT_CAR_STATE },
         forceStates    => { %WATTPILOT_FORCE_STATE },
-        chargingModes => { %WATTPILOT_CHARGING_MODE },
-        lifecycle      => { %WATTPILOT_LIFECYCLE_STATE },
+        chargingModes     => { %WATTPILOT_CHARGING_MODE },
+        chargingDecisions => { %WATTPILOT_CHARGING_DECISION },
+        lifecycle          => { %WATTPILOT_LIFECYCLE_STATE },
     };
 }
 
@@ -829,6 +875,9 @@ sub Wattpilot_DispatchMessage($$) {
             };
         }
         Wattpilot_HandleResponse($hash, $json);
+    } elsif ($WATTPILOT_OBSERVED_IGNORED_MESSAGE_TYPE{$type}) {
+        # Observed on Wattpilot Flex firmware 43.4 during connection startup.
+        # The module does not use their payloads and deliberately ignores them.
     } else {
         Log3 $name, 3, "Wattpilot ($name) - Ignoring unsupported JSON message type=$type_for_log";
     }
@@ -947,8 +996,20 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         if defined $status->{alw};
 
     for my $field (
-        [modelStatus => 'charging_decision_code'],
-        [msi => 'charging_decision_internal_code'],
+        [modelStatus => 'charging_decision_code', 'charging_decision'],
+        [msi => 'charging_decision_internal_code', 'charging_decision_internal'],
+    ) {
+        my ($protocol_key, $code_reading_key, $text_reading_key) = @$field;
+        next if !defined $status->{$protocol_key};
+        my $value = int($status->{$protocol_key});
+        readingsBulkUpdate(
+            $hash, $WATTPILOT_READING_NAME{$code_reading_key}, $value);
+        readingsBulkUpdate(
+            $hash, $WATTPILOT_READING_NAME{$text_reading_key},
+            $WATTPILOT_CHARGING_DECISION{$value} // 'unknown:' . $value);
+    }
+
+    for my $field (
         [err => 'error_code'],
         [ama => 'maximum_current_limit'],
         [amt => 'temperature_current_limit'],
@@ -1808,7 +1869,7 @@ sub Wattpilot_WriteJson($$) {
   <li>The public 2.0 interface uses English <code>lowerCamelCase</code> reading and set-command names.</li>
   <li>The device Internal <code>VERSION</code> reports the module version. Firmware reported by the wallbox remains separate in <code>firmwareVersion</code>.</li>
   <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents. Known fields are type-checked, omitted partial-update fields remain unchanged, and missing values are never converted to zero.</li>
-  <li>Unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
+  <li>The empirically observed Flex startup message types <code>clearInverters</code>, <code>updateInverter</code>, and <code>clearSmips</code> are deliberately ignored because version 2.0.3 does not use their payloads. They remain visible in the level-4 received-type trace but do not produce a level-3 unsupported-type warning. Other unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -1925,10 +1986,51 @@ sub Wattpilot_WriteJson($$) {
     <li><code>chargingCurrent</code><br>Configured/requested charging current; interpreted as amperes.</li>
     <li><code>chargingMode</code><br><code>default</code>, <code>eco</code>, <code>nextTrip</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
     <li><code>chargingAllowed</code><br>Boolean protocol field <code>alw</code>, exposed as <code>0</code> or <code>1</code>. A pinned Wattpilot-specific source describes it as the current charging permission; the Flex capture confirms only the boolean field and value shape.</li>
-    <li><code>chargingDecisionCode</code>, <code>chargingDecisionInternalCode</code><br>Raw integer values from <code>modelStatus</code> and <code>msi</code>. No text enum is applied because the Flex meanings have not been independently confirmed.</li>
+    <li><code>chargingDecisionCode</code>, <code>chargingDecisionInternalCode</code><br>Unmodified integer values from <code>modelStatus</code> and <code>msi</code>.</li>
+    <li><code>chargingDecision</code>, <code>chargingDecisionInternal</code><br>Compatibility text mappings for the two raw codes. Unknown values are exposed as <code>unknown:&lt;code&gt;</code>. The mapping is derived from the pinned official go-e <code>modelStatus</code> enum and Wattpilot-specific third-party evidence for <code>msi</code>; it is not an official Fronius Flex specification.</li>
     <li><code>errorCode</code><br>Raw integer value from <code>err</code>; no error enum is assumed.</li>
     <li><code>maximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>minimumChargingCurrent</code><br>Raw integer values from <code>ama</code>, <code>amt</code>, and <code>mca</code>. Their current-limit interpretation and ampere unit come from pinned third-party Wattpilot evidence and are not independently proven by the sanitized Flex capture.</li>
-    <li>The seven operational status readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
+    <li>The nine operational status readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
+  </ul>
+  <p><b>Charging-decision compatibility mapping</b></p>
+  <table class="block wide">
+    <tr><th>Code</th><th>Text value</th></tr>
+      <tr><td><code>0</code></td><td><code>notChargingBecauseNoChargeCtrlData</code></td></tr>
+      <tr><td><code>1</code></td><td><code>notChargingBecauseOvertemperature</code></td></tr>
+      <tr><td><code>2</code></td><td><code>notChargingBecauseAccessControlWait</code></td></tr>
+      <tr><td><code>3</code></td><td><code>chargingBecauseForceStateOn</code></td></tr>
+      <tr><td><code>4</code></td><td><code>notChargingBecauseForceStateOff</code></td></tr>
+      <tr><td><code>5</code></td><td><code>notChargingBecauseScheduler</code></td></tr>
+      <tr><td><code>6</code></td><td><code>notChargingBecauseEnergyLimit</code></td></tr>
+      <tr><td><code>7</code></td><td><code>chargingBecauseAwattarPriceLow</code></td></tr>
+      <tr><td><code>8</code></td><td><code>chargingBecauseAutomaticStopTestLadung</code></td></tr>
+      <tr><td><code>9</code></td><td><code>chargingBecauseAutomaticStopNotEnoughTime</code></td></tr>
+      <tr><td><code>10</code></td><td><code>chargingBecauseAutomaticStop</code></td></tr>
+      <tr><td><code>11</code></td><td><code>chargingBecauseAutomaticStopNoClock</code></td></tr>
+      <tr><td><code>12</code></td><td><code>chargingBecausePvSurplus</code></td></tr>
+      <tr><td><code>13</code></td><td><code>chargingBecauseFallbackGoEDefault</code></td></tr>
+      <tr><td><code>14</code></td><td><code>chargingBecauseFallbackGoEScheduler</code></td></tr>
+      <tr><td><code>15</code></td><td><code>chargingBecauseFallbackDefault</code></td></tr>
+      <tr><td><code>16</code></td><td><code>notChargingBecauseFallbackGoEAwattar</code></td></tr>
+      <tr><td><code>17</code></td><td><code>notChargingBecauseFallbackAwattar</code></td></tr>
+      <tr><td><code>18</code></td><td><code>notChargingBecauseFallbackAutomaticStop</code></td></tr>
+      <tr><td><code>19</code></td><td><code>chargingBecauseCarCompatibilityKeepAlive</code></td></tr>
+      <tr><td><code>20</code></td><td><code>chargingBecauseChargePauseNotAllowed</code></td></tr>
+      <tr><td><code>22</code></td><td><code>notChargingBecauseSimulateUnplugging</code></td></tr>
+      <tr><td><code>23</code></td><td><code>notChargingBecausePhaseSwitch</code></td></tr>
+      <tr><td><code>24</code></td><td><code>notChargingBecauseMinPauseDuration</code></td></tr>
+      <tr><td><code>26</code></td><td><code>notChargingBecauseError</code></td></tr>
+      <tr><td><code>27</code></td><td><code>notChargingBecauseLoadManagementDoesntWant</code></td></tr>
+      <tr><td><code>28</code></td><td><code>notChargingBecauseOcppDoesntWant</code></td></tr>
+      <tr><td><code>29</code></td><td><code>notChargingBecauseReconnectDelay</code></td></tr>
+      <tr><td><code>30</code></td><td><code>notChargingBecauseAdapterBlocking</code></td></tr>
+      <tr><td><code>31</code></td><td><code>notChargingBecauseUnderfrequencyControl</code></td></tr>
+      <tr><td><code>32</code></td><td><code>notChargingBecauseUnbalancedLoad</code></td></tr>
+      <tr><td><code>33</code></td><td><code>chargingBecauseDischargingPvBattery</code></td></tr>
+      <tr><td><code>34</code></td><td><code>notChargingBecauseGridMonitoring</code></td></tr>
+      <tr><td><code>35</code></td><td><code>notChargingBecauseOcppFallback</code></td></tr>
+  </table>
+  <ul>
     <li><code>nextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
     <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
     <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
@@ -1953,7 +2055,7 @@ sub Wattpilot_WriteJson($$) {
   <li>Die öffentliche 2.0-Schnittstelle verwendet englische Reading- und Set-Namen in <code>lowerCamelCase</code>.</li>
   <li>Das Device-Internal <code>VERSION</code> zeigt die Modulversion. Die von der Wallbox gemeldete Firmware bleibt separat im Reading <code>firmwareVersion</code>.</li>
   <li>Decodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt. Bekannte Felder werden typgeprüft, ausgelassene Teil-Updates bleiben unverändert und fehlende Werte werden niemals als Null behandelt.</li>
-  <li>Nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
+  <li>Die empirisch beobachteten Flex-Startnachrichtentypen <code>clearInverters</code>, <code>updateInverter</code> und <code>clearSmips</code> werden bewusst ignoriert, weil Version 2.0.3 ihre Payloads nicht verwendet. Sie bleiben im Level-4-Empfangs-Trace sichtbar, erzeugen aber keine Level-3-Warnung wegen eines nicht unterstützten Typs. Andere nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -2070,10 +2172,51 @@ sub Wattpilot_WriteJson($$) {
     <li><code>chargingCurrent</code><br>Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert.</li>
     <li><code>chargingMode</code><br><code>default</code>, <code>eco</code>, <code>nextTrip</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
     <li><code>chargingAllowed</code><br>Boolesches Protokollfeld <code>alw</code>, ausgegeben als <code>0</code> oder <code>1</code>. Eine gepinnte Wattpilot-spezifische Quelle beschreibt es als aktuelle Ladefreigabe; der Flex-Mitschnitt bestätigt nur Feld, Typ und Wertform.</li>
-    <li><code>chargingDecisionCode</code>, <code>chargingDecisionInternalCode</code><br>Unveränderte Ganzzahlwerte aus <code>modelStatus</code> und <code>msi</code>. Es erfolgt keine Textübersetzung, weil die Flex-Bedeutungen nicht unabhängig bestätigt sind.</li>
+    <li><code>chargingDecisionCode</code>, <code>chargingDecisionInternalCode</code><br>Unveränderte Ganzzahlwerte aus <code>modelStatus</code> und <code>msi</code>.</li>
+    <li><code>chargingDecision</code>, <code>chargingDecisionInternal</code><br>Kompatibilitäts-Klartextwerte für die beiden Rohcodes. Unbekannte Werte erscheinen als <code>unknown:&lt;Code&gt;</code>. Die Zuordnung stammt aus der gepinnten offiziellen go-e-Enum für <code>modelStatus</code> und Wattpilot-spezifischer Drittquellenevidenz für <code>msi</code>; sie ist keine offizielle Fronius-Flex-Spezifikation.</li>
     <li><code>errorCode</code><br>Unveränderter Ganzzahlwert aus <code>err</code>; es wird keine Fehler-Enum angenommen.</li>
     <li><code>maximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>minimumChargingCurrent</code><br>Unveränderte Ganzzahlwerte aus <code>ama</code>, <code>amt</code> und <code>mca</code>. Die Interpretation als Stromgrenzen in Ampere stammt aus gepinnter Wattpilot-Drittquellenevidenz und ist durch den bereinigten Flex-Mitschnitt nicht unabhängig bewiesen.</li>
-    <li>Die sieben operativen Status-Readings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
+    <li>Die neun operativen Status-Readings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
+  </ul>
+  <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
+  <table class="block wide">
+    <tr><th>Code</th><th>Klartextwert</th></tr>
+      <tr><td><code>0</code></td><td><code>notChargingBecauseNoChargeCtrlData</code></td></tr>
+      <tr><td><code>1</code></td><td><code>notChargingBecauseOvertemperature</code></td></tr>
+      <tr><td><code>2</code></td><td><code>notChargingBecauseAccessControlWait</code></td></tr>
+      <tr><td><code>3</code></td><td><code>chargingBecauseForceStateOn</code></td></tr>
+      <tr><td><code>4</code></td><td><code>notChargingBecauseForceStateOff</code></td></tr>
+      <tr><td><code>5</code></td><td><code>notChargingBecauseScheduler</code></td></tr>
+      <tr><td><code>6</code></td><td><code>notChargingBecauseEnergyLimit</code></td></tr>
+      <tr><td><code>7</code></td><td><code>chargingBecauseAwattarPriceLow</code></td></tr>
+      <tr><td><code>8</code></td><td><code>chargingBecauseAutomaticStopTestLadung</code></td></tr>
+      <tr><td><code>9</code></td><td><code>chargingBecauseAutomaticStopNotEnoughTime</code></td></tr>
+      <tr><td><code>10</code></td><td><code>chargingBecauseAutomaticStop</code></td></tr>
+      <tr><td><code>11</code></td><td><code>chargingBecauseAutomaticStopNoClock</code></td></tr>
+      <tr><td><code>12</code></td><td><code>chargingBecausePvSurplus</code></td></tr>
+      <tr><td><code>13</code></td><td><code>chargingBecauseFallbackGoEDefault</code></td></tr>
+      <tr><td><code>14</code></td><td><code>chargingBecauseFallbackGoEScheduler</code></td></tr>
+      <tr><td><code>15</code></td><td><code>chargingBecauseFallbackDefault</code></td></tr>
+      <tr><td><code>16</code></td><td><code>notChargingBecauseFallbackGoEAwattar</code></td></tr>
+      <tr><td><code>17</code></td><td><code>notChargingBecauseFallbackAwattar</code></td></tr>
+      <tr><td><code>18</code></td><td><code>notChargingBecauseFallbackAutomaticStop</code></td></tr>
+      <tr><td><code>19</code></td><td><code>chargingBecauseCarCompatibilityKeepAlive</code></td></tr>
+      <tr><td><code>20</code></td><td><code>chargingBecauseChargePauseNotAllowed</code></td></tr>
+      <tr><td><code>22</code></td><td><code>notChargingBecauseSimulateUnplugging</code></td></tr>
+      <tr><td><code>23</code></td><td><code>notChargingBecausePhaseSwitch</code></td></tr>
+      <tr><td><code>24</code></td><td><code>notChargingBecauseMinPauseDuration</code></td></tr>
+      <tr><td><code>26</code></td><td><code>notChargingBecauseError</code></td></tr>
+      <tr><td><code>27</code></td><td><code>notChargingBecauseLoadManagementDoesntWant</code></td></tr>
+      <tr><td><code>28</code></td><td><code>notChargingBecauseOcppDoesntWant</code></td></tr>
+      <tr><td><code>29</code></td><td><code>notChargingBecauseReconnectDelay</code></td></tr>
+      <tr><td><code>30</code></td><td><code>notChargingBecauseAdapterBlocking</code></td></tr>
+      <tr><td><code>31</code></td><td><code>notChargingBecauseUnderfrequencyControl</code></td></tr>
+      <tr><td><code>32</code></td><td><code>notChargingBecauseUnbalancedLoad</code></td></tr>
+      <tr><td><code>33</code></td><td><code>chargingBecauseDischargingPvBattery</code></td></tr>
+      <tr><td><code>34</code></td><td><code>notChargingBecauseGridMonitoring</code></td></tr>
+      <tr><td><code>35</code></td><td><code>notChargingBecauseOcppFallback</code></td></tr>
+  </table>
+  <ul>
     <li><code>nextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
     <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
     <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>

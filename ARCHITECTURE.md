@@ -82,12 +82,23 @@ electrical-update gating, and `nrg` phase/total readings. Energy counters are
 processed before the gate; `interval` and `update_while_idle` apply only to the
 `nrg`-derived voltage, current, and power group. Missing partial-update fields
 never reset readings, and only real device-supplied zero values create zero
-readings.
+readings. `modelStatus` and `msi` each produce both an unmodified numeric code
+and a lowerCamelCase text reading. The text table is a compatibility mapping
+from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
+based on pinned Wattpilot-specific evidence that it is the internal variant of
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during
 FHEM module reload without touching lifecycle state. Device firmware remains a
 separate `firmwareVersion` reading populated from `hello.version`.
+
+The message dispatcher recognizes `clearInverters`, `updateInverter`, and
+`clearSmips` as empirically observed Flex startup notifications. Their payloads
+are not consumed, stored, or logged; the type remains visible in the level-4
+received-message trace, while the level-3 unsupported-type warning is reserved
+for other unknown message types. This classification records observation only
+and does not assign protocol semantics.
 
 The clean public 2.0 reading, command, enum, and lifecycle values are collected
 in one internal interface definition and exposed to tests through

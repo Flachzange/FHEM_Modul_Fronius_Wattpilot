@@ -221,7 +221,7 @@ Wählt das Verfahren für die Passwort-Verschlüsselung.
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 30 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 32 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
@@ -233,8 +233,10 @@ Das Modul stellt exakt folgende 30 öffentlichen Readings bereit:
 | `chargingCurrent` | Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert. |
 | `chargingMode` | `default`, `eco`, `nextTrip` oder `unknown:<Rohwert>`. |
 | `chargingAllowed` | Boolesches Feld `alw`, ausgegeben als `0` oder `1`. Die Bedeutung als aktuelle Ladefreigabe stammt aus gepinnter Wattpilot-Drittquellenevidenz; der Flex-Mitschnitt bestätigt Feld und Typ. |
-| `chargingDecisionCode` | Unveränderter Ganzzahlwert aus `modelStatus`; keine unbestätigte Text-Enum. |
-| `chargingDecisionInternalCode` | Unveränderter Ganzzahlwert aus `msi`; keine unbestätigte Text-Enum. |
+| `chargingDecisionCode` | Unveränderter Ganzzahlwert aus `modelStatus`. |
+| `chargingDecision` | Klartextzuordnung zu `chargingDecisionCode`; unbekannte Codes erscheinen als `unknown:<Code>`. |
+| `chargingDecisionInternalCode` | Unveränderter Ganzzahlwert aus `msi`. |
+| `chargingDecisionInternal` | Klartextzuordnung zu `chargingDecisionInternalCode`; unbekannte Codes erscheinen als `unknown:<Code>`. |
 | `errorCode` | Unveränderter Ganzzahlwert aus `err`; keine unbestätigte Fehler-Enum. |
 | `maximumCurrentLimit` | Unveränderter Ganzzahlwert aus `ama`; als maximale Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
 | `temperatureCurrentLimit` | Unveränderter Ganzzahlwert aus `amt`; als temperaturbedingte Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
@@ -250,7 +252,46 @@ Das Modul stellt exakt folgende 30 öffentlichen Readings bereit:
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. |
 
-Die sieben operativen Status-Readings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
+Die neun operativen Status-Readings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
+
+Die Klartextwerte verwenden eine Kompatibilitätszuordnung aus der gepinnten offiziellen go-e-Enum für `modelStatus`. Für `msi` wird dieselbe Wertetabelle verwendet, weil die gepinnte Wattpilot-spezifische Quelle das Feld als interne Variante derselben Entscheidung beschreibt. Dies ist keine offizielle Fronius-Flex-Spezifikation; deshalb bleiben beide Rohcodes erhalten und nicht zugeordnete Werte ausdrücklich sichtbar.
+
+| Code | Klartextwert |
+| :--- | :--- |
+| `0` | `notChargingBecauseNoChargeCtrlData` |
+| `1` | `notChargingBecauseOvertemperature` |
+| `2` | `notChargingBecauseAccessControlWait` |
+| `3` | `chargingBecauseForceStateOn` |
+| `4` | `notChargingBecauseForceStateOff` |
+| `5` | `notChargingBecauseScheduler` |
+| `6` | `notChargingBecauseEnergyLimit` |
+| `7` | `chargingBecauseAwattarPriceLow` |
+| `8` | `chargingBecauseAutomaticStopTestLadung` |
+| `9` | `chargingBecauseAutomaticStopNotEnoughTime` |
+| `10` | `chargingBecauseAutomaticStop` |
+| `11` | `chargingBecauseAutomaticStopNoClock` |
+| `12` | `chargingBecausePvSurplus` |
+| `13` | `chargingBecauseFallbackGoEDefault` |
+| `14` | `chargingBecauseFallbackGoEScheduler` |
+| `15` | `chargingBecauseFallbackDefault` |
+| `16` | `notChargingBecauseFallbackGoEAwattar` |
+| `17` | `notChargingBecauseFallbackAwattar` |
+| `18` | `notChargingBecauseFallbackAutomaticStop` |
+| `19` | `chargingBecauseCarCompatibilityKeepAlive` |
+| `20` | `chargingBecauseChargePauseNotAllowed` |
+| `22` | `notChargingBecauseSimulateUnplugging` |
+| `23` | `notChargingBecausePhaseSwitch` |
+| `24` | `notChargingBecauseMinPauseDuration` |
+| `26` | `notChargingBecauseError` |
+| `27` | `notChargingBecauseLoadManagementDoesntWant` |
+| `28` | `notChargingBecauseOcppDoesntWant` |
+| `29` | `notChargingBecauseReconnectDelay` |
+| `30` | `notChargingBecauseAdapterBlocking` |
+| `31` | `notChargingBecauseUnderfrequencyControl` |
+| `32` | `notChargingBecauseUnbalancedLoad` |
+| `33` | `chargingBecauseDischargingPvBattery` |
+| `34` | `notChargingBecauseGridMonitoring` |
+| `35` | `notChargingBecauseOcppFallback` |
 
 Die Bedeutungen und Einheiten der verwendeten `nrg`-Positionen sowie die Einheiten von `eto` und `wh` sind Implementierungs- beziehungsweise historische Interpretationen. Der dokumentierte Flex-Mitschnitt bestätigt Struktur und Datentypen, aber nicht unabhängig alle Einheiten, Enum-Bedeutungen oder Schreibrechte.
 

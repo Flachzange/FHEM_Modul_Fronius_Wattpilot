@@ -44,7 +44,7 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 
 ## Version 2.0.1 FHEM exposure boundary
 
-Version 2.0.1 exposes `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca` as public FHEM readings. This does not promote the historical aliases or units to official Flex facts. `chargingAllowed` is emitted as `0|1`; decision and error fields remain raw integer codes; current-limit fields remain raw integers with their ampere interpretation explicitly qualified as pinned third-party evidence. No write command is added for these fields.
+Version 2.0.3 exposes `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca` as public FHEM readings. This does not promote the historical aliases or units to official Flex facts. `chargingAllowed` is emitted as `0|1`; `modelStatus` and `msi` retain raw integer readings and additionally receive compatibility text readings from the pinned go-e enum, with `unknown:<code>` for unmapped values. The `msi` internal-decision role remains pinned Wattpilot-specific third-party evidence. Error and current-limit fields remain raw integers. No write command is added for these fields.
 
 ## Charging, vehicle, and access fields
 

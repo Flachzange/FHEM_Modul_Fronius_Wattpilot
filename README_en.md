@@ -221,7 +221,7 @@ Selects the password hashing method.
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 30 public readings:
+The module exposes exactly these 32 public readings:
 
 | Reading | Description |
 | :--- | :--- |
@@ -233,8 +233,10 @@ The module exposes exactly these 30 public readings:
 | `chargingCurrent` | Configured/requested charging current, interpreted as amperes. |
 | `chargingMode` | `default`, `eco`, `nextTrip`, or `unknown:<raw-value>`. |
 | `chargingAllowed` | Boolean field `alw`, exposed as `0` or `1`. Its meaning as the current charging permission comes from pinned Wattpilot-specific third-party evidence; the Flex capture confirms the field and type. |
-| `chargingDecisionCode` | Raw integer from `modelStatus`; no unconfirmed text enum is applied. |
-| `chargingDecisionInternalCode` | Raw integer from `msi`; no unconfirmed text enum is applied. |
+| `chargingDecisionCode` | Unmodified integer from `modelStatus`. |
+| `chargingDecision` | Text mapping for `chargingDecisionCode`; unknown codes are exposed as `unknown:<code>`. |
+| `chargingDecisionInternalCode` | Unmodified integer from `msi`. |
+| `chargingDecisionInternal` | Text mapping for `chargingDecisionInternalCode`; unknown codes are exposed as `unknown:<code>`. |
 | `errorCode` | Raw integer from `err`; no unconfirmed error enum is applied. |
 | `maximumCurrentLimit` | Raw integer from `ama`; interpreted as an ampere current limit only from pinned third-party evidence. |
 | `temperatureCurrentLimit` | Raw integer from `amt`; interpreted as a temperature-related ampere limit only from pinned third-party evidence. |
@@ -250,7 +252,46 @@ The module exposes exactly these 30 public readings:
 | `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
 | `lastCommandError` | Concise redacted error or result text. |
 
-The seven operational status readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Missing, `null`, or type-invalid fields leave existing values unchanged.
+The nine operational status readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Missing, `null`, or type-invalid fields leave existing values unchanged.
+
+The text values use a compatibility mapping from the pinned official go-e `modelStatus` enum. The same value table is applied to `msi` because the pinned Wattpilot-specific source describes it as the internal variant of the same decision. This is not an official Fronius Flex specification; both raw codes therefore remain available and unmapped values stay explicit.
+
+| Code | Text value |
+| :--- | :--- |
+| `0` | `notChargingBecauseNoChargeCtrlData` |
+| `1` | `notChargingBecauseOvertemperature` |
+| `2` | `notChargingBecauseAccessControlWait` |
+| `3` | `chargingBecauseForceStateOn` |
+| `4` | `notChargingBecauseForceStateOff` |
+| `5` | `notChargingBecauseScheduler` |
+| `6` | `notChargingBecauseEnergyLimit` |
+| `7` | `chargingBecauseAwattarPriceLow` |
+| `8` | `chargingBecauseAutomaticStopTestLadung` |
+| `9` | `chargingBecauseAutomaticStopNotEnoughTime` |
+| `10` | `chargingBecauseAutomaticStop` |
+| `11` | `chargingBecauseAutomaticStopNoClock` |
+| `12` | `chargingBecausePvSurplus` |
+| `13` | `chargingBecauseFallbackGoEDefault` |
+| `14` | `chargingBecauseFallbackGoEScheduler` |
+| `15` | `chargingBecauseFallbackDefault` |
+| `16` | `notChargingBecauseFallbackGoEAwattar` |
+| `17` | `notChargingBecauseFallbackAwattar` |
+| `18` | `notChargingBecauseFallbackAutomaticStop` |
+| `19` | `chargingBecauseCarCompatibilityKeepAlive` |
+| `20` | `chargingBecauseChargePauseNotAllowed` |
+| `22` | `notChargingBecauseSimulateUnplugging` |
+| `23` | `notChargingBecausePhaseSwitch` |
+| `24` | `notChargingBecauseMinPauseDuration` |
+| `26` | `notChargingBecauseError` |
+| `27` | `notChargingBecauseLoadManagementDoesntWant` |
+| `28` | `notChargingBecauseOcppDoesntWant` |
+| `29` | `notChargingBecauseReconnectDelay` |
+| `30` | `notChargingBecauseAdapterBlocking` |
+| `31` | `notChargingBecauseUnderfrequencyControl` |
+| `32` | `notChargingBecauseUnbalancedLoad` |
+| `33` | `chargingBecauseDischargingPvBattery` |
+| `34` | `notChargingBecauseGridMonitoring` |
+| `35` | `notChargingBecauseOcppFallback` |
 
 The meanings and units assigned to the used `nrg` positions and to `eto`/`wh` remain implementation or historical interpretations. The documented Flex capture confirms structure and data types, but not every unit, enum meaning, or write capability independently.
 
