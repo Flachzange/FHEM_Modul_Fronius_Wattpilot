@@ -33,6 +33,7 @@ docs/WATTPILOT-LEGACY-PROTOCOL2.md
 t/fixtures/README.md
 t/fixtures/fullStatus-flex-observed.json
 t/fixtures/legacy-protocol2-session.json
+t/fixtures/pv-battery-settings-flex-43.4.json
 "
 
 for path in "$standalone" "$package_dir/MANIFEST" "$package_dir/SHA256SUMS" "$archive" "$archive.sha256"; do

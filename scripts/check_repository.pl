@@ -17,7 +17,8 @@ my @required = qw(
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
     t/fixtures/fullStatus-flex-observed.json t/fixtures/README.md
-    t/full_status_flex_observed.t t/public_interface_2_0.t
+    t/full_status_flex_observed.t t/pv_battery_settings.t
+    t/fixtures/pv-battery-settings-flex-43.4.json t/public_interface_2_0.t
     t/public_interface_guard.t t/fhem_interface_validation.t
     t/operational_status_readings.t t/runtime_fixes_2_0_3.t
     scripts/check_commandref.pl scripts/check_repository.pl

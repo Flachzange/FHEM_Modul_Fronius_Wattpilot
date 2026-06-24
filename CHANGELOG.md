@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.0.8] - 2026-06-24
+
+### PV-Speicher-Konfiguration aus App und Status zugeordnet
+
+- Sechs auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 gleichzeitig in Solar.wattpilot-App und `fullStatus` beobachtete PV-Speichereinstellungen ausschließlich lesend veröffentlicht.
+- `fam` wird als `configPvBatteryChargeAboveStateOfCharge`, `pdte` als `configPvBatteryDischargeEnabled`, `pdt` als `configPvBatteryDischargeUntilStateOfCharge`, `pdle` als `configPvBatteryDischargeTimeLimitEnabled`, `pdls` als `configPvBatteryDischargeStartTime` und `pdlo` als `configPvBatteryDischargeEndTime` ausgegeben.
+- Prozentwerte werden nur im Bereich 0 bis 100 akzeptiert, boolesche Werte stabil als `0`/`1` ausgegeben und ganze Minuten seit Mitternacht als `HH:MM` dargestellt. Fehlende, `null`- oder ungültige Werte überschreiben bestehende Readings nicht.
+- Die sechs Readings folgen unmittelbar dem in Version 2.0.7 eingeführten `config...`-Schema. Es gibt keine Aliase oder Migration.
+- Noch keine Batterie-Set-Befehle ergänzt: Schreibbarkeit, Geräteantwort, Readback, Restore, Grenzen und weitere Modell-/Firmwarestände bleiben vor Veröffentlichung von Settern zu verifizieren.
+
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
 ## [v2.0.7] - 2026-06-24

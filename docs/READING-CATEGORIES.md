@@ -1,6 +1,6 @@
 # Public reading categories
 
-Version 2.0.7 classifies every public reading explicitly. Readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`. The same rule applies to writable and read-only configuration values. Set-command names are unchanged and do not use the prefix.
+Version 2.0.8 classifies every public reading explicitly. Readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`. The same rule applies to writable and read-only configuration values. Set-command names are unchanged and do not use the prefix.
 
 There are no compatibility aliases, duplicate old/new readings, automatic reading migration, or DbLog migration. Existing automations and history queries must be adapted explicitly.
 
@@ -37,6 +37,12 @@ There are no compatibility aliases, duplicate old/new readings, automatic readin
 | `pv_battery_state_of_charge` | `pvBatteryStateOfCharge` | telemetry | Current stationary PV-battery SOC. |
 | `pv_battery_power` | `pvBatteryPower` | telemetry | Current stationary PV-battery power. |
 | `pv_battery_mode_code` | `pvBatteryModeCode` | status | Current raw stationary-battery mode code. |
+| `pv_battery_charge_above_state_of_charge` | `configPvBatteryChargeAboveStateOfCharge` | configuration | App setting “Charge above”; stationary PV-battery SOC threshold above which vehicle charging may start. Exposed read-only until write verification is complete. |
+| `pv_battery_discharge_enabled` | `configPvBatteryDischargeEnabled` | configuration | App switch “Discharge until”. Exposed read-only until write verification is complete. |
+| `pv_battery_discharge_until_state_of_charge` | `configPvBatteryDischargeUntilStateOfCharge` | configuration | App setting “State of charge SoC” belonging to “Discharge until”. Exposed read-only until write verification is complete. |
+| `pv_battery_discharge_time_limit_enabled` | `configPvBatteryDischargeTimeLimitEnabled` | configuration | App switch “Limit discharging time”. Exposed read-only until write verification is complete. |
+| `pv_battery_discharge_start_time` | `configPvBatteryDischargeStartTime` | configuration | App start time for the discharge window. Exposed read-only until write verification is complete. |
+| `pv_battery_discharge_end_time` | `configPvBatteryDischargeEndTime` | configuration | App end time for the discharge window. Exposed read-only until write verification is complete. |
 | `next_trip_time` | `configNextTripTime` | configuration | Configured next-trip target time; Set command remains `nextTripTime`. |
 | `energy_total` | `energyTotal` | telemetry | Total measured energy. |
 | `energy_since_plug_in` | `energySincePlugIn` | telemetry | Measured energy since plug-in. |

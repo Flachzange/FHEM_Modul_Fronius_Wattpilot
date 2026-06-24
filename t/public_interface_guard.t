@@ -107,7 +107,10 @@ my @public_readings = qw(
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
     configMinimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
-    pvBatteryModeCode configNextTripTime
+    pvBatteryModeCode configPvBatteryChargeAboveStateOfCharge
+    configPvBatteryDischargeEnabled configPvBatteryDischargeUntilStateOfCharge
+    configPvBatteryDischargeTimeLimitEnabled configPvBatteryDischargeStartTime
+    configPvBatteryDischargeEndTime configNextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId

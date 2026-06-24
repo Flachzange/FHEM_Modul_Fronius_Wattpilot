@@ -2,11 +2,11 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.0.7**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
+Current module version: **2.0.8**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
 
 ## Breaking change in 2.0
 
-Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Set-command names remain unchanged. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
+Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Version 2.0.8 adds six read-only configuration readings for the stationary-PV-battery settings visible in the Solar.wattpilot app. Set-command names remain unchanged. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
 
 | Reading through 2.0.6 | Reading from 2.0.7 |
 | :--- | :--- |
@@ -219,7 +219,9 @@ These additional setters use the existing secured `setValue` path. No reading is
 
 ### PV battery telemetry
 
-The readings `pvBatteryStateOfCharge`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not to the vehicle traction battery. They are read from the device-supplied fields `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. Valid `nrg` and stationary-battery values are cached together. Once at least one valid `nrg` snapshot is available, either valid `nrg` input or valid battery input may trigger the next shared measurement cycle admitted by `interval`. Voltage, current, power, and stationary-battery telemetry are then published from the latest cache in the same FHEM reading transaction. There is only one shared history in `LAST_UPDATE`; values arriving inside the interval update only the cache. `pvBatteryStateOfCharge` is formatted with exactly one decimal place. The module deliberately provides no setters for these three values. In particular, the module does not invent an unverified mode enum or an unverified charge/discharge sign meaning for battery power. Writable storage parameters such as `fam` remain outside the public interface until field semantics and writability are verified.
+The readings `pvBatteryStateOfCharge`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not to the vehicle traction battery. They are read from the device-supplied fields `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. Valid `nrg` and stationary-battery values are cached together. Once at least one valid `nrg` snapshot is available, either valid `nrg` input or valid battery input may trigger the next shared measurement cycle admitted by `interval`. Voltage, current, power, and stationary-battery telemetry are then published from the latest cache in the same FHEM reading transaction. There is only one shared history in `LAST_UPDATE`; values arriving inside the interval update only the cache. `pvBatteryStateOfCharge` is formatted with exactly one decimal place. The module deliberately provides no setters for these three values. In particular, the module does not invent an unverified mode enum or an unverified charge/discharge sign meaning for battery power.
+
+Version 2.0.8 also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`, read-only: `fam` as `configPvBatteryChargeAboveStateOfCharge`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilStateOfCharge`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeEndTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status. Writability, accepted limits, and behavior on other models or firmware remain unverified, so no corresponding Set commands are exposed yet.
 
 ### Rebuild the connection deliberately
 
@@ -299,7 +301,7 @@ Selects the password hashing method.
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 47 public readings:
+The module exposes exactly these 53 public readings:
 
 | Reading | Description |
 | :--- | :--- |
@@ -334,6 +336,12 @@ The module exposes exactly these 47 public readings:
 | `pvBatteryStateOfCharge` | Stationary PV-battery state of charge from `fbuf_akkuSOC`, exposed as a percentage from `0` to `100` with exactly one decimal place. Missing or invalid values leave the reading unchanged. |
 | `pvBatteryPower` | Signed numeric value from `fbuf_pAkku`, exposed in watts and always formatted to two decimal places. The charge/discharge sign direction has not yet been confirmed by a controlled Flex live test, so the module does not reinterpret the sign. |
 | `pvBatteryModeCode` | Unmodified non-negative integer code from `fbuf_akkuMode`. No text mode is invented because no reliable enum is available. |
+| `configPvBatteryChargeAboveStateOfCharge` | App setting “Charge above” from `fam`, accepted as a percentage from `0` through `100`. Currently read-only. |
+| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`. Currently read-only. |
+| `configPvBatteryDischargeUntilStateOfCharge` | Associated app setting “State of charge SoC” from `pdt`, accepted as a percentage from `0` through `100`. Currently read-only. |
+| `configPvBatteryDischargeTimeLimitEnabled` | App switch “Limit discharging time” from `pdle`, exposed as `0` or `1`. Currently read-only. |
+| `configPvBatteryDischargeStartTime` | App start time from `pdls`, converted from seconds after midnight to `HH:MM`. Currently read-only. |
+| `configPvBatteryDischargeEndTime` | App end time from `pdlo`, converted from seconds after midnight to `HH:MM`. Currently read-only. |
 | `configNextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
 | `energyTotal` | `eto / 1000`, formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence and is not proven by the sanitized Flex capture. |
 | `energySincePlugIn` | `wh`, formatted with two decimals and interpreted as Wh. |
@@ -345,7 +353,7 @@ The module exposes exactly these 47 public readings:
 | `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
 | `lastCommandError` | Concise redacted error or result text. |
 
-Operational status and configuration readings other than the three stationary-battery readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Valid `nrg` and stationary-battery values are cached together. After the first valid `nrg` initialization, valid input from either measurement group may trigger the next admitted shared cycle; all available high-frequency measurement readings are then updated from the latest cache in the same FHEM reading transaction. They therefore use the same `LAST_UPDATE` history and the same idle decision. Missing, `null`, or type-invalid fields leave existing readings and the latest valid cached values unchanged.
+Operational status and configuration readings, including the six stationary-battery configuration readings, are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. The three stationary-battery telemetry readings instead belong to the shared volatile measurement cycle and are governed by its `interval` and `update_while_idle` rules. Valid `nrg` and stationary-battery values are cached together. After the first valid `nrg` initialization, valid input from either measurement group may trigger the next admitted shared cycle; all available high-frequency measurement readings are then updated from the latest cache in the same FHEM reading transaction. They therefore use the same `LAST_UPDATE` history and the same idle decision. Missing, `null`, or type-invalid fields leave existing readings and the latest valid cached values unchanged.
 
 The text values use a compatibility mapping from the pinned official go-e `modelStatus` enum. The same value table is applied to `msi` because the pinned Wattpilot-specific source describes it as an internal decision variant. This is not an official Fronius Flex specification; both raw codes therefore remain available and unmapped values stay explicit. The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed for Wattpilot Flex. In particular, the module does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values and do not infer a causal chain from this documentation.
 
