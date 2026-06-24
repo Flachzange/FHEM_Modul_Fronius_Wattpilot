@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.0.0**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Current module version: **2.0.1**. Dennis Gramespacher remains the original author; Flachzange maintains this repository. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## Breaking change in 2.0
 
@@ -218,7 +218,7 @@ Selects the password hashing method.
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 23 public readings:
+The module exposes exactly these 30 public readings:
 
 | Reading | Description |
 | :--- | :--- |
@@ -229,6 +229,13 @@ The module exposes exactly these 23 public readings:
 | `forceState` | `neutral`, `off`, `on`, or `unknown:<raw-value>`. |
 | `chargingCurrent` | Configured/requested charging current, interpreted as amperes. |
 | `chargingMode` | `default`, `eco`, `nextTrip`, or `unknown:<raw-value>`. |
+| `chargingAllowed` | Boolean field `alw`, exposed as `0` or `1`. Its meaning as the current charging permission comes from pinned Wattpilot-specific third-party evidence; the Flex capture confirms the field and type. |
+| `chargingDecisionCode` | Raw integer from `modelStatus`; no unconfirmed text enum is applied. |
+| `chargingDecisionInternalCode` | Raw integer from `msi`; no unconfirmed text enum is applied. |
+| `errorCode` | Raw integer from `err`; no unconfirmed error enum is applied. |
+| `maximumCurrentLimit` | Raw integer from `ama`; interpreted as an ampere current limit only from pinned third-party evidence. |
+| `temperatureCurrentLimit` | Raw integer from `amt`; interpreted as a temperature-related ampere limit only from pinned third-party evidence. |
+| `minimumChargingCurrent` | Raw integer from `mca`; interpreted as a minimum charging current in amperes only from pinned third-party evidence. |
 | `nextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
 | `energyTotal` | `eto / 1000`, formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence and is not proven by the sanitized Flex capture. |
 | `energySincePlugIn` | `wh`, formatted with two decimals and interpreted as Wh. |
@@ -239,6 +246,8 @@ The module exposes exactly these 23 public readings:
 | `lastCommandRequestId` | Correlation ID of the most recent secured command. |
 | `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
 | `lastCommandError` | Concise redacted error or result text. |
+
+The seven operational status readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Missing, `null`, or type-invalid fields leave existing values unchanged.
 
 The meanings and units assigned to the used `nrg` positions and to `eto`/`wh` remain implementation or historical interpretations. The documented Flex capture confirms structure and data types, but not every unit, enum meaning, or write capability independently.
 

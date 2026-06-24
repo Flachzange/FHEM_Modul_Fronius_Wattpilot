@@ -32,7 +32,10 @@ sub fresh_device {
 
 my @public_readings = qw(
     state firmwareVersion authHashMode carState forceState chargingCurrent
-    chargingMode nextTripTime energyTotal energySincePlugIn
+    chargingMode chargingAllowed chargingDecisionCode
+    chargingDecisionInternalCode errorCode maximumCurrentLimit
+    temperatureCurrentLimit minimumChargingCurrent nextTripTime
+    energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
     lastCommandStatus lastCommandError
@@ -58,6 +61,13 @@ main::Wattpilot_UpdateReadings($hash, {
     frc => 0,
     amp => 16,
     lmo => 5,
+    alw => 0,
+    modelStatus => 23,
+    msi => 27,
+    err => 0,
+    ama => 32,
+    amt => 31,
+    mca => 6,
     ftt => 7 * 3600 + 30 * 60,
     eto => 123456,
     wh => 789,
@@ -66,7 +76,7 @@ main::Wattpilot_UpdateReadings($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 23 public 2.0 readings');
+    'one complete runtime scenario exposes exactly the 30 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

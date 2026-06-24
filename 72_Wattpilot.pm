@@ -33,7 +33,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.0';
+my $WATTPILOT_VERSION = '2.0.1';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -52,6 +52,13 @@ my %WATTPILOT_READING_NAME = (
     force_state             => 'forceState',
     charging_current        => 'chargingCurrent',
     charging_mode           => 'chargingMode',
+    charging_allowed        => 'chargingAllowed',
+    charging_decision_code  => 'chargingDecisionCode',
+    charging_decision_internal_code => 'chargingDecisionInternalCode',
+    error_code              => 'errorCode',
+    maximum_current_limit   => 'maximumCurrentLimit',
+    temperature_current_limit => 'temperatureCurrentLimit',
+    minimum_charging_current => 'minimumChargingCurrent',
     next_trip_time          => 'nextTripTime',
     energy_total            => 'energyTotal',
     energy_since_plug_in    => 'energySincePlugIn',
@@ -681,8 +688,11 @@ sub Wattpilot_NormalizeStatus($$) {
     return undef if ref($input_status) ne 'HASH';
 
     my %status = %$input_status;
-    my %integer = map { $_ => 1 } qw(car frc ftt amp lmo);
+    my %integer = map { $_ => 1 } qw(
+        car frc ftt amp lmo modelStatus msi err ama amt mca
+    );
     my %number = map { $_ => 1 } qw(eto wh);
+    my %boolean = map { $_ => 1 } qw(alw);
     for my $key (keys %integer) {
         next if !exists($status{$key}) || !defined($status{$key});
         if (!Wattpilot_IsInteger($status{$key})) {
@@ -694,6 +704,14 @@ sub Wattpilot_NormalizeStatus($$) {
     for my $key (keys %number) {
         next if !exists($status{$key}) || !defined($status{$key});
         if (!Wattpilot_IsNumber($status{$key})) {
+            Log3 $hash->{NAME}, 2,
+                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+            delete $status{$key};
+        }
+    }
+    for my $key (keys %boolean) {
+        next if !exists($status{$key}) || !defined($status{$key});
+        if (!Wattpilot_IsBoolean($status{$key})) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
             delete $status{$key};
@@ -900,6 +918,26 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         readingsBulkUpdate(
             $hash, $WATTPILOT_READING_NAME{charging_mode},
             $WATTPILOT_CHARGING_MODE{$mode_value} // 'unknown:' . $status->{lmo});
+    }
+
+    readingsBulkUpdate(
+        $hash, $WATTPILOT_READING_NAME{charging_allowed},
+        $status->{alw} ? 1 : 0)
+        if defined $status->{alw};
+
+    for my $field (
+        [modelStatus => 'charging_decision_code'],
+        [msi => 'charging_decision_internal_code'],
+        [err => 'error_code'],
+        [ama => 'maximum_current_limit'],
+        [amt => 'temperature_current_limit'],
+        [mca => 'minimum_charging_current'],
+    ) {
+        my ($protocol_key, $reading_key) = @$field;
+        readingsBulkUpdate(
+            $hash, $WATTPILOT_READING_NAME{$reading_key},
+            int($status->{$protocol_key}))
+            if defined $status->{$protocol_key};
     }
 }
 
@@ -1863,6 +1901,11 @@ sub Wattpilot_WriteJson($$) {
     <li><code>forceState</code><br><code>neutral</code>, <code>off</code>, <code>on</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
     <li><code>chargingCurrent</code><br>Configured/requested charging current; interpreted as amperes.</li>
     <li><code>chargingMode</code><br><code>default</code>, <code>eco</code>, <code>nextTrip</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
+    <li><code>chargingAllowed</code><br>Boolean protocol field <code>alw</code>, exposed as <code>0</code> or <code>1</code>. A pinned Wattpilot-specific source describes it as the current charging permission; the Flex capture confirms only the boolean field and value shape.</li>
+    <li><code>chargingDecisionCode</code>, <code>chargingDecisionInternalCode</code><br>Raw integer values from <code>modelStatus</code> and <code>msi</code>. No text enum is applied because the Flex meanings have not been independently confirmed.</li>
+    <li><code>errorCode</code><br>Raw integer value from <code>err</code>; no error enum is assumed.</li>
+    <li><code>maximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>minimumChargingCurrent</code><br>Raw integer values from <code>ama</code>, <code>amt</code>, and <code>mca</code>. Their current-limit interpretation and ampere unit come from pinned third-party Wattpilot evidence and are not independently proven by the sanitized Flex capture.</li>
+    <li>The seven operational status readings above update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. Missing, <code>null</code>, or type-invalid fields leave existing readings unchanged.</li>
     <li><code>nextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
     <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
     <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
@@ -2000,6 +2043,11 @@ sub Wattpilot_WriteJson($$) {
     <li><code>forceState</code><br><code>neutral</code>, <code>off</code>, <code>on</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
     <li><code>chargingCurrent</code><br>Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert.</li>
     <li><code>chargingMode</code><br><code>default</code>, <code>eco</code>, <code>nextTrip</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
+    <li><code>chargingAllowed</code><br>Boolesches Protokollfeld <code>alw</code>, ausgegeben als <code>0</code> oder <code>1</code>. Eine gepinnte Wattpilot-spezifische Quelle beschreibt es als aktuelle Ladefreigabe; der Flex-Mitschnitt bestätigt nur Feld, Typ und Wertform.</li>
+    <li><code>chargingDecisionCode</code>, <code>chargingDecisionInternalCode</code><br>Unveränderte Ganzzahlwerte aus <code>modelStatus</code> und <code>msi</code>. Es erfolgt keine Textübersetzung, weil die Flex-Bedeutungen nicht unabhängig bestätigt sind.</li>
+    <li><code>errorCode</code><br>Unveränderter Ganzzahlwert aus <code>err</code>; es wird keine Fehler-Enum angenommen.</li>
+    <li><code>maximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>minimumChargingCurrent</code><br>Unveränderte Ganzzahlwerte aus <code>ama</code>, <code>amt</code> und <code>mca</code>. Die Interpretation als Stromgrenzen in Ampere stammt aus gepinnter Wattpilot-Drittquellenevidenz und ist durch den bereinigten Flex-Mitschnitt nicht unabhängig bewiesen.</li>
+    <li>Die sieben operativen Status-Readings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings unverändert.</li>
     <li><code>nextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
     <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
     <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>
@@ -2023,7 +2071,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.0",
+  "version": "v2.0.1",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>"

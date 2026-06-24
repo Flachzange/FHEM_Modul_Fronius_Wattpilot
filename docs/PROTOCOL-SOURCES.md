@@ -27,6 +27,15 @@ Only the first two classes may support implemented field semantics, and writable
 | Synthetic fixtures | Repository `t/fixtures`, checked 2026-06-22 | Synthetic test input, not protocol evidence | Flex-shaped examples and a protocol-2 legacy regression session | Values are deliberately synthetic and sanitized. They test repository behavior only and cannot confirm device behavior, field meaning, or writability. |
 | Sanitized observed Wattpilot Flex `fullStatus` | Maintainer-provided capture published in Issue #11 and committed as [`t/fixtures/fullStatus-flex-observed.json`](../t/fixtures/fullStatus-flex-observed.json), captured/checked 2026-06-21; SHA-256 `ca8f70cd954ebd70684744386660b80b4ce6a2cc0a5ab7751c27b59676b09d33` | **Empirical structure/value observation** | Wattpilot Flex Home 22 C6; `wattpilot_flex`; firmware 43.4; protocol 4; reported authentication mode bcrypt | One sanitized `fullStatus` with `partial:false` and 558 status keys. It confirms observed structure, JSON types, array lengths, null positions, and representative sanitized values only. It is not an official Fronius specification and does not by itself establish meanings, units, enums, requiredness, writability, other messages, other configurations, or other firmware/models. See [`WATTPILOT-FLEX-JSON-API.md`](WATTPILOT-FLEX-JSON-API.md). |
 
+## Operational-reading evidence for version 2.0.1
+
+The public readings `chargingAllowed`, `chargingDecisionCode`, `chargingDecisionInternalCode`, `errorCode`, `maximumCurrentLimit`, `temperatureCurrentLimit`, and `minimumChargingCurrent` use the protocol keys `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca`.
+
+- The sanitized observed Wattpilot Flex 43.4 fullStatus confirms the presence and JSON scalar types of all seven fields, including `alw=false`, `modelStatus=23`, `msi=27`, `err=0`, `ama=32`, `amt=32`, and `mca=6` in that capture.
+- The readable field roles come from the pinned Wattpilot-specific `joscha82/wattpilot` revision `4712ba3b8409fda55303870c047038b1b221d7ff`. This remains third-party implementation evidence, not official Fronius documentation.
+- Runtime output therefore stays deliberately narrow: `alw` is normalized only to `0|1`; the other six values are exposed as raw integers. No `modelStatus`, `msi`, or `err` text enum is implemented, and no range, unit, requiredness, or writability is inferred from the capture.
+- Missing keys, JSON `null`, and type-invalid values leave existing readings unchanged. This is a module behavior contract, not a protocol claim.
+
 ## Compatibility contracts
 
 - [`WATTPILOT-LEGACY-PROTOCOL2.md`](WATTPILOT-LEGACY-PROTOCOL2.md) defines the regression contract for the original Wattpilot generation. The current module preserves the evidenced PBKDF2 behavior when the legacy protocol-2 `authRequired` message omits `hash`.
@@ -36,8 +45,8 @@ Only the first two classes may support implemented field semantics, and writable
 
 The authoritative empirical reference and [`PROTOCOL-CONFLICTS.md`](PROTOCOL-CONFLICTS.md) preserve the known contradictions instead of silently resolving them:
 
-- **`frc`:** the Flex 43.4 capture proves only numeric value `0`. Version 2.0.0 maps `0=neutral`, `1=off`, and `2=on`, matching the numeric mapping in the two pinned Wattpilot-specific implementations. These remain third-party claims until reproduced or officially documented for Flex 43.4.
-- **`amp`:** the Flex 43.4 capture contains `amp=32` and `cll.currentLimitMax=32`. The pinned older Wattpilot-specific source states R/W amperes with range 6–16. Version 2.0.0 validates `chargingCurrent` to 6–32 A; the exact Flex 43.4 device-side rejection behavior remains unverified.
+- **`frc`:** the Flex 43.4 capture proves only numeric value `0`. Version 2.0.1 maps `0=neutral`, `1=off`, and `2=on`, matching the numeric mapping in the two pinned Wattpilot-specific implementations. These remain third-party claims until reproduced or officially documented for Flex 43.4.
+- **`amp`:** the Flex 43.4 capture contains `amp=32` and `cll.currentLimitMax=32`. The pinned older Wattpilot-specific source states R/W amperes with range 6–16. Version 2.0.1 validates `chargingCurrent` to 6–32 A; the exact Flex 43.4 device-side rejection behavior remains unverified.
 - **Authentication selection:** the current module accepts announced `pbkdf2` or `bcrypt`. A missing `authRequired.hash` selects PBKDF2 only after a validated `hello` identifies the pinned legacy `devicetype=wattpilot`, protocol 2 profile; an explicitly unknown algorithm, or a missing algorithm outside that profile, is rejected. Manual `authHash=pbkdf2|bcrypt` remains authoritative. This is a compatibility boundary derived from pinned third-party implementation evidence, not official Fronius documentation.
 - **Secured commands and `response`:** the pinned older implementation emits numeric request IDs inside `setValue`, wraps secured writes with an `sm`-suffixed outer ID and HMAC, and correlates incoming `response.requestId`. The current module preserves numeric inner IDs and their `sm` outer form, uses deterministic canonical JSON for signing, suppresses untrusted device messages in normal diagnostics, and bounds pending state to 32 requests/30 seconds.
 

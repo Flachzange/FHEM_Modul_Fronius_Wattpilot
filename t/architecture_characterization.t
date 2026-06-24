@@ -45,8 +45,8 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 23,
-    'central reading definition contains all 23 public readings');
+is(scalar(keys %{$interface->{readings}}), 30,
+    'central reading definition contains all 30 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -57,6 +57,13 @@ is_deeply(
         force_state => 'forceState',
         charging_current => 'chargingCurrent',
         charging_mode => 'chargingMode',
+        charging_allowed => 'chargingAllowed',
+        charging_decision_code => 'chargingDecisionCode',
+        charging_decision_internal_code => 'chargingDecisionInternalCode',
+        error_code => 'errorCode',
+        maximum_current_limit => 'maximumCurrentLimit',
+        temperature_current_limit => 'temperatureCurrentLimit',
+        minimum_charging_current => 'minimumChargingCurrent',
         next_trip_time => 'nextTripTime',
         energy_total => 'energyTotal',
         energy_since_plug_in => 'energySincePlugIn',
@@ -74,7 +81,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 23 public reading names match the 2.0 contract');
+    'all 30 public reading names match the 2.x contract');
 is($interface->{readings}{car_state}, 'carState',
     'central reading definition exposes the 2.0 car-state name');
 is_deeply($interface->{carStates},
@@ -137,6 +144,13 @@ main::Wattpilot_UpdateReadings($hash, {
     ftt => 7 * 3600 + 30 * 60,
     amp => 16,
     lmo => 4,
+    alw => 0,
+    modelStatus => 23,
+    msi => 27,
+    err => 0,
+    ama => 32,
+    amt => 31,
+    mca => 6,
     eto => 123456,
     wh => 789,
     nrg => [230, 231, 232, 0, 1.1, 2.2, 3.3, 100, 200, 300, 0, 600],
@@ -148,6 +162,13 @@ my %expected_reading = (
     nextTripTime => '07:30',
     chargingCurrent => 16,
     chargingMode => 'eco',
+    chargingAllowed => 0,
+    chargingDecisionCode => 23,
+    chargingDecisionInternalCode => 27,
+    errorCode => 0,
+    maximumCurrentLimit => 32,
+    temperatureCurrentLimit => 31,
+    minimumChargingCurrent => 6,
     energyTotal => '123.46',
     energySincePlugIn => '789.00',
     voltageL1 => '230.00',

@@ -24,10 +24,10 @@ No real protocol exchange was performed for this documentation change. The captu
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.0 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.1 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.0.0; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.0.1; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
@@ -190,7 +190,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 
 ## Current FHEM 2.0 mapping
 
-The names below are implemented by version 2.0.0. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below are implemented by version 2.0.1. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -199,6 +199,13 @@ The names below are implemented by version 2.0.0. They describe FHEM behavior on
 | `frc` | `forceState` | 0 `neutral`, 1 `off`, 2 `on`; Set uses the same numeric values | current implementation plus pinned third-party evidence; Flex writability unverified |
 | `amp` | `chargingCurrent` | copied immediately; Set accepts integers 6–32 | implementation plus conflicting historical range evidence |
 | `lmo` | `chargingMode` | 3 `default`, 4 `eco`, 5 `nextTrip`; other values become `unknown:<raw-value>` | current implementation; writability unverified |
+| `alw` | `chargingAllowed` | boolean normalized to `0` or `1` | current implementation plus pinned third-party meaning candidate; Flex capture confirms type only |
+| `modelStatus` | `chargingDecisionCode` | raw integer; no text enum | current implementation; enum meaning deliberately unconfirmed |
+| `msi` | `chargingDecisionInternalCode` | raw integer; no text enum | current implementation; field meaning remains third-party evidence |
+| `err` | `errorCode` | raw integer; no text enum | current implementation; error enum deliberately unconfirmed |
+| `ama` | `maximumCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
+| `amt` | `temperatureCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
+| `mca` | `minimumChargingCurrent` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
 | `ftt` | `nextTripTime` | seconds after midnight rendered as `HH:MM`; Set requires exact `HH:MM` and converts back to seconds | current implementation; unit/writability unverified |
 | `eto` | `energyTotal` | divides by 1000 and formats two decimals; electrical gate applies | current implementation inference |
 | `wh` | `energySincePlugIn` | formats two decimals; electrical gate applies | current implementation inference |
@@ -209,7 +216,7 @@ The names below are implemented by version 2.0.0. They describe FHEM behavior on
 | `authRequired.hash` | `authHashMode` | `auto` accepts announced `bcrypt` or `pbkdf2`; missing hash selects PBKDF2 only for the evidenced predecessor protocol-2 profile | current implementation; relation to observed status `authhash` remains unverified |
 | outbound `setValue` in `securedMsg` | `lastCommandRequestId`, `lastCommandStatus`, `lastCommandError` | request correlation, HMAC-SHA256 envelope, pending/success/failed/timeout result readings | current implementation; device acceptance unverified |
 
-The module applies `interval` only to the electrical group (`eto`, `wh`, and `nrg`-derived readings). Those values update after the interval while charging, or under the documented idle policy when `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, and `lmo` are immediate. Known scalar values and the first twelve `nrg` positions are type-checked before use. Missing partial-update keys remain untouched.
+The module applies `interval` only to the electrical group (`eto`, `wh`, and `nrg`-derived readings). Those values update after the interval while charging, or under the documented idle policy when `update_while_idle=1`. `car`, `frc`, `ftt`, `amp`, `lmo`, `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca` are immediate. Known scalar values and the first twelve `nrg` positions are type-checked before use. Missing partial-update keys remain untouched.
 
 ## Complete observed status-key reference
 
@@ -229,11 +236,11 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `al3` | number | `20` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `al4` | number | `24` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `al5` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `alw` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `alw` | boolean | `false` | Version 2.0.1 exposes `chargingAllowed` as `0|1`; the current-permission meaning remains pinned third-party evidence. | boolean | observation only; no writability evidence | empirical type plus current FHEM mapping; Flex semantics not independently confirmed | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`. |
 | `alwt` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `ama` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `ama` | number | `32` | Version 2.0.1 exposes the raw integer as `maximumCurrentLimit`. | A candidate | observation only; no writability evidence | empirical type plus pinned third-party meaning/unit candidate | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; unit and Flex semantics unconfirmed. |
 | `amp` | number | `32` | The current module exposes this as `chargingCurrent`. The observed Flex value and `cll.currentLimitMax` are 32, while a pinned older Wattpilot-specific source states a 6–16 range. | A (current implementation and older third-party interpretation) | the current module reads the field and accepts Set values 6–32; the pinned older source marks it R/W; actual Flex 43.4 writability and accepted range are unverified | observed value 32; conflicting older third-party 6–16 candidate; current module range 6–32 | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; Issue #8. Model/firmware scope conflict remains explicit. |
-| `amt` | number | `32` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `amt` | number | `32` | Version 2.0.1 exposes the raw integer as `temperatureCurrentLimit`. | A candidate | observation only; no writability evidence | empirical type plus pinned third-party meaning/unit candidate | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; unit and Flex semantics unconfirmed. |
 | `ana` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `apd` | object | `{"project_name":"wattpilot_flex-secure-release","version":"43.4","secure_version":0,"timestamp":"Apr 28 2026 12:58:50","idf_ver":"43.4","sha256":"8154f5f8ffcfc41f428b355625604c86ffd158ac"}` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `app` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -384,7 +391,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `eis` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `emx` | number | `30000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ens` | string | `""` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `err` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `err` | number | `0` | Version 2.0.1 exposes the raw integer as `errorCode`; no error enum is applied. | none | observation only; no writability evidence | empirical type plus current FHEM mapping; enum unknown | Issue #11 sanitized capture; historical enum candidates are not promoted to Flex facts. |
 | `esd0` | string | `"192.0.2.1"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `esd1` | string | `"0.0.0.0"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `esd2` | string | `"0.0.0.0"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -523,20 +530,20 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `macp` | string | `"02:00:00:00:00:e8"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `macs` | string | `"00:00:00:00:00:00"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `map` | array | `[1,2,3]` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `mca` | number | `6` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `mca` | number | `6` | Version 2.0.1 exposes the raw integer as `minimumChargingCurrent`. | A candidate | observation only; no writability evidence | empirical type plus pinned third-party meaning/unit candidate | Issue #11 sanitized capture; `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff`; unit and Flex semantics unconfirmed. |
 | `mci` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mcpd` | number | `120000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mcpea` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `men` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mnt` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `modelStatus` | number | `23` | unknown | unknown | observation only; no writability evidence | empirical numeric value 23; enum meaning unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `modelStatus` | number | `23` | Version 2.0.1 exposes the raw integer as `chargingDecisionCode`; no text enum is applied. | none | observation only; no writability evidence | empirical numeric value plus current FHEM mapping; enum meaning unknown | Issue #11 sanitized capture; historical decision enum is not promoted to a Flex fact. |
 | `mptwt` | number | `600000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mpwst` | number | `120000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mro` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `msb` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `msca` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mscs` | number | `1` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `msi` | number | `27` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `msi` | number | `27` | Version 2.0.1 exposes the raw integer as `chargingDecisionInternalCode`; no text enum is applied. | none | observation only; no writability evidence | empirical numeric value plus current FHEM mapping; detailed meaning unknown | Issue #11 sanitized capture; pinned third-party alias remains implementation evidence only. |
 | `msr` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mstr` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `mstw` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |

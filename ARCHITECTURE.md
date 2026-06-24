@@ -19,7 +19,7 @@ than additional installable Perl modules:
 
 ## Credential model
 
-Version 2.0.0 reads and writes only these persistent resources:
+Version 2.x reads and writes only these persistent resources:
 
 ```text
 Wattpilot_<FUUID>_password
