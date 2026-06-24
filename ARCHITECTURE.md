@@ -86,7 +86,7 @@ readings. `modelStatus` and `msi` each produce both an unmodified numeric code
 and a lowerCamelCase text reading. The text table is a compatibility mapping
 from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
 based on pinned Wattpilot-specific evidence that it is the internal variant of
-the same decision. Unknown numeric values remain explicit as `unknown:<code>`.
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`. The `fst` field is normalized separately as a non-negative finite number and exposed immediately as `pvSurplusStartPower` in watts. Its setter uses the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during

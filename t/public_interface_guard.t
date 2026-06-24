@@ -102,14 +102,14 @@ my @public_readings = qw(
     state firmwareVersion authHashMode carState forceState chargingCurrent
     chargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode maximumCurrentLimit
-    temperatureCurrentLimit minimumChargingCurrent nextTripTime
+    temperatureCurrentLimit minimumChargingCurrent pvSurplusStartPower nextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
     lastCommandStatus lastCommandError
 );
 my @public_commands = qw(
-    password chargingCurrent forceState chargingMode nextTripTime
+    password chargingCurrent forceState chargingMode pvSurplusStartPower nextTripTime
 );
 
 my @migration_pairs = (

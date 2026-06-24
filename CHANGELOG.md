@@ -2,6 +2,15 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [v2.0.4] - 2026-06-24
+
+### PV-Überschuss-Startleistung
+
+- Das neue Reading `pvSurplusStartPower` gibt den nicht negativen, endlichen Zahlenwert aus dem Gerätefeld `fst` in Watt aus. Fehlende, `null`-, negative, nicht numerische oder nicht endliche Werte lassen ein vorhandenes Reading unverändert.
+- `set <name> pvSurplusStartPower <Watt>` sendet `fst` über den bestehenden gesicherten `setValue`-Pfad. Das Modul setzt keine unbelegte Obergrenze und übernimmt den angeforderten Wert nicht optimistisch; nur ein vom Gerät gelieferter Statuswert bestätigt das Reading. Ablehnung und Timeout bleiben über die vorhandenen Command-Status-Readings sichtbar.
+- Die Zuordnung und Schreibbarkeit stützen sich auf gepinnte offizielle go-e-API-Metadaten, gepinnte Wattpilot-spezifische Evidenz und den bereinigten Flex-43.4-Wert `fst=1400`. Dies wird nicht als offizielle Fronius-Flex-API-Spezifikation dargestellt.
+- Automatisierte Tests decken Full-/Delta-Status, Null-/Fehlertypen, Nullwert, Dezimalwerte, gesicherte Request-Kodierung sowie erfolgreiche, abgelehnte, unvollständige und typfalsche Responses ab. Ein echter Schreibtest am Wattpilot Flex einschließlich Wiederherstellung des Ausgangswerts steht vor dem Merge noch aus.
+
 ## [v2.0.3] - 2026-06-24
 
 ### Laufzeitkorrekturen nach dem ersten Flex-Praxistest

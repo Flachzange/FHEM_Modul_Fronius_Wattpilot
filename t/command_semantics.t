@@ -189,6 +189,7 @@ like($help, qr/password/, 'Set help exposes password');
 like($help, qr/forceState:neutral,off,on/, 'Set help exposes forceState values');
 like($help, qr/chargingCurrent:slider,6,1,32/, 'Set help exposes chargingCurrent range');
 like($help, qr/chargingMode:default,eco,nextTrip/, 'Set help exposes chargingMode values');
+like($help, qr/pvSurplusStartPower/, 'Set help exposes pvSurplusStartPower');
 like($help, qr/nextTripTime/, 'Set help exposes nextTripTime');
 unlike($help, qr/Password|Laden_starten|Strom|Modus|Zeit_NextTrip/,
     'Set help exposes no old command name');

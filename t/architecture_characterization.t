@@ -42,11 +42,12 @@ is_deeply(
         force_state => 'forceState',
         charging_current => 'chargingCurrent',
         charging_mode => 'chargingMode',
+        pv_surplus_start_power => 'pvSurplusStartPower',
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 32,
-    'central reading definition contains all 32 public readings');
+is(scalar(keys %{$interface->{readings}}), 33,
+    'central reading definition contains all 33 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -66,6 +67,7 @@ is_deeply(
         maximum_current_limit => 'maximumCurrentLimit',
         temperature_current_limit => 'temperatureCurrentLimit',
         minimum_charging_current => 'minimumChargingCurrent',
+        pv_surplus_start_power => 'pvSurplusStartPower',
         next_trip_time => 'nextTripTime',
         energy_total => 'energyTotal',
         energy_since_plug_in => 'energySincePlugIn',
@@ -83,7 +85,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 32 public reading names match the 2.x contract');
+    'all 33 public reading names match the 2.x contract');
 is($interface->{readings}{car_state}, 'carState',
     'central reading definition exposes the 2.0 car-state name');
 is_deeply($interface->{carStates},
@@ -191,6 +193,7 @@ main::Wattpilot_UpdateReadings($hash, {
     ama => 32,
     amt => 31,
     mca => 6,
+    fst => 1400,
     eto => 123456,
     wh => 789,
     nrg => [230, 231, 232, 0, 1.1, 2.2, 3.3, 100, 200, 300, 0, 600],
@@ -211,6 +214,7 @@ my %expected_reading = (
     maximumCurrentLimit => 32,
     temperatureCurrentLimit => 31,
     minimumChargingCurrent => 6,
+    pvSurplusStartPower => 1400,
     energyTotal => '123.46',
     energySincePlugIn => '789.00',
     voltageL1 => '230.00',

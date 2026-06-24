@@ -134,7 +134,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `fbuf_pGrid` | `powerGrid` | Grid power; historical sign convention says negative means feed-in | unknown | historical candidate |
 | `fbuf_pPv` | `powerPv` | PV production power candidate | unknown | historical candidate |
 | `frm` | `roundingMode` | Candidate enum: `PreferPowerFromGrid=0`, `Default=1`, `PreferPowerToGrid=2` | R candidate | historical candidate |
-| `fst` | `startingPower` | Minimum power to start charging, candidate unit W | R/W | historical candidate |
+| `fst` | `pvSurplusStartPower` / `startingPower` | Version 2.0.4 exposes a non-negative finite start-power value in W and provides a secured setter | R/W compatibility implementation; real Flex write test pending | observed Flex value plus pinned official go-e metadata and pinned Wattpilot-specific evidence; not official Fronius Flex API documentation |
 | `fte` | `froniusTripEnergy` | Minimum next-trip energy, candidate unit Wh | R/W | historical candidate |
 | `ftt` | `nextTripTime` | Current module renders seconds after local midnight as `HH:MM`; Flex writability remains unverified | R/W candidate | implementation/historical candidate |
 | `ful` | `useDynamicPricing` | Dynamic-price charging enabled candidate | unknown | historical candidate |

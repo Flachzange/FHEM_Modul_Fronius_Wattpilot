@@ -25,10 +25,10 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.3 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.4 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.0.3; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.0.4; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
@@ -475,7 +475,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `frt` | number | `5000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fsp` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fsptws` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `fst` | number | `1400` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `fst` | number | `1400` | Version 2.0.4 exposes the non-negative finite value as `pvSurplusStartPower` and writes it through the secured `setValue` path. | W (compatibility mapping) | R/W supported by pinned go-e metadata and pinned Wattpilot-specific evidence; real Flex write test pending | empirical Flex field/value plus pinned cross-device and Wattpilot-specific semantics | Issue #11 sanitized capture; go-e commit `6a12380798b24e8f40d8fbb260a4ae24c3ce42fb`; Wattpilot-specific commit `4712ba3b8409fda55303870c047038b1b221d7ff`; not an official Fronius Flex API specification. |
 | `fte` | number | `22000` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ftlf` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ftls` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
