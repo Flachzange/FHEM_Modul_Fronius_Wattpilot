@@ -2,11 +2,11 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.0.8**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
+Current module version: **2.0.9**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
 
 ## Breaking change in 2.0
 
-Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Version 2.0.8 adds six read-only configuration readings for the stationary-PV-battery settings visible in the Solar.wattpilot app. Set-command names remain unchanged. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
+Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Version 2.0.8 adds six configuration readings for the stationary-PV-battery settings visible in the Solar.wattpilot app. Version 2.0.9 consistently abbreviates state of charge as `SoC`, renames `configPvBatteryDischargeEndTime` to `configPvBatteryDischargeStopTime`, and adds the grouped `pvBattery` Set command. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
 
 | Reading through 2.0.6 | Reading from 2.0.7 |
 | :--- | :--- |
@@ -219,9 +219,22 @@ These additional setters use the existing secured `setValue` path. No reading is
 
 ### PV battery telemetry
 
-The readings `pvBatteryStateOfCharge`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not to the vehicle traction battery. They are read from the device-supplied fields `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. Valid `nrg` and stationary-battery values are cached together. Once at least one valid `nrg` snapshot is available, either valid `nrg` input or valid battery input may trigger the next shared measurement cycle admitted by `interval`. Voltage, current, power, and stationary-battery telemetry are then published from the latest cache in the same FHEM reading transaction. There is only one shared history in `LAST_UPDATE`; values arriving inside the interval update only the cache. `pvBatteryStateOfCharge` is formatted with exactly one decimal place. The module deliberately provides no setters for these three values. In particular, the module does not invent an unverified mode enum or an unverified charge/discharge sign meaning for battery power.
+The readings `pvBatterySoC`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not to the vehicle traction battery. They are read from the device-supplied fields `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. Valid `nrg` and stationary-battery values are cached together. Once at least one valid `nrg` snapshot is available, either valid `nrg` input or valid battery input may trigger the next shared measurement cycle admitted by `interval`. Voltage, current, power, and stationary-battery telemetry are then published from the latest cache in the same FHEM reading transaction. There is only one shared history in `LAST_UPDATE`; values arriving inside the interval update only the cache. `pvBatterySoC` is formatted with exactly one decimal place. The module deliberately provides no setters for these three values. In particular, the module does not invent an unverified mode enum or an unverified charge/discharge sign meaning for battery power.
 
-Version 2.0.8 also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`, read-only: `fam` as `configPvBatteryChargeAboveStateOfCharge`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilStateOfCharge`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeEndTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status. Writability, accepted limits, and behavior on other models or firmware remain unverified, so no corresponding Set commands are exposed yet.
+Version 2.0.8 also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`: `fam` as `configPvBatteryChargeAboveSoC`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilSoC`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeStopTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status.
+
+Version 2.0.9 adds one grouped top-level setter for those fields:
+
+```text
+set wallbox pvBattery chargeAboveSoC 60
+set wallbox pvBattery dischargeEnabled 1
+set wallbox pvBattery dischargeUntilSoC 57
+set wallbox pvBattery dischargeTimeLimitEnabled 1
+set wallbox pvBattery dischargeStartTime 07:00
+set wallbox pvBattery dischargeStopTime 20:00
+```
+
+`chargeAboveSoC` and `dischargeUntilSoC` accept whole values from `0` through `100`. The switches accept `0` or `1` and are sent as JSON booleans. `dischargeStartTime` accepts `00:00` through `23:59`; `dischargeStopTime` additionally accepts `24:00`. The times are sent through `pdls` and `pdlo` as seconds after midnight. No reading is updated optimistically; only a device response or later status confirms the value. These setters are initially a Flex-43.4 verification candidate. Device acceptance, readback, restore, rejection behavior, and other firmware/model variants must be tested before merge.
 
 ### Rebuild the connection deliberately
 
@@ -333,15 +346,15 @@ The module exposes exactly these 53 public readings:
 | `configChargingPauseAllowed` | Boolean field `fap`, exposed as `0` or `1`. |
 | `configMinimumChargingPauseDuration` | `mcpd` converted from milliseconds to seconds. |
 | `configMinimumChargingInterval` | `mci` converted from milliseconds to seconds. The name follows the API alias; the Fronius Flex manual calls the behavior Forced charging interval. |
-| `pvBatteryStateOfCharge` | Stationary PV-battery state of charge from `fbuf_akkuSOC`, exposed as a percentage from `0` to `100` with exactly one decimal place. Missing or invalid values leave the reading unchanged. |
+| `pvBatterySoC` | Stationary PV-battery state of charge from `fbuf_akkuSOC`, exposed as a percentage from `0` to `100` with exactly one decimal place. Missing or invalid values leave the reading unchanged. |
 | `pvBatteryPower` | Signed numeric value from `fbuf_pAkku`, exposed in watts and always formatted to two decimal places. The charge/discharge sign direction has not yet been confirmed by a controlled Flex live test, so the module does not reinterpret the sign. |
 | `pvBatteryModeCode` | Unmodified non-negative integer code from `fbuf_akkuMode`. No text mode is invented because no reliable enum is available. |
-| `configPvBatteryChargeAboveStateOfCharge` | App setting “Charge above” from `fam`, accepted as a percentage from `0` through `100`. Currently read-only. |
-| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`. Currently read-only. |
-| `configPvBatteryDischargeUntilStateOfCharge` | Associated app setting “State of charge SoC” from `pdt`, accepted as a percentage from `0` through `100`. Currently read-only. |
-| `configPvBatteryDischargeTimeLimitEnabled` | App switch “Limit discharging time” from `pdle`, exposed as `0` or `1`. Currently read-only. |
-| `configPvBatteryDischargeStartTime` | App start time from `pdls`, converted from seconds after midnight to `HH:MM`. Currently read-only. |
-| `configPvBatteryDischargeEndTime` | App end time from `pdlo`, converted from seconds after midnight to `HH:MM`. Currently read-only. |
+| `configPvBatteryChargeAboveSoC` | App setting “Charge above” from `fam`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery chargeAboveSoC <0-100>`. |
+| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeEnabled <0|1>`. |
+| `configPvBatteryDischargeUntilSoC` | Associated app setting “State of charge SoC” from `pdt`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery dischargeUntilSoC <0-100>`. |
+| `configPvBatteryDischargeTimeLimitEnabled` | App switch “Limit discharging time” from `pdle`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeTimeLimitEnabled <0|1>`. |
+| `configPvBatteryDischargeStartTime` | App start time from `pdls`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStartTime <HH:MM>`. |
+| `configPvBatteryDischargeStopTime` | App stop time from `pdlo`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStopTime <HH:MM|24:00>`. |
 | `configNextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
 | `energyTotal` | `eto / 1000`, formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence and is not proven by the sanitized Flex capture. |
 | `energySincePlugIn` | `wh`, formatted with two decimals and interpreted as Wh. |

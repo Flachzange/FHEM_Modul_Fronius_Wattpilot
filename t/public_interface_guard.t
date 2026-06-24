@@ -106,11 +106,11 @@ my @public_readings = qw(
     configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
-    configMinimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
-    pvBatteryModeCode configPvBatteryChargeAboveStateOfCharge
-    configPvBatteryDischargeEnabled configPvBatteryDischargeUntilStateOfCharge
+    configMinimumChargingInterval pvBatterySoC pvBatteryPower
+    pvBatteryModeCode configPvBatteryChargeAboveSoC
+    configPvBatteryDischargeEnabled configPvBatteryDischargeUntilSoC
     configPvBatteryDischargeTimeLimitEnabled configPvBatteryDischargeStartTime
-    configPvBatteryDischargeEndTime configNextTripTime
+    configPvBatteryDischargeStopTime configNextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId

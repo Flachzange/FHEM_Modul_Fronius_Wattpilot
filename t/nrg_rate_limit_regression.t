@@ -260,7 +260,7 @@ subtest 'observed Flex 43.4 fullStatus uses the shared measurement cycle' => sub
         fbuf_akkuSOC => 59.94,
         fbuf_pAkku => -1400,
     }), 'observed-style idle battery delta starts the next shared cycle');
-    is(reading_value($hash, 'pvBatteryStateOfCharge'), '59.9',
+    is(reading_value($hash, 'pvBatterySoC'), '59.9',
         'idle battery SOC is rounded to one decimal place');
     is(reading_value($hash, 'voltageL1'), '230.00',
         'cached Flex voltage is republished in the same idle cycle');
@@ -269,7 +269,7 @@ subtest 'observed Flex 43.4 fullStatus uses the shared measurement cycle' => sub
     my @battery_cycle = map { $_->[1] }
         @DevIo::READING_UPDATES[$battery_cycle_start .. $#DevIo::READING_UPDATES];
     ok(grep($_ eq 'voltageL1', @battery_cycle)
-        && grep($_ eq 'pvBatteryStateOfCharge', @battery_cycle),
+        && grep($_ eq 'pvBatterySoC', @battery_cycle),
         'idle battery input republishes both measurement groups together');
 };
 
