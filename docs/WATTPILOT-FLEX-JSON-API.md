@@ -11,7 +11,7 @@
 - Authentication mode reported in status: `bcrypt`
 - Capture date: 2026-06-21
 - Source: maintainer-provided FHEM log capture, published only after sanitization in Issue #11
-- Separate live FHEM observation on 2026-06-24: the module helper derived from `hello.protocol` was `2`. This is distinct from `status.proto=4`; no equality or semantic relationship is assumed.
+- Separate live FHEM observations on 2026-06-24: the module helper derived from `hello.protocol` was `2`, which is distinct from `status.proto=4`; no equality or semantic relationship is assumed. A post-fix connection with module 2.0.3 also recorded the startup message types `clearInverters`, `updateInverter` (twice), and `clearSmips` after `fullStatus` and before the first `deltaStatus`.
 - Observed message: one `fullStatus` with `partial:false` and exactly 558 direct status keys
 - Fixture: [`t/fixtures/fullStatus-flex-observed.json`](../t/fixtures/fullStatus-flex-observed.json)
 - Fixture SHA-256 (UTF-8, Python `json.dumps(..., indent=2)`, final LF): `ca8f70cd954ebd70684744386660b80b4ce6a2cc0a5ab7751c27b59676b09d33`
@@ -94,6 +94,30 @@ Examples in this section are minimal synthetic documentation values unless expli
 - Evidence: current implementation behavior and an explicitly synthetic existing fixture; not observed in the accepted capture.
 - Repository invariant: an omitted key is an absent partial update and must not delete or reset an existing reading.
 - Open questions: actual Flex 43.4 delta shapes, whether `partial` occurs, batching, and ordering.
+
+### Observed but unused Flex startup messages
+
+A live FHEM connection on 2026-06-24 with module 2.0.3, a Wattpilot Flex, and firmware 43.4 produced this startup sequence after successful bcrypt authentication:
+
+```text
+hello
+authRequired
+authSuccess
+fullStatus
+clearInverters
+updateInverter
+updateInverter
+clearSmips
+deltaStatus
+```
+
+| Type | Direction | Observed count in that connection | Current module behavior | Established meaning |
+| --- | --- | ---: | --- | --- |
+| `clearInverters` | device → client | 1 | Deliberately ignored; visible only in the level-4 received-type trace. | Unknown. No payload was retained or interpreted. |
+| `updateInverter` | device → client | 2 | Deliberately ignored; visible only in the level-4 received-type trace. | Unknown. No payload was retained or interpreted. |
+| `clearSmips` | device → client | 1 | Deliberately ignored; visible only in the level-4 received-type trace. | Unknown. No payload was retained or interpreted. |
+
+These names and their ordering are empirical observations from one connection only. They do not prove payload shape, requiredness, ordering guarantees, relation to physical inverters or SMIPs, behavior on predecessor devices, or any action the client should perform. Version 2.0.3 does not use their payloads and suppresses the level-3 unsupported-type warning for exactly these three observed message types. All other unknown types continue to be ignored with a bounded/redacted diagnostic and without payload logging.
 
 ### `setValue`
 

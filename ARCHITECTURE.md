@@ -89,6 +89,13 @@ module version, and Initialize refreshes it for existing Wattpilot hashes during
 FHEM module reload without touching lifecycle state. Device firmware remains a
 separate `firmwareVersion` reading populated from `hello.version`.
 
+The message dispatcher recognizes `clearInverters`, `updateInverter`, and
+`clearSmips` as empirically observed Flex startup notifications. Their payloads
+are not consumed, stored, or logged; the type remains visible in the level-4
+received-message trace, while the level-3 unsupported-type warning is reserved
+for other unknown message types. This classification records observation only
+and does not assign protocol semantics.
+
 The clean public 2.0 reading, command, enum, and lifecycle values are collected
 in one internal interface definition and exposed to tests through
 `Wattpilot_InterfaceSnapshot`. Protocol keys remain internal and unchanged.

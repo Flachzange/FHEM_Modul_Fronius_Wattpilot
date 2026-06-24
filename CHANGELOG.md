@@ -9,6 +9,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - `energyTotal` und `energySincePlugIn` werden nicht mehr zusammen mit den hochfrequenten `nrg`-Messwerten durch `update_while_idle` beziehungsweise `interval` gesperrt. Bei vorhandenen `eto`-/`wh`-Feldern werden die Energiezähler immer aktualisiert; nur Spannung, Strom und Leistung bleiben im Idle-Zustand optional begrenzt.
 - Das Device-Internal `VERSION` enthält die Modulversion `2.0.3`. Die vom Wattpilot gemeldete Firmware überschreibt dieses Internal nicht mehr und bleibt im Reading `firmwareVersion`. Frische Definitionen und bestehende Devices beim Modul-Reload werden berücksichtigt, ohne Verbindung, Timer, Credentials oder Readings neu zu initialisieren.
 - Nicht unterstützte JSON-Nachrichtentypen werden weiterhin ohne Payload ignoriert. Ein kurzer, streng begrenzter ASCII-Typname wird nun tatsächlich im Log genannt; ungeeignete Typwerte erscheinen als `redacted`.
+- Der reale Flex-Startablauf mit Firmware 43.4 bestätigte zusätzlich die Nachrichtentypen `clearInverters`, `updateInverter` und `clearSmips`. Sie sind als beobachtete, derzeit ungenutzte Startnachrichten dokumentiert und werden ohne Level-3-Warnung ignoriert; Payload-Aufbau und Bedeutung bleiben ausdrücklich unbekannt.
 
 ### Protokollabgrenzung und Tests
 

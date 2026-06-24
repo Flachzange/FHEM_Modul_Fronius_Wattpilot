@@ -136,16 +136,32 @@ is($hash->{READINGS}{power}{VAL}, '0.00',
     'device-supplied idle zero power is processed when enabled');
 
 $hash = fresh_device();
+for my $type (qw(clearInverters updateInverter clearSmips)) {
+    DevIo::reset_test_state();
+    $attr{$hash->{NAME}}{verbose} = 4;
+    main::Wattpilot_DispatchMessage($hash, {
+        type => $type,
+        privateField => 'must-not-appear',
+    });
+    like(log_text(), qr/Received JSON message type=\Q$type\E/,
+        "observed startup message type $type remains visible at level 4");
+    unlike(log_text(), qr/Ignoring unsupported JSON message type=/,
+        "observed startup message type $type produces no level-3 unsupported warning");
+    unlike(log_text(), qr/must-not-appear/,
+        "observed startup message payload for $type is not logged");
+}
+
+DevIo::reset_test_state();
 main::Wattpilot_DispatchMessage($hash, {
-    type => 'clearSmips',
+    type => 'futureMessage',
     privateField => 'must-not-appear',
 });
-like(log_text(), qr/Ignoring unsupported JSON message type=clearSmips/,
-    'safe unsupported message type is named in the diagnostic');
+like(log_text(), qr/Ignoring unsupported JSON message type=futureMessage/,
+    'safe unknown message type is named in the diagnostic');
 unlike(log_text(), qr/message type=unknown/,
-    'safe unsupported message type is no longer collapsed to unknown');
+    'safe unknown message type is no longer collapsed to unknown');
 unlike(log_text(), qr/must-not-appear/,
-    'unsupported message payload is not logged');
+    'unknown message payload is not logged');
 
 DevIo::reset_test_state();
 main::Wattpilot_DispatchMessage($hash, {

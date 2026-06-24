@@ -88,6 +88,12 @@ my %WATTPILOT_COMMAND_NAME = (
     next_trip_time   => 'nextTripTime',
 );
 
+my %WATTPILOT_OBSERVED_IGNORED_MESSAGE_TYPE = map { $_ => 1 } qw(
+    clearInverters
+    updateInverter
+    clearSmips
+);
+
 my %WATTPILOT_CAR_STATE = (
     0 => 'unknown',
     1 => 'idle',
@@ -829,6 +835,9 @@ sub Wattpilot_DispatchMessage($$) {
             };
         }
         Wattpilot_HandleResponse($hash, $json);
+    } elsif ($WATTPILOT_OBSERVED_IGNORED_MESSAGE_TYPE{$type}) {
+        # Observed on Wattpilot Flex firmware 43.4 during connection startup.
+        # The module does not use their payloads and deliberately ignores them.
     } else {
         Log3 $name, 3, "Wattpilot ($name) - Ignoring unsupported JSON message type=$type_for_log";
     }
@@ -1808,7 +1817,7 @@ sub Wattpilot_WriteJson($$) {
   <li>The public 2.0 interface uses English <code>lowerCamelCase</code> reading and set-command names.</li>
   <li>The device Internal <code>VERSION</code> reports the module version. Firmware reported by the wallbox remains separate in <code>firmwareVersion</code>.</li>
   <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents. Known fields are type-checked, omitted partial-update fields remain unchanged, and missing values are never converted to zero.</li>
-  <li>Unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
+  <li>The empirically observed Flex startup message types <code>clearInverters</code>, <code>updateInverter</code>, and <code>clearSmips</code> are deliberately ignored because version 2.0.3 does not use their payloads. They remain visible in the level-4 received-type trace but do not produce a level-3 unsupported-type warning. Other unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>
@@ -1953,7 +1962,7 @@ sub Wattpilot_WriteJson($$) {
   <li>Die öffentliche 2.0-Schnittstelle verwendet englische Reading- und Set-Namen in <code>lowerCamelCase</code>.</li>
   <li>Das Device-Internal <code>VERSION</code> zeigt die Modulversion. Die von der Wallbox gemeldete Firmware bleibt separat im Reading <code>firmwareVersion</code>.</li>
   <li>Decodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt. Bekannte Felder werden typgeprüft, ausgelassene Teil-Updates bleiben unverändert und fehlende Werte werden niemals als Null behandelt.</li>
-  <li>Nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
+  <li>Die empirisch beobachteten Flex-Startnachrichtentypen <code>clearInverters</code>, <code>updateInverter</code> und <code>clearSmips</code> werden bewusst ignoriert, weil Version 2.0.3 ihre Payloads nicht verwendet. Sie bleiben im Level-4-Empfangs-Trace sichtbar, erzeugen aber keine Level-3-Warnung wegen eines nicht unterstützten Typs. Andere nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
   <br>
 
   <a name="Wattpilot-breaking"></a>

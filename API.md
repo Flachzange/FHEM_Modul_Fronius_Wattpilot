@@ -24,7 +24,7 @@ This fixture is the single canonical JSON copy used both by the documentation an
 
 ## Current empirical Flex reference
 
-Use [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md) for the sanitized observation from a Wattpilot Flex Home 22 C6 with firmware 43.4 and observed status field `proto=4`. A separate live FHEM observation derived `hello.protocol=2`; the two fields are documented separately and no semantic relationship is assumed. The reference is authoritative only for the observed key presence, nesting, array shape, JSON types, and sanitized representative values in the fullStatus capture.
+Use [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md) for the sanitized observation from a Wattpilot Flex Home 22 C6 with firmware 43.4 and observed status field `proto=4`. Separate live FHEM observations derived `hello.protocol=2` and recorded the unused startup message types `clearInverters`, `updateInverter`, and `clearSmips`; these facts are documented independently and no unobserved semantics are assumed. The reference is authoritative only for the explicitly recorded structure, ordering, type names, JSON types, and sanitized representative values of the cited observations.
 
 ## Field names and description candidates
 
