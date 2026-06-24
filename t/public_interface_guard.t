@@ -106,7 +106,8 @@ my @public_readings = qw(
     pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
     threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
     minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
-    minimumChargingInterval nextTripTime
+    minimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
+    pvBatteryModeCode nextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId

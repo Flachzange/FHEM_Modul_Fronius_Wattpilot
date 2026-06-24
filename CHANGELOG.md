@@ -2,6 +2,17 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [v2.0.6] - 2026-06-24
+
+- Drei ausschließlich lesende Readings für den stationären PV-Speicher ergänzt: `pvBatteryStateOfCharge` aus `fbuf_akkuSOC`, `pvBatteryPower` aus `fbuf_pAkku` und `pvBatteryModeCode` aus `fbuf_akkuMode`. Sie bezeichnen ausdrücklich nicht den Fahrzeugakku.
+- `pvBatteryStateOfCharge` akzeptiert nur endliche Werte von 0 bis 100 Prozent und wird mit genau einer Nachkommastelle ausgegeben. `pvBatteryPower` gibt den vorzeichenbehafteten Wattwert grundsätzlich mit zwei Nachkommastellen aus; mangels kontrolliert bestätigter Vorzeichenrichtung wird Laden/Entladen nicht umgedeutet. `pvBatteryModeCode` bewahrt den nicht negativen Rohcode; mangels belastbarer Enum wird kein Klartextmodus erfunden.
+- Fehlende, `null`-, typfalsche, NaN-, unendliche oder außerhalb des belegten SOC-Bereichs liegende Batteriefelder verändern vorhandene Readings nicht.
+- Spannung, Strom, Leistung und die drei stationären Speicherreadings verwenden genau eine gemeinsame `interval`-Zeitbasis. Gültige `nrg`- und Batterieinformationen werden gemeinsam zwischengespeichert. Nach der ersten gültigen `nrg`-Initialisierung kann ein gültiges Update aus jeder der beiden Messgruppen den nächsten gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren Messreadings in derselben FHEM-Reading-Transaktion aktualisiert. Eine separate `LAST_BATTERY_UPDATE`-Historie gibt es nicht.
+- Regression im Messwert-Rate-Limit behoben: Der gemeinsame Zyklus ist nicht mehr ausschließlich von einem neuen `nrg`-Delta abhängig. Gültige Werte innerhalb des Intervalls aktualisieren nur den gemeinsamen Zwischenspeicher; Konfigurations- und ungültige Nachrichten verbrauchen `LAST_UPDATE` nicht. `update_while_idle` gilt einmalig für den gesamten Messzyklus.
+- Bewusst keine Batterie-Setter ergänzt: `fam` und die Rohschlüssel hinter den neueren Fronius-App-Einstellungen bleiben bis zur eindeutigen Semantik- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
+- Die Endnutzerdokumentation erklärt nun, dass aWATTar ein Anbieter-/Tarifname ist und dass `Fallback` in den importierten go-e-Entscheidungsnamen einen Standardausgang der Logik, nicht automatisch einen technischen Fehler bezeichnet. Der bestehende Vorbehalt zur unbestätigten Flex-Semantik bleibt ausdrücklich erhalten.
+- Dokumentation und Tests halten nun den erfolgreichen Realgerätetest von Version 2.0.5 fest: alle elf Konfigurationssetter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, bestätigt und zurückgesetzt; `set reconnect` stellte die Sitzung erfolgreich neu her.
+
 ## [v2.0.5] - 2026-06-24
 
 ### PV-, Phasen- und Fahrzeugparameter
@@ -9,7 +20,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Elf weitere Konfigurationsfelder werden als öffentliche Readings verarbeitet: `pvSurplusEnabled` (`fup`), `zeroFeedInEnabled` (`fzf`), `pvControlPreference` (`frm`), `phaseSwitchMode` (`psm`), `threePhaseSwitchPower` (`spl3`), `phaseSwitchDelay` (`mpwst`), `minimumPhaseSwitchInterval` (`mptwt`), `minimumChargeTime` (`fmt`), `chargingPauseAllowed` (`fap`), `minimumChargingPauseDuration` (`mcpd`) und `minimumChargingInterval` (`mci`). Fehlende, `null`- oder typfalsche Delta-Felder verändern vorhandene Readings nicht.
 - Für alle elf Werte gibt es gleichnamige Setter über den vorhandenen gesicherten `setValue`-Pfad. Boolesche Werte werden als echte JSON-Booleans übertragen; Enum-Werte werden auf die dokumentierten numerischen Protokollwerte abgebildet. Öffentliche Zeitwerte verwenden Sekunden und werden nur dann gesendet, wenn sie sich exakt in ganze Protokoll-Millisekunden umrechnen lassen.
 - Das Modul setzt keine unbelegten Obergrenzen und übernimmt angeforderte Werte nicht optimistisch. Nur vom Gerät gelieferte Statusdaten bestätigen Readings; Ablehnung und Timeout bleiben über die vorhandenen Command-Status-Readings sichtbar.
-- Die öffentliche Bezeichnung `minimumChargingInterval` folgt dem gepinnten API-Alias für `mci`; die aktuelle Fronius-Flex-Bedienungsanleitung bezeichnet die zugehörige Fahrzeugeinstellung als „Forced charging interval“. Diese Quellenabgrenzung ist dokumentiert. Echte Schreibtests dieser elf neuen Setter am Wattpilot Flex stehen noch aus.
+- Die öffentliche Bezeichnung `minimumChargingInterval` folgt dem gepinnten API-Alias für `mci`; die aktuelle Fronius-Flex-Bedienungsanleitung bezeichnet die zugehörige Fahrzeugeinstellung als „Forced charging interval“. Diese Quellenabgrenzung ist dokumentiert. Alle elf Setter wurden anschließend auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geschrieben, per Geräte-Rückmeldung bestätigt und auf den Ausgangswert zurückgesetzt.
 
 ### Kontrollierter manueller Reconnect
 
