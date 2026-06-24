@@ -43,10 +43,10 @@ my %expected_from_observed = (
     chargingDecisionInternalCode => 27,
     chargingDecisionInternal => 'notChargingBecauseLoadManagementDoesntWant',
     errorCode => 0,
-    maximumCurrentLimit => 32,
+    configMaximumCurrentLimit => 32,
     temperatureCurrentLimit => 32,
-    minimumChargingCurrent => 6,
-    pvSurplusStartPower => 1400,
+    configMinimumChargingCurrent => 6,
+    configPvSurplusStartPower => 1400,
 );
 
 my $fixture_path = File::Spec->catfile(
@@ -84,7 +84,7 @@ is(reading_value($hash, 'chargingDecisionInternalCode'), 27,
 is(reading_value($hash, 'chargingDecisionInternal'),
     'notChargingBecauseLoadManagementDoesntWant',
     'an omitted delta field preserves its existing text reading');
-is(reading_value($hash, 'maximumCurrentLimit'), 32,
+is(reading_value($hash, 'configMaximumCurrentLimit'), 32,
     'another omitted operational field remains unchanged');
 
 main::Wattpilot_DispatchMessage($hash, {
@@ -107,7 +107,7 @@ is(reading_value($hash, 'chargingDecisionCode'), 24,
 is(reading_value($hash, 'chargingDecision'),
     'notChargingBecauseMinPauseDuration',
     'JSON null does not clear a decision text');
-is(reading_value($hash, 'minimumChargingCurrent'), 6,
+is(reading_value($hash, 'configMinimumChargingCurrent'), 6,
     'JSON null does not clear a current-limit reading');
 
 main::Wattpilot_DispatchMessage($hash, {
@@ -137,13 +137,13 @@ is(reading_value($hash, 'chargingDecisionInternal'),
     'invalid internal decision input cannot replace the text reading');
 is(reading_value($hash, 'errorCode'), 0,
     'invalid error input cannot replace the raw code');
-is(reading_value($hash, 'maximumCurrentLimit'), 32,
+is(reading_value($hash, 'configMaximumCurrentLimit'), 32,
     'non-integer maximum-current input is ignored');
 is(reading_value($hash, 'temperatureCurrentLimit'), 32,
     'unit-suffixed temperature-current input is ignored');
-is(reading_value($hash, 'minimumChargingCurrent'), 6,
+is(reading_value($hash, 'configMinimumChargingCurrent'), 6,
     'boolean minimum-current input is ignored');
-is(reading_value($hash, 'pvSurplusStartPower'), 1400,
+is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
     'negative start-power input is ignored');
 
 $hash = fresh_device();
@@ -167,8 +167,8 @@ main::Wattpilot_DispatchMessage($hash, {
 });
 for my $reading (qw(
     chargingAllowed chargingDecisionCode chargingDecisionInternalCode
-    errorCode maximumCurrentLimit temperatureCurrentLimit
-    minimumChargingCurrent pvSurplusStartPower
+    errorCode configMaximumCurrentLimit temperatureCurrentLimit
+    configMinimumChargingCurrent configPvSurplusStartPower
 )) {
     is(reading_value($hash, $reading), 0,
         "$reading preserves an authoritative device-supplied zero");

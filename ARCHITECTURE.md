@@ -96,7 +96,7 @@ device-supplied zero values create zero readings. `modelStatus` and `msi` each p
 and a lowerCamelCase text reading. The text table is a compatibility mapping
 from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
 based on pinned Wattpilot-specific evidence that it is the internal variant of
-the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields use the shared cached measurement pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100 and formatted to one decimal place, `fbuf_pAkku` is preserved as a signed finite watt value, formatted to two decimal places, without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. No battery setter is present in version 2.0.6; candidate fields such as `fam` remain outside the public interface until their current Flex semantics and writability are independently verified.
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields use the shared cached measurement pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100 and formatted to one decimal place, `fbuf_pAkku` is preserved as a signed finite watt value, formatted to two decimal places, without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. No battery setter is present in version 2.0.7; candidate fields such as `fam` remain outside the public interface until the separate battery-setting discovery and write/readback verification are completed.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during
@@ -111,8 +111,23 @@ for other unknown message types. This classification records observation only
 and does not assign protocol semantics.
 
 The clean public 2.0 reading, command, enum, and lifecycle values are collected
-in one internal interface definition and exposed to tests through
-`Wattpilot_InterfaceSnapshot`. Protocol keys remain internal and unchanged.
+in central internal interface definitions and exposed to tests through
+`Wattpilot_InterfaceSnapshot`. `%WATTPILOT_READING_NAME` owns the public names,
+`%WATTPILOT_READING_CATEGORY` assigns every reading exactly one semantic
+category, and `%WATTPILOT_COMMAND_NAME` remains independent so Set commands do
+not inherit the reading prefix. Every reading classified as `configuration`
+uses the exact lower-camel-case prefix `config`; lifecycle, identity, live
+status, telemetry, general diagnostics, and command diagnostics must not use
+that prefix. The complete audit is maintained in
+`docs/READING-CATEGORIES.md` and guarded by automated tests.
+
+Version 2.0.7 intentionally performs a direct public-interface rename without
+compatibility aliases, duplicate old/new readings, automatic reading cleanup,
+DbLog migration, or a transition period. FHEM may retain old reading entries in
+an already existing device hash because the module does not delete unrelated
+readings during reload. Consumers and any retained stale readings must therefore
+be adapted or removed explicitly. Protocol keys and Set-command names remain
+internal/unchanged respectively.
 
 ## Development infrastructure
 
@@ -123,6 +138,8 @@ in one internal interface definition and exposed to tests through
 - `.github/workflows/ci.yml` invokes the same CI entry point used locally.
 - `docs/PROTOCOL-SOURCES.md` records protocol provenance and confidence without
   promoting guesses to documented behavior.
+- `docs/READING-CATEGORIES.md` records the exhaustive public-reading audit and
+  the enforced `config` naming policy.
 - Embedded META data and the central version in `72_Wattpilot.pm` are validated
   by `scripts/check_meta.pl`.
 - Release tooling creates reproducible, verified artifacts only below ignored

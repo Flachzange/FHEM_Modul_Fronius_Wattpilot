@@ -256,7 +256,7 @@ $hash->{helper}{authPending} = 1;
 main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
 main::Wattpilot_Parse($hash, encode_json({ type => 'fullStatus', status => { partial => JSON::true, amp => 16 } }));
 is($hash->{STATE}, 'connected', 'partial fullStatus completes initialization');
-is($hash->{READINGS}{chargingCurrent}{VAL}, 16, 'partial fullStatus is still applied incrementally');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 16, 'partial fullStatus is still applied incrementally');
 is(timer_count('lifecycle_timeout'), 0, 'initialization timeout is cancelled after status');
 
 $hash = fresh_device();

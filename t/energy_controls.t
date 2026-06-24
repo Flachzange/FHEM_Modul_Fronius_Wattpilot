@@ -63,17 +63,17 @@ ok(main::Wattpilot_Parse($hash, encode_json({
 })), 'fullStatus with verified control fields is accepted');
 
 my %expected = (
-    pvSurplusEnabled => 1,
-    zeroFeedInEnabled => 0,
-    pvControlPreference => 'preferFromGrid',
-    phaseSwitchMode => 'auto',
-    threePhaseSwitchPower => 5200,
-    phaseSwitchDelay => 120,
-    minimumPhaseSwitchInterval => 600,
-    minimumChargeTime => 300,
-    chargingPauseAllowed => 1,
-    minimumChargingPauseDuration => 120,
-    minimumChargingInterval => 0,
+    configPvSurplusEnabled => 1,
+    configZeroFeedInEnabled => 0,
+    configPvControlPreference => 'preferFromGrid',
+    configPhaseSwitchMode => 'auto',
+    configThreePhaseSwitchPower => 5200,
+    configPhaseSwitchDelay => 120,
+    configMinimumPhaseSwitchInterval => 600,
+    configMinimumChargeTime => 300,
+    configChargingPauseAllowed => 1,
+    configMinimumChargingPauseDuration => 120,
+    configMinimumChargingInterval => 0,
 );
 for my $reading (sort keys %expected) {
     is(reading_value($hash, $reading), $expected{$reading},
@@ -96,33 +96,33 @@ ok(main::Wattpilot_Parse($hash, encode_json({
         mci => 750,
     },
 })), 'deltaStatus updates every verified control field');
-is(reading_value($hash, 'pvSurplusEnabled'), 0,
+is(reading_value($hash, 'configPvSurplusEnabled'), 0,
     'boolean false becomes public 0');
-is(reading_value($hash, 'zeroFeedInEnabled'), 1,
+is(reading_value($hash, 'configZeroFeedInEnabled'), 1,
     'boolean true becomes public 1');
-is(reading_value($hash, 'pvControlPreference'), 'preferToGrid',
+is(reading_value($hash, 'configPvControlPreference'), 'preferToGrid',
     'frm=2 maps to preferToGrid');
-is(reading_value($hash, 'phaseSwitchMode'), 'force3',
+is(reading_value($hash, 'configPhaseSwitchMode'), 'force3',
     'psm=2 maps to force3');
-is(reading_value($hash, 'threePhaseSwitchPower'), 6900.5,
+is(reading_value($hash, 'configThreePhaseSwitchPower'), 6900.5,
     'three-phase threshold preserves a confirmed decimal watt value');
-is(reading_value($hash, 'phaseSwitchDelay'), 1.5,
+is(reading_value($hash, 'configPhaseSwitchDelay'), 1.5,
     'phase-switch delay converts milliseconds to seconds');
-is(reading_value($hash, 'minimumPhaseSwitchInterval'), 2.5,
+is(reading_value($hash, 'configMinimumPhaseSwitchInterval'), 2.5,
     'phase-switch interval converts milliseconds to seconds');
-is(reading_value($hash, 'minimumChargeTime'), 0.5,
+is(reading_value($hash, 'configMinimumChargeTime'), 0.5,
     'minimum charge time converts milliseconds to seconds');
-is(reading_value($hash, 'chargingPauseAllowed'), 0,
+is(reading_value($hash, 'configChargingPauseAllowed'), 0,
     'charging-pause false becomes public 0');
-is(reading_value($hash, 'minimumChargingPauseDuration'), 1.25,
+is(reading_value($hash, 'configMinimumChargingPauseDuration'), 1.25,
     'minimum charging-pause duration converts milliseconds to seconds');
-is(reading_value($hash, 'minimumChargingInterval'), 0.75,
+is(reading_value($hash, 'configMinimumChargingInterval'), 0.75,
     'minimum charging interval converts milliseconds to seconds');
 
 main::Wattpilot_UpdateReadings($hash, { frm => 77, psm => -1 });
-is(reading_value($hash, 'pvControlPreference'), 'unknown:77',
+is(reading_value($hash, 'configPvControlPreference'), 'unknown:77',
     'unknown frm value remains explicit');
-is(reading_value($hash, 'phaseSwitchMode'), 'unknown:-1',
+is(reading_value($hash, 'configPhaseSwitchMode'), 'unknown:-1',
     'unknown psm value remains explicit');
 
 my %stable = map { $_ => reading_value($hash, $_) } keys %expected;
@@ -233,13 +233,13 @@ for my $case (
 $hash = fresh_device();
 main::Wattpilot_UpdateReadings($hash, { spl3 => 5200 });
 main::Wattpilot_Set($hash, 'controlWallbox', 'threePhaseSwitchPower', 6000);
-is(reading_value($hash, 'threePhaseSwitchPower'), 5200,
+is(reading_value($hash, 'configThreePhaseSwitchPower'), 5200,
     'pending setter does not fabricate a confirmed reading');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true,
     status => { spl3 => 6000 },
 }));
-is(reading_value($hash, 'threePhaseSwitchPower'), 6000,
+is(reading_value($hash, 'configThreePhaseSwitchPower'), 6000,
     'successful response updates the reading through the status path');
 is(reading_value($hash, 'lastCommandStatus'), 'success',
     'successful control response completes the request');
@@ -250,7 +250,7 @@ main::Wattpilot_Set($hash, 'controlWallbox', 'pvSurplusEnabled', 0);
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::false,
 }));
-is(reading_value($hash, 'pvSurplusEnabled'), 1,
+is(reading_value($hash, 'configPvSurplusEnabled'), 1,
     'failed response leaves the confirmed boolean reading unchanged');
 is(reading_value($hash, 'lastCommandStatus'), 'failed',
     'failed control response is terminal');
