@@ -3,8 +3,8 @@ package DevIo;
 use strict;
 use warnings;
 
-our $FHEM_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
-our $FHEM_TIMER_SOURCE_REVISION = 'b2bc07a6ef698a5d836c9d5d5250600951b1638d';
+our $FHEM_SOURCE_REVISION = 'fd552d5ca20ab5745575de1c752c75a9392e1946';
+our $FHEM_TIMER_SOURCE_REVISION = 'fd552d5ca20ab5745575de1c752c75a9392e1946';
 our $FHEM_ATTR_SOURCE_REVISION = 'b7d60838a845b19cc8e54ce0cdc4a8eda27ad105';
 our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
@@ -97,8 +97,12 @@ sub DevIo_CloseDev {
     push @CLOSES, $hash;
     my $key = join('.', $hash->{NAME} // '', $hash->{DeviceName} // '');
     $hash->{TEST_OPEN} = 0;
+    delete $hash->{TCPDev};
+    delete $hash->{CD};
+    delete $hash->{'.WSBUF'};
+    delete $hash->{WEBSOCKET};
     delete $hash->{FD};
-    delete $hash->{WSBUF};
+    delete $hash->{EXCEPT_FD};
     delete $hash->{PARTIAL};
     delete $hash->{NEXT_OPEN};
     delete $READYFNLIST{$hash->{NAME}};
@@ -106,7 +110,9 @@ sub DevIo_CloseDev {
     delete $SELECTLIST{$key};
     return;
 }
-sub DevIo_IsOpen { return $_[0]{TEST_OPEN} ? 1 : 0 }
+sub DevIo_IsOpen {
+    return ($_[0]{TEST_OPEN} || $_[0]{TCPDev}) ? 1 : 0;
+}
 sub DevIo_OpenDev {
     my ($hash, $reopen, $initfn, $callback) = @_;
     push @OPENS, [@_];
@@ -175,11 +181,15 @@ sub DevIo_OpenDev {
 
     Log3($name, $hash->{devioLoglevel} || 1, "$dev reappeared ($name)") if $reopen;
     $hash->{TEST_OPEN} = 1;
+    $hash->{TCPDev} = 1;
+    $hash->{CD} = 1;
+    $hash->{WEBSOCKET} = 1 if $dev =~ /^wss?:/;
     $hash->{FD} = 99;
     delete $hash->{NEXT_OPEN};
     delete $READYFNLIST{$name};
     delete $READYFNLIST{"$name.$dev"};
     $SELECTLIST{"$name.$dev"} = $hash;
+    readingsSingleUpdate($hash, 'state', 'opened', 1);
     push @TRIGGERS, 'CONNECTED';
     push @OPEN_CALLBACKS, [$reopen, undef];
     $callback->($hash, undef) if $callback;
@@ -207,11 +217,15 @@ sub complete_deferred_open {
 
     Log3($name, $hash->{devioLoglevel} || 1, "$dev reappeared ($name)") if $reopen;
     $hash->{TEST_OPEN} = 1;
+    $hash->{TCPDev} = 1;
+    $hash->{CD} = 1;
+    $hash->{WEBSOCKET} = 1 if $dev =~ /^wss?:/;
     $hash->{FD} = 99;
     delete $hash->{NEXT_OPEN};
     delete $READYFNLIST{$name};
     delete $READYFNLIST{"$name.$dev"};
     $SELECTLIST{"$name.$dev"} = $hash;
+    readingsSingleUpdate($hash, 'state', 'opened', 1);
     push @TRIGGERS, 'CONNECTED';
     $callback->($hash, undef) if $callback;
     return;

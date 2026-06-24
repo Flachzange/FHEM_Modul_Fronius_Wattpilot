@@ -14,6 +14,7 @@ than additional installable Perl modules:
 - structural JSON continuation, decoding, and message dispatch;
 - authentication and signing-key generation;
 - secured command correlation and response timeouts;
+- local manual reconnect orchestration and pending-command termination;
 - status normalization and public reading updates;
 - idle-refresh and electrical-reading rate limiting.
 
@@ -47,8 +48,9 @@ connection-scoped state, and closes the current or frozen DevIo context.
 `Wattpilot_ApplyConfiguredState` then resolves disabled, credential-error,
 password-missing, or reconnectable state and creates at most one module-owned
 reconnect. Special transitions with different semantics, such as authentication
-failure, idle-refresh fallback, shutdown, and failed-Delete restoration, remain
-explicit.
+failure, idle-refresh fallback, manual reconnect, shutdown, and failed-Delete restoration, remain
+explicit. The public `reconnect` command performs a credential preflight, terminates pending secured requests, resets manual-retry and idle-refresh episode state, and then reuses the common invalidation/configured-state path. It sends no Wattpilot protocol message and makes no `fullStatus`-request claim.
+Current FHEM DevIo marks a successful asynchronous open as `opened` before invoking the module callback. An old callback may therefore arrive after manual reconnect, disable, or shutdown and temporarily carry framework-owned state from the invalidated attempt. The generation/ownership guard closes that transport and explicitly restores the configured terminal state; when a reconnect was waiting for the invalidated open, the callback hands off exactly one new scheduled connection instead. Stale callbacks cannot leave the device in `opened` or create a parallel session.
 
 `pendingReconnectAfterOpen` is deliberately retained. It transfers ownership
 from an invalidated asynchronous DevIo open callback to exactly one subsequent
@@ -66,7 +68,7 @@ module reconnect.
 | `pendingRequests` | current authenticated session |
 | `jsonBuffer` | current logical JSON continuation/session |
 | `car_state` | current device-hash runtime state |
-| idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single refresh reconnect |
+| idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single automatic refresh reconnect, while a manual reconnect clears the episode state |
 | `LAST_UPDATE` | current device-hash rate-limit history |
 | `msg_id` | current device-hash request sequence |
 
@@ -86,7 +88,7 @@ readings. `modelStatus` and `msi` each produce both an unmodified numeric code
 and a lowerCamelCase text reading. The text table is a compatibility mapping
 from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
 based on pinned Wattpilot-specific evidence that it is the internal variant of
-the same decision. Unknown numeric values remain explicit as `unknown:<code>`. The `fst` field is normalized separately as a non-negative finite number and exposed immediately as `pvSurplusStartPower` in watts. Its setter uses the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value.
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, and `mci` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during

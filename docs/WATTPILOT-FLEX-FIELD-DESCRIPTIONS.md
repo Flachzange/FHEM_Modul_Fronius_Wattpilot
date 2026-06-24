@@ -77,14 +77,14 @@ Version 2.0.3 exposes `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca
 | `lcctc` | `lastCarStateChangedToCharging` | Time marker for entering Charging, candidate unit ms | R | historical candidate |
 | `lck` | `effectiveLockSetting` | Candidate enum: `Normal=0`, `AutoUnlock=1`, `AlwaysLock=2`, `ForceUnlock=3` | R | historical candidate |
 | `mca` | `minChargingCurrent` | Minimum charging current, candidate unit A | R/W | historical candidate |
-| `mci` | `minimumChargingInterval` | Minimum charging interval, candidate unit ms; `0` may mean disabled | R/W | historical candidate |
-| `mcpd` | `minChargePauseDuration` | Minimum charge-pause duration, candidate unit ms | R/W | historical candidate |
+| `mci` | `minimumChargingInterval` | Version 2.0.5 exposes protocol milliseconds as public seconds and provides a secured setter. The current Fronius Flex manual labels the user behavior “Forced charging interval”. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius behavior documentation, pinned official go-e R/W/unit metadata, and pinned Wattpilot-specific alias; not official Fronius WebSocket documentation |
+| `mcpd` | `minimumChargingPauseDuration` / `minChargePauseDuration` | Version 2.0.5 exposes protocol milliseconds as public seconds and provides a secured setter for the vehicle charge-pause duration. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius behavior documentation, pinned official go-e R/W/unit metadata, and pinned Wattpilot-specific alias |
 | `mcpea` | `minChargePauseEndsAt` | End of current minimum pause; `null` may abort it | R/W candidate | historical candidate |
 | `modelStatus` | `modelStatus` | Reason charging is or is not allowed; large historical enum exists but is not accepted as Flex fact | R | historical candidate |
 | `msi` | `modelStatusInternal` | Internal charging-decision reason candidate | R | historical candidate |
 | `nmo` | `norwayMode` | Norway-mode / ground-check setting candidate | R/W | historical candidate |
 | `pnp` | `numberOfPhases` | Number of active charging phases candidate | R | historical candidate |
-| `psm` | `phaseSwitchMode` | Candidate enum: `Auto=0`, `Force_1=1`, `Force_3=2` | R/W | historical candidate |
+| `psm` | `phaseSwitchMode` | Version 2.0.5 maps `0 auto`, `1 force1`, `2 force3`; unknown numeric values remain explicit. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius Automatic/Only 1-phase/Only 3-phase behavior documentation and pinned API enum/R/W evidence |
 | `psmd` | `forceSinglePhaseDuration` | Force-single-phase duration, candidate unit ms | R/W | historical candidate |
 | `pwm` | `phaseWishMode` | Candidate enum: `Force_3=0`, `Wish_1=1`, `Wish_3=2` | R | historical candidate |
 | `su` | `simulateUnplugging` | Simulate vehicle unplugging | R/W | historical candidate |
@@ -126,23 +126,23 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | Key | Alias / readable name | Meaning or unit candidate | R/W candidate | Evidence |
 |---|---|---|---|---|
 | `fam` | `pvBatteryLimit` | Battery limit for PV-surplus charging candidate | unknown | historical candidate |
-| `fap` | `froniusAllowPause` | Compatibility setting for vehicles that disconnect during charging pauses | R/W | historical candidate |
+| `fap` | `chargingPauseAllowed` / `froniusAllowPause` | Version 2.0.5 exposes the JSON boolean as `0`/`1` and provides a secured setter for the documented Allow charging pause behavior. | R/W compatibility implementation; Flex write test pending | observed Flex boolean plus official Fronius behavior documentation and pinned API/Wattpilot R/W evidence |
 | `fbuf_age` | `fbufAge` | Age of Fronius inverter buffer data | unknown | historical candidate |
 | `fbuf_akkuMode` | `akkuMode` | Battery mode candidate | unknown | historical candidate |
 | `fbuf_akkuSOC` | `akkuSoc` | PV battery state of charge, candidate unit % | unknown | historical candidate |
 | `fbuf_pAkku` | `powerAkku` | Battery power; historical sign convention says negative means charging battery | unknown | historical candidate |
 | `fbuf_pGrid` | `powerGrid` | Grid power; historical sign convention says negative means feed-in | unknown | historical candidate |
 | `fbuf_pPv` | `powerPv` | PV production power candidate | unknown | historical candidate |
-| `frm` | `roundingMode` | Candidate enum: `PreferPowerFromGrid=0`, `Default=1`, `PreferPowerToGrid=2` | R candidate | historical candidate |
-| `fst` | `pvSurplusStartPower` / `startingPower` | Version 2.0.4 exposes a non-negative finite start-power value in W and provides a secured setter | R/W compatibility implementation; real Flex write test pending | observed Flex value plus pinned official go-e metadata and pinned Wattpilot-specific evidence; not official Fronius Flex API documentation |
+| `frm` | `pvControlPreference` / `roundingMode` | Version 2.0.5 maps `0 preferFromGrid`, `1 default`, `2 preferToGrid`; unknown numeric values remain explicit. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius control-behavior labels and pinned API/Wattpilot enum/R/W evidence |
+| `fst` | `pvSurplusStartPower` / `startingPower` | Version 2.0.4 exposes a non-negative finite start-power value in W and provides a secured setter. | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | observed Flex value, official Fronius behavior documentation, pinned official go-e metadata, pinned Wattpilot-specific evidence, and maintainer live test; not official Fronius Flex WebSocket documentation |
 | `fte` | `froniusTripEnergy` | Minimum next-trip energy, candidate unit Wh | R/W | historical candidate |
 | `ftt` | `nextTripTime` | Current module renders seconds after local midnight as `HH:MM`; Flex writability remains unverified | R/W candidate | implementation/historical candidate |
 | `ful` | `useDynamicPricing` | Dynamic-price charging enabled candidate | unknown | historical candidate |
-| `fup` | `usePvSurplus` | PV-surplus charging enabled | R/W | historical candidate |
-| `fzf` | `zeroFeedin` | Zero-feed-in behavior candidate | R/W | historical candidate |
+| `fup` | `pvSurplusEnabled` / `usePvSurplus` | Version 2.0.5 exposes the JSON boolean as `0`/`1` and provides a secured setter for Use PV surplus. | R/W compatibility implementation; Flex write test pending | observed Flex boolean plus official Fronius behavior documentation and pinned API/Wattpilot R/W evidence |
+| `fzf` | `zeroFeedInEnabled` / `zeroFeedin` | Version 2.0.5 exposes the JSON boolean as `0`/`1` and provides a secured setter for Zero feed-in. | R/W compatibility implementation; Flex write test pending | observed Flex boolean plus official Fronius behavior documentation and pinned API/Wattpilot R/W evidence |
 | `inva` | `inverterDataAge` | Age of inverter data, candidate unit ms | R | historical candidate |
-| `mptwt` | `minPhaseToggleWaitTime` | Minimum wait between phase toggles, candidate unit ms | R/W | historical candidate |
-| `mpwst` | `minPhaseWishSwitchTime` | Minimum phase-wish switch time, candidate unit ms | R/W | historical candidate |
+| `mptwt` | `minimumPhaseSwitchInterval` / `minPhaseToggleWaitTime` | Version 2.0.5 exposes protocol milliseconds as public seconds and provides a secured setter for the minimum interval between phase switches. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius behavior documentation and pinned API/Wattpilot R/W/unit evidence |
+| `mpwst` | `phaseSwitchDelay` / `minPhaseWishSwitchTime` | Version 2.0.5 exposes protocol milliseconds as public seconds and provides a secured setter for the phase-switch delay. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius behavior documentation and pinned API/Wattpilot R/W/unit evidence |
 | `po` | `prioOffset` | Priority offset, candidate unit W | R/W | historical candidate |
 | `psh` | `phaseSwitchHysteresis` | Phase-switch hysteresis, candidate unit W | R/W | historical candidate |
 | `pvopt_averagePAkku` | `averagePAkku` | Average battery power candidate | R | historical candidate |
@@ -153,7 +153,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `pvopt_deltaP` | `deltaPower` | PV-control power difference candidate | R | historical candidate |
 | `pvopt_specialCase` | `pvOptSpecialCase` | PV-optimization special-case code candidate | R | historical candidate |
 | `sh` | `stopHysteresis` | Stop hysteresis, candidate unit W | R/W | historical candidate |
-| `spl3` | `threePhaseSwitchLevel` | Three-phase switching threshold candidate | R/W | historical candidate |
+| `spl3` | `threePhaseSwitchPower` / `threePhaseSwitchLevel` | Version 2.0.5 exposes a non-negative finite value in W and provides a secured setter for the documented 3-phase power level. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius behavior documentation and pinned API/Wattpilot R/W/W-unit evidence |
 | `zfo` | `zeroFeedinOffset` | Zero-feed-in offset, candidate unit W | R/W | historical candidate |
 
 ## Charging modes, limits, and scheduling
@@ -165,7 +165,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `awp` | `awattarMaxPrice` | Maximum dynamic price candidate | R/W | historical candidate |
 | `awpl` | `awattarPriceList` | Dynamic price list with Unix timestamps candidate | R/W candidate | historical candidate |
 | `clp` | `currentLimitPresets` | Current-limit presets; historical maximum five entries | R/W | historical candidate |
-| `fmt` | `minChargeTime` | Minimum charge time, candidate unit ms | R/W | historical candidate |
+| `fmt` | `minimumChargeTime` / `minChargeTime` | Version 2.0.5 exposes protocol milliseconds as public seconds and provides a secured setter for the documented minimum charging time. | R/W compatibility implementation; Flex write test pending | observed Flex number plus official Fronius behavior documentation and pinned API/Wattpilot R/W/unit evidence |
 | `lmo` | `chargingMode` | Current module mapping: `3 default`, `4 eco`, `5 nextTrip`; historical labels conflict (`Awattar`, `AutomaticStop`) | R/W candidate | implementation with explicit historical conflict |
 | `sch_week` | `schedulerWeekday` | Weekday schedule; candidate control `Disabled=0`, `Inside=1`, `Outside=2` | R/W | historical candidate |
 | `sch_satur` | `schedulerSaturday` | Saturday schedule; same control candidate | R/W | historical candidate |

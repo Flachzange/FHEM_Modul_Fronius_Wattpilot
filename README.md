@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.0.4**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Aktuelle Modulversion: **2.0.5**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## Inkompatible Änderung in 2.0
 
@@ -160,7 +160,49 @@ Die Abbildung lautet `default -> lmo=3`, `eco -> lmo=4`, `nextTrip -> lmo=5`.
 set wallbox pvSurplusStartPower 1400
 ```
 
-Der nicht negative, endliche Zahlenwert wird in Watt über `fst` gesendet. Das Modul setzt keine unbelegte Obergrenze. Ein Gerätefehler wird über `lastCommandStatus` und `lastCommandError` gemeldet; das Reading wird erst durch einen vom Gerät bestätigten Statuswert aktualisiert.
+Der nicht negative, endliche Zahlenwert wird in Watt über `fst` gesendet. Das Modul setzt keine unbelegte Obergrenze. Ein Gerätefehler wird über `lastCommandStatus` und `lastCommandError` gemeldet; das Reading wird erst durch einen vom Gerät bestätigten Statuswert aktualisiert. Lesen, Schreiben, Geräte-Rückmeldung und Wiederherstellung des Ausgangswerts wurden mit FHEM und einem Wattpilot Flex mit Firmware 43.4 erfolgreich geprüft.
+
+### PV- und Netzregelung
+
+```text
+set wallbox pvSurplusEnabled 1
+set wallbox zeroFeedInEnabled 0
+set wallbox pvControlPreference preferFromGrid
+```
+
+Die Befehle schreiben `fup`, `fzf` und `frm`. `pvControlPreference` akzeptiert `preferFromGrid`, `default` und `preferToGrid`, entsprechend den Protokollwerten `0`, `1` und `2`.
+
+### Phasenumschaltung
+
+```text
+set wallbox phaseSwitchMode auto
+set wallbox threePhaseSwitchPower 5200
+set wallbox phaseSwitchDelay 120
+set wallbox minimumPhaseSwitchInterval 600
+```
+
+`phaseSwitchMode` schreibt `psm` mit `auto=0`, `force1=1` oder `force3=2`. Die Leistungsschwelle wird über `spl3` in Watt gesendet. Die beiden Zeitwerte werden öffentlich in Sekunden angegeben und als Millisekunden über `mpwst` beziehungsweise `mptwt` übertragen.
+
+### Lade- und Pausenverhalten
+
+```text
+set wallbox minimumChargeTime 300
+set wallbox chargingPauseAllowed 1
+set wallbox minimumChargingPauseDuration 120
+set wallbox minimumChargingInterval 0
+```
+
+Die Zeitwerte werden in Sekunden angegeben und als Millisekunden über `fmt`, `mcpd` und `mci` übertragen. `chargingPauseAllowed` schreibt das boolesche Feld `fap`. Der öffentliche Name `minimumChargingInterval` folgt dem gepinnten API-Alias für `mci`; die aktuelle Fronius-Flex-Bedienungsanleitung nennt die Fahrzeugeinstellung „Forced charging interval“ beziehungsweise Zwangsladeintervall.
+
+Diese zusätzlichen Setter verwenden den bestehenden gesicherten `setValue`-Pfad. Es wird kein Reading optimistisch geändert; nur eine Geräteantwort oder ein späterer Status bestätigt den Wert. Die Feldzuordnungen beruhen auf der im Projekt dokumentierten Kombination aus aktueller Fronius-Bedienungsdokumentation, gepinnten API-Quellen und der bereinigten Flex-43.4-Beobachtung. Ein vollständiger Realgerätetest aller neuen Setter steht noch aus.
+
+### Verbindung kontrolliert neu aufbauen
+
+```text
+set wallbox reconnect
+```
+
+Der Befehl trennt die lokale WebSocket-Sitzung, verwirft sitzungsgebundene Timer, Authentifizierungs- und Teil-JSON-Zustände und startet genau einen neuen Verbindungs-/Anmeldezyklus. Vorhandene Betriebsreadings und Konfiguration bleiben erhalten. Ausstehende gesicherte Befehle werden mit `lastCommandStatus=failed` und `lastCommandError=reconnect requested` beendet. Dies ist ausdrücklich **kein** belegter `fullStatus`-Request; ein nach der Anmeldung eingehender Initialstatus wird weiterhin vom Gerät gesendet.
 
 ### Next-Trip-Zeit setzen
 
@@ -229,7 +271,7 @@ Wählt das Verfahren für die Passwort-Verschlüsselung.
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 33 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 44 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
@@ -249,7 +291,18 @@ Das Modul stellt exakt folgende 33 öffentlichen Readings bereit:
 | `maximumCurrentLimit` | Unveränderter Ganzzahlwert aus `ama`; als maximale Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
 | `temperatureCurrentLimit` | Unveränderter Ganzzahlwert aus `amt`; als temperaturbedingte Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
 | `minimumChargingCurrent` | Unveränderter Ganzzahlwert aus `mca`; als Mindestladestrom in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
-| `pvSurplusStartPower` | Nicht negativer, endlicher Zahlenwert aus `fst`, ausgegeben in Watt. Gepinnte go-e-API-Metadaten und Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; die Flex-43.4-Beobachtung enthält `1400`. Dies ist keine offizielle Fronius-Flex-API-Spezifikation. |
+| `pvSurplusStartPower` | Nicht negativer, endlicher Zahlenwert aus `fst`, ausgegeben in Watt. Gepinnte go-e-API-Metadaten und Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; Lesen und Schreiben wurden auf einem Flex 43.4 bestätigt. Dies ist keine offizielle Fronius-Flex-WebSocket-Spezifikation. |
+| `pvSurplusEnabled` | Boolesches Feld `fup`, ausgegeben als `0` oder `1`. |
+| `zeroFeedInEnabled` | Boolesches Feld `fzf`, ausgegeben als `0` oder `1`. |
+| `pvControlPreference` | `preferFromGrid`, `default`, `preferToGrid` oder `unknown:<Rohwert>` aus `frm`. |
+| `phaseSwitchMode` | `auto`, `force1`, `force3` oder `unknown:<Rohwert>` aus `psm`. |
+| `threePhaseSwitchPower` | Nicht negativer Zahlenwert aus `spl3`, ausgegeben in Watt. |
+| `phaseSwitchDelay` | `mpwst` von Millisekunden in Sekunden umgerechnet. |
+| `minimumPhaseSwitchInterval` | `mptwt` von Millisekunden in Sekunden umgerechnet. |
+| `minimumChargeTime` | `fmt` von Millisekunden in Sekunden umgerechnet. |
+| `chargingPauseAllowed` | Boolesches Feld `fap`, ausgegeben als `0` oder `1`. |
+| `minimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
+| `minimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
 | `nextTripTime` | Protokollwert als `HH:MM`; als Sekunden nach Mitternacht interpretiert. |
 | `energyTotal` | `eto / 1000`, mit zwei Nachkommastellen. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen. |
 | `energySincePlugIn` | `wh`, mit zwei Nachkommastellen; als Wh interpretiert. |
@@ -261,7 +314,7 @@ Das Modul stellt exakt folgende 33 öffentlichen Readings bereit:
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. |
 
-Die zehn operativen Status-Readings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
+Die 21 operativen Status- und Konfigurations-Readings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
 
 Die Klartextwerte verwenden eine Kompatibilitätszuordnung aus der gepinnten offiziellen go-e-Enum für `modelStatus`. Für `msi` wird dieselbe Wertetabelle verwendet, weil die gepinnte Wattpilot-spezifische Quelle das Feld als interne Entscheidungsvariante beschreibt. Dies ist keine offizielle Fronius-Flex-Spezifikation; deshalb bleiben beide Rohcodes erhalten und nicht zugeordnete Werte ausdrücklich sichtbar. Die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von `cpDisabledRequest` sind für Wattpilot Flex nicht bestätigt. Insbesondere behauptet das Modul weder, dass `modelStatus` zwingend die abschließende/wirksame Entscheidung ist, noch dass `msi` zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus dieser Dokumentation darf keine Kausalkette abgeleitet werden.
 

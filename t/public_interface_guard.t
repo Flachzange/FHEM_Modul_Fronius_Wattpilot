@@ -102,14 +102,22 @@ my @public_readings = qw(
     state firmwareVersion authHashMode carState forceState chargingCurrent
     chargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode maximumCurrentLimit
-    temperatureCurrentLimit minimumChargingCurrent pvSurplusStartPower nextTripTime
+    temperatureCurrentLimit minimumChargingCurrent pvSurplusStartPower
+    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
+    threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
+    minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
+    minimumChargingInterval nextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
     lastCommandStatus lastCommandError
 );
 my @public_commands = qw(
-    password chargingCurrent forceState chargingMode pvSurplusStartPower nextTripTime
+    password chargingCurrent forceState chargingMode pvSurplusStartPower
+    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
+    threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
+    minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
+    minimumChargingInterval reconnect nextTripTime
 );
 
 my @migration_pairs = (
@@ -212,5 +220,31 @@ like($protocol_doc, qr/no causal chain is inferred/s,
 my $protocol_sources = read_utf8(File::Spec->catfile($root, 'docs', 'PROTOCOL-SOURCES.md'));
 like($protocol_sources, qr/differing values are retained as independent device-supplied diagnostics without inferring a causal chain/s,
     'protocol provenance records the modelStatus/msi evidence limit');
+
+for my $entry (@active_docs) {
+    my ($label, $text) = @$entry;
+    like($text, qr/reconnect/s,
+        "$label documents the manual reconnect command");
+    like($text, qr/(?:not|kein).*fullStatus.*request|fullStatus.*(?:not|kein).*request/is,
+        "$label states that reconnect is not a fullStatus request");
+    like($text, qr/minimumChargingInterval/s,
+        "$label documents the public mci alias");
+}
+like($readme_en, qr/minimumChargingInterval.*Forced charging interval/s,
+    'English README distinguishes API alias from Fronius UI terminology');
+like($readme_de, qr/minimumChargingInterval.*Forced charging interval|minimumChargingInterval.*Zwangsladeintervall/s,
+    'German README distinguishes API alias from Fronius UI terminology');
+like($commandref_en, qr/reconnect.*not a <code>fullStatus<\/code> request/s,
+    'English commandref does not misrepresent reconnect as polling');
+like($commandref_de, qr/reconnect.*kein <code>fullStatus<\/code>-Request/s,
+    'German commandref does not misrepresent reconnect as polling');
+like($protocol_sources, qr/No pinned Wattpilot-specific source documents a <code>|No pinned Wattpilot-specific source documents a `fullStatus`/s,
+    'protocol provenance records the missing fullStatus request evidence');
+
+my $testing_doc = read_utf8(File::Spec->catfile($root, 'TESTING.md'));
+like($testing_doc, qr/fd552d5ca20ab5745575de1c752c75a9392e1946/s,
+    'testing documentation records the current FHEM source audit revision');
+like($testing_doc, qr/successful asynchronous .*opened.*before invoking the module callback/is,
+    'testing documentation records the audited DevIo opened-before-callback side effect');
 
 done_testing;
