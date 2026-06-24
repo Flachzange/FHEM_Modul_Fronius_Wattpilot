@@ -4,6 +4,12 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [v2.0.0] - 2026-06-23
 
+### FHEM-Schnittstellenhärtung
+
+- Das Modul registriert keine leere `GetFn` mehr, solange keine eigenen Get-Befehle implementiert sind.
+- Modulattribute werden vor der Speicherung auf ihre dokumentierten Wertebereiche geprüft; ungültige Werte lösen keine Lifecycle-, Credential-, Timer-, Verbindungs- oder Reading-Seiteneffekte aus.
+- `define` akzeptiert ausschließlich die dokumentierte Form mit IP beziehungsweise Hostname und optionaler rein numerischer Seriennummer. Fehlende oder zusätzliche Argumente sowie ungültige Seriennummern werden vor jeder Zustandsänderung abgewiesen.
+
 ### Inkompatible öffentliche Schnittstelle
 
 - Die öffentliche FHEM-Schnittstelle verwendet ausschließlich englische `lowerCamelCase`-Namen: 23 definierte Readings und die fünf Set-Befehle `password`, `chargingCurrent`, `forceState`, `chargingMode` und `nextTripTime`.
