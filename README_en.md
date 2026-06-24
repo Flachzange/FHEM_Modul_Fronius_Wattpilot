@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.0.4**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Current module version: **2.0.5**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## Breaking change in 2.0
 
@@ -160,7 +160,49 @@ The mapping is `default -> lmo=3`, `eco -> lmo=4`, and `nextTrip -> lmo=5`.
 set wallbox pvSurplusStartPower 1400
 ```
 
-The non-negative finite numeric value is sent in watts through `fst`. The module applies no unverified upper bound. Device rejection is exposed through `lastCommandStatus` and `lastCommandError`; the reading changes only when a device-confirmed status value is received.
+The non-negative finite numeric value is sent in watts through `fst`. The module applies no unverified upper bound. Device rejection is exposed through `lastCommandStatus` and `lastCommandError`; the reading changes only when a device-confirmed status value is received. Reading, writing, device readback, and restoration of the original value were verified with FHEM and a Wattpilot Flex running firmware 43.4.
+
+### PV and grid control
+
+```text
+set wallbox pvSurplusEnabled 1
+set wallbox zeroFeedInEnabled 0
+set wallbox pvControlPreference preferFromGrid
+```
+
+These commands write `fup`, `fzf`, and `frm`. `pvControlPreference` accepts `preferFromGrid`, `default`, and `preferToGrid`, mapped to protocol values `0`, `1`, and `2`.
+
+### Phase switching
+
+```text
+set wallbox phaseSwitchMode auto
+set wallbox threePhaseSwitchPower 5200
+set wallbox phaseSwitchDelay 120
+set wallbox minimumPhaseSwitchInterval 600
+```
+
+`phaseSwitchMode` writes `psm` with `auto=0`, `force1=1`, or `force3=2`. The threshold is sent through `spl3` in watts. The two public time values use seconds and are converted to milliseconds for `mpwst` and `mptwt`.
+
+### Charging and pause behavior
+
+```text
+set wallbox minimumChargeTime 300
+set wallbox chargingPauseAllowed 1
+set wallbox minimumChargingPauseDuration 120
+set wallbox minimumChargingInterval 0
+```
+
+The public time values use seconds and are converted to milliseconds for `fmt`, `mcpd`, and `mci`. `chargingPauseAllowed` writes the boolean field `fap`. The public name `minimumChargingInterval` follows the pinned API alias for `mci`; the current Fronius Flex operating instructions label the vehicle setting “Forced charging interval”.
+
+These additional setters use the existing secured `setValue` path. No reading is changed optimistically; only a device response or later status confirms the value. Field assignments use the documented combination of current Fronius operating documentation, pinned API sources, and the sanitized Flex 43.4 observation. Full real-device verification of all new setters is still pending.
+
+### Rebuild the connection deliberately
+
+```text
+set wallbox reconnect
+```
+
+This local lifecycle command closes the WebSocket session, invalidates session-owned timers, authentication, and partial-JSON state, and starts exactly one new connection/authentication cycle. Existing operational readings and configuration remain intact. Pending secured commands terminate with `lastCommandStatus=failed` and `lastCommandError=reconnect requested`. This is explicitly **not** a verified `fullStatus` request; any initial status received after login remains server-pushed by the device.
 
 ### Set next-trip time
 
@@ -229,7 +271,7 @@ Selects the password hashing method.
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 33 public readings:
+The module exposes exactly these 44 public readings:
 
 | Reading | Description |
 | :--- | :--- |
@@ -249,7 +291,18 @@ The module exposes exactly these 33 public readings:
 | `maximumCurrentLimit` | Raw integer from `ama`; interpreted as an ampere current limit only from pinned third-party evidence. |
 | `temperatureCurrentLimit` | Raw integer from `amt`; interpreted as a temperature-related ampere limit only from pinned third-party evidence. |
 | `minimumChargingCurrent` | Raw integer from `mca`; interpreted as a minimum charging current in amperes only from pinned third-party evidence. |
-| `pvSurplusStartPower` | Non-negative finite numeric value from `fst`, exposed in watts. Pinned go-e API metadata and Wattpilot-specific evidence describe it as writable PV-surplus start power; the Flex 43.4 observation contains `1400`. This is not an official Fronius Flex API specification. |
+| `pvSurplusStartPower` | Non-negative finite numeric value from `fst`, exposed in watts. Pinned go-e API metadata and Wattpilot-specific evidence describe it as writable PV-surplus start power; reading and writing were confirmed on one Flex 43.4. This is not an official Fronius Flex WebSocket specification. |
+| `pvSurplusEnabled` | Boolean field `fup`, exposed as `0` or `1`. |
+| `zeroFeedInEnabled` | Boolean field `fzf`, exposed as `0` or `1`. |
+| `pvControlPreference` | `preferFromGrid`, `default`, `preferToGrid`, or `unknown:<raw-value>` from `frm`. |
+| `phaseSwitchMode` | `auto`, `force1`, `force3`, or `unknown:<raw-value>` from `psm`. |
+| `threePhaseSwitchPower` | Non-negative numeric value from `spl3`, exposed in watts. |
+| `phaseSwitchDelay` | `mpwst` converted from milliseconds to seconds. |
+| `minimumPhaseSwitchInterval` | `mptwt` converted from milliseconds to seconds. |
+| `minimumChargeTime` | `fmt` converted from milliseconds to seconds. |
+| `chargingPauseAllowed` | Boolean field `fap`, exposed as `0` or `1`. |
+| `minimumChargingPauseDuration` | `mcpd` converted from milliseconds to seconds. |
+| `minimumChargingInterval` | `mci` converted from milliseconds to seconds. The name follows the API alias; the Fronius Flex manual calls the behavior Forced charging interval. |
 | `nextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
 | `energyTotal` | `eto / 1000`, formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence and is not proven by the sanitized Flex capture. |
 | `energySincePlugIn` | `wh`, formatted with two decimals and interpreted as Wh. |
@@ -261,7 +314,7 @@ The module exposes exactly these 33 public readings:
 | `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
 | `lastCommandError` | Concise redacted error or result text. |
 
-The ten operational status readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Missing, `null`, or type-invalid fields leave existing values unchanged.
+The 21 operational status and configuration readings are processed immediately whenever valid device data arrives and are not gated by `interval` or `update_while_idle`. Missing, `null`, or type-invalid fields leave existing values unchanged.
 
 The text values use a compatibility mapping from the pinned official go-e `modelStatus` enum. The same value table is applied to `msi` because the pinned Wattpilot-specific source describes it as an internal decision variant. This is not an official Fronius Flex specification; both raw codes therefore remain available and unmapped values stay explicit. The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed for Wattpilot Flex. In particular, the module does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values and do not infer a causal chain from this documentation.
 

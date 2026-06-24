@@ -2,6 +2,21 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [v2.0.5] - 2026-06-24
+
+### PV-, Phasen- und Fahrzeugparameter
+
+- Elf weitere Konfigurationsfelder werden als öffentliche Readings verarbeitet: `pvSurplusEnabled` (`fup`), `zeroFeedInEnabled` (`fzf`), `pvControlPreference` (`frm`), `phaseSwitchMode` (`psm`), `threePhaseSwitchPower` (`spl3`), `phaseSwitchDelay` (`mpwst`), `minimumPhaseSwitchInterval` (`mptwt`), `minimumChargeTime` (`fmt`), `chargingPauseAllowed` (`fap`), `minimumChargingPauseDuration` (`mcpd`) und `minimumChargingInterval` (`mci`). Fehlende, `null`- oder typfalsche Delta-Felder verändern vorhandene Readings nicht.
+- Für alle elf Werte gibt es gleichnamige Setter über den vorhandenen gesicherten `setValue`-Pfad. Boolesche Werte werden als echte JSON-Booleans übertragen; Enum-Werte werden auf die dokumentierten numerischen Protokollwerte abgebildet. Öffentliche Zeitwerte verwenden Sekunden und werden nur dann gesendet, wenn sie sich exakt in ganze Protokoll-Millisekunden umrechnen lassen.
+- Das Modul setzt keine unbelegten Obergrenzen und übernimmt angeforderte Werte nicht optimistisch. Nur vom Gerät gelieferte Statusdaten bestätigen Readings; Ablehnung und Timeout bleiben über die vorhandenen Command-Status-Readings sichtbar.
+- Die öffentliche Bezeichnung `minimumChargingInterval` folgt dem gepinnten API-Alias für `mci`; die aktuelle Fronius-Flex-Bedienungsanleitung bezeichnet die zugehörige Fahrzeugeinstellung als „Forced charging interval“. Diese Quellenabgrenzung ist dokumentiert. Echte Schreibtests dieser elf neuen Setter am Wattpilot Flex stehen noch aus.
+
+### Kontrollierter manueller Reconnect
+
+- `set <name> reconnect` verwirft die aktuelle lokale WebSocket-Sitzung kontrolliert und startet genau einen neuen Verbindungs- und Authentifizierungszyklus. Der Befehl sendet kein Wattpilot-Protokollkommando und ist ausdrücklich kein `fullStatus`-Request.
+- Sitzungsgebundene Timer, Authentifizierungs-, Teil-JSON- und Idle-Refresh-Zustände werden verworfen; Betriebsreadings, Definition, Seriennummer und Credentials bleiben erhalten. Ausstehende gesicherte Befehle enden mit `lastCommandStatus=failed` und `lastCommandError=reconnect requested`.
+- Lifecycle-Tests decken verbundene, getrennte, fehlgeschlagene, verbindungsaufbauende und authentifizierende Zustände, schnelle Wiederholungen, veraltete asynchrone Open-Callbacks, fehlende oder nicht lesbare Credentials, deaktivierte beziehungsweise inaktive Devices sowie die Interaktion mit dem Idle-Refresh ab. Die Tests bilden außerdem den aktuellen DevIo-Nebeneffekt nach, dass ein erfolgreicher asynchroner Open vor dem Modul-Callback den Framework-State auf `opened` setzt; veraltete Callbacks stellen danach zuverlässig `disabled` beziehungsweise `disconnected` wieder her oder übergeben genau einen wartenden Reconnect. Ein echter Reconnect-Test am Wattpilot Flex steht noch aus.
+
 ## [v2.0.4] - 2026-06-24
 
 ### PV-Überschuss-Startleistung
@@ -9,7 +24,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Das neue Reading `pvSurplusStartPower` gibt den nicht negativen, endlichen Zahlenwert aus dem Gerätefeld `fst` in Watt aus. Fehlende, `null`-, negative, nicht numerische oder nicht endliche Werte lassen ein vorhandenes Reading unverändert.
 - `set <name> pvSurplusStartPower <Watt>` sendet `fst` über den bestehenden gesicherten `setValue`-Pfad. Das Modul setzt keine unbelegte Obergrenze und übernimmt den angeforderten Wert nicht optimistisch; nur ein vom Gerät gelieferter Statuswert bestätigt das Reading. Ablehnung und Timeout bleiben über die vorhandenen Command-Status-Readings sichtbar.
 - Die Zuordnung und Schreibbarkeit stützen sich auf gepinnte offizielle go-e-API-Metadaten, gepinnte Wattpilot-spezifische Evidenz und den bereinigten Flex-43.4-Wert `fst=1400`. Dies wird nicht als offizielle Fronius-Flex-API-Spezifikation dargestellt.
-- Automatisierte Tests decken Full-/Delta-Status, Null-/Fehlertypen, Nullwert, Dezimalwerte, gesicherte Request-Kodierung sowie erfolgreiche, abgelehnte, unvollständige und typfalsche Responses ab. Ein echter Schreibtest am Wattpilot Flex einschließlich Wiederherstellung des Ausgangswerts steht vor dem Merge noch aus.
+- Automatisierte Tests decken Full-/Delta-Status, Null-/Fehlertypen, Nullwert, Dezimalwerte, gesicherte Request-Kodierung sowie erfolgreiche, abgelehnte, unvollständige und typfalsche Responses ab. Der Maintainer hat Lesen, Schreiben, Geräte-Rückmeldung und Wiederherstellung des Ausgangswerts anschließend mit FHEM und einem Wattpilot Flex mit Firmware 43.4 erfolgreich geprüft.
 
 ## [v2.0.3] - 2026-06-24
 

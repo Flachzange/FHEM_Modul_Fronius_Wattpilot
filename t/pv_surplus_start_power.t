@@ -93,6 +93,14 @@ for my $case (
         'setter uses the normal secured request correlation');
 }
 
+$hash = fresh_device();
+like(main::Wattpilot_Set(
+        $hash, 'pvStartWallbox', 'pvSurplusStartPower', 1400, 'extra'),
+    qr/^Usage:/,
+    'pvSurplusStartPower rejects an extra argument');
+is(scalar @DevIo::WRITES, 0,
+    'extra pvSurplusStartPower argument sends no frame');
+
 for my $invalid (undef, -1, 'NaN', 'Inf', '-Inf', 'abc', '1e9999') {
     $hash = fresh_device();
     my @args = ('pvStartWallbox', 'pvSurplusStartPower');
