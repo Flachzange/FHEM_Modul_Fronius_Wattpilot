@@ -4,7 +4,7 @@ no warnings 'once';
 
 use File::Basename qw(dirname);
 use File::Spec;
-use JSON qw(encode_json);
+use JSON qw(decode_json encode_json);
 use Test::More;
 
 our ($readingFnAttributes, %modules, %defs, %attr);
@@ -136,7 +136,7 @@ subtest 'interval zero disables electrical rate limiting' => sub {
         'latest valid unlimited nrg records its timestamp');
 };
 
-subtest 'battery-only deltas cannot starve nrg updates' => sub {
+subtest 'one nrg-led interval cycle publishes all volatile telemetry' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
@@ -151,32 +151,39 @@ subtest 'battery-only deltas cannot starve nrg updates' => sub {
         nrg => nrg(690),
     }), 'combined charging fullStatus is accepted');
     is($hash->{LAST_UPDATE}, 4_000,
-        'combined status records the nrg timestamp');
-    is($hash->{LAST_BATTERY_UPDATE}, 4_000,
-        'combined status independently records the battery timestamp');
+        'combined status establishes the one shared telemetry timestamp');
+    ok(!exists $hash->{LAST_BATTERY_UPDATE},
+        'no independent battery interval history exists');
 
+    my $updates_before_battery_delta = scalar @DevIo::READING_UPDATES;
     $DevIo::NOW = 4_030;
     ok(parse_status($hash, 'deltaStatus', {
         fbuf_akkuSOC => 50,
         fbuf_pAkku => -500,
         fbuf_akkuMode => 2,
-    }), 'battery-only delta at the electrical boundary is accepted');
-    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
-        'battery-only delta updates battery telemetry');
-    is($hash->{LAST_BATTERY_UPDATE}, 4_030,
-        'battery-only delta advances only battery history');
+    }), 'battery-only delta at the shared boundary is accepted');
+    is(reading_value($hash, 'pvBatteryPower'), '-400.00',
+        'battery-only delta is cached instead of publishing on a separate cadence');
+    is(scalar @DevIo::READING_UPDATES, $updates_before_battery_delta,
+        'battery-only delta produces no public reading update');
     is($hash->{LAST_UPDATE}, 4_000,
-        'battery-only delta does not consume the nrg interval');
+        'battery-only delta cannot consume the shared interval');
 
+    my $updates_before_nrg_delta = scalar @DevIo::READING_UPDATES;
     $DevIo::NOW = 4_031;
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(900) }),
         'subsequent charging nrg delta is accepted');
     is(reading_value($hash, 'power'), '900.00',
-        'valid nrg remains processable after a battery-only boundary delta');
+        'fresh nrg is published at the shared boundary');
+    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
+        'latest cached battery telemetry is published in the same update call');
     is($hash->{LAST_UPDATE}, 4_031,
-        'only valid nrg advances electrical history');
-    is($hash->{LAST_BATTERY_UPDATE}, 4_030,
-        'nrg processing leaves battery history unchanged');
+        'the nrg-led publication advances the one shared interval history');
+    my @cycle_readings = map { $_->[1] }
+        @DevIo::READING_UPDATES[$updates_before_nrg_delta .. $#DevIo::READING_UPDATES];
+    ok(grep($_ eq 'power', @cycle_readings)
+        && grep($_ eq 'pvBatteryPower', @cycle_readings),
+        'nrg and battery readings are emitted by the same readings transaction');
 };
 
 subtest 'invalid or incomplete nrg cannot consume the interval' => sub {
@@ -209,6 +216,38 @@ subtest 'invalid or incomplete nrg cannot consume the interval' => sub {
         'valid nrg following an incomplete array is processed');
     is($hash->{LAST_UPDATE}, 5_031,
         'the later valid nrg advances interval history');
+};
+
+subtest 'observed Flex 43.4 fullStatus uses the shared measurement cycle' => sub {
+    my $hash = fresh_device();
+    $attr{$hash->{NAME}}{interval} = 30;
+    $attr{$hash->{NAME}}{update_while_idle} = 1;
+
+    my $fixture_path = File::Spec->catfile(
+        $root, 't', 'fixtures', 'fullStatus-flex-observed.json');
+    open my $fixture_fh, '<:raw', $fixture_path
+        or die "Cannot read $fixture_path: $!";
+    local $/;
+    my $fixture = decode_json(<$fixture_fh>);
+    close $fixture_fh;
+
+    $DevIo::NOW = 5_500;
+    my $cycle_start = scalar @DevIo::READING_UPDATES;
+    ok(main::Wattpilot_DispatchMessage($hash, $fixture),
+        'sanitized observed Flex fullStatus is accepted');
+    is(reading_value($hash, 'voltageL1'), '230.00',
+        'observed Flex voltage is published while idle updates are enabled');
+    is(reading_value($hash, 'power'), '0.00',
+        'observed Flex total power is published');
+    is(reading_value($hash, 'pvBatteryPower'), '-1525.00',
+        'observed Flex battery power is published in the shared cycle');
+    is($hash->{LAST_UPDATE}, 5_500,
+        'observed Flex fullStatus establishes the shared cadence');
+    my @cycle = map { $_->[1] }
+        @DevIo::READING_UPDATES[$cycle_start .. $#DevIo::READING_UPDATES];
+    ok(grep($_ eq 'voltageL1', @cycle)
+        && grep($_ eq 'pvBatteryPower', @cycle),
+        'observed nrg and battery readings are emitted together');
 };
 
 subtest 'fullStatus, deltaStatus, and matched response share the nrg gate' => sub {
