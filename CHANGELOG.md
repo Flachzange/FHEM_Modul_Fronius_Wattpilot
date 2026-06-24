@@ -2,6 +2,15 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [v2.0.1] - 2026-06-24
+
+### Operative Status-Readings
+
+- Sieben neue öffentliche Readings geben die vom Gerät gelieferten Felder `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt` und `mca` als `chargingAllowed`, `chargingDecisionCode`, `chargingDecisionInternalCode`, `errorCode`, `maximumCurrentLimit`, `temperatureCurrentLimit` und `minimumChargingCurrent` aus.
+- `chargingAllowed` wird stabil als `0` oder `1` ausgegeben. Entscheidungs- und Fehlerwerte bleiben unveränderte Ganzzahlcodes; es wird bewusst keine unbestätigte Text-Enum eingeführt.
+- Die neuen Statuswerte werden unabhängig vom elektrischen `interval` und von `update_while_idle` sofort verarbeitet. Fehlende, `null`- oder typfalsche Felder löschen oder überschreiben vorhandene Readings nicht.
+- Es wurden keine neuen Set-Befehle oder Geräte-Konfigurationsattribute ergänzt.
+
 ## [v2.0.0] - 2026-06-23
 
 ### FHEM-Schnittstellenhärtung

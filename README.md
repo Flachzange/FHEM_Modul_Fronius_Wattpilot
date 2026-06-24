@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.0.0**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
+Aktuelle Modulversion: **2.0.1**. Dennis Gramespacher bleibt ursprünglicher Autor; Flachzange pflegt dieses Repository. Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md).
 
 ## Inkompatible Änderung in 2.0
 
@@ -218,7 +218,7 @@ Wählt das Verfahren für die Passwort-Verschlüsselung.
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 23 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 30 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
@@ -229,6 +229,13 @@ Das Modul stellt exakt folgende 23 öffentlichen Readings bereit:
 | `forceState` | `neutral`, `off`, `on` oder `unknown:<Rohwert>`. |
 | `chargingCurrent` | Konfigurierter/angeforderter Ladestrom; als Ampere interpretiert. |
 | `chargingMode` | `default`, `eco`, `nextTrip` oder `unknown:<Rohwert>`. |
+| `chargingAllowed` | Boolesches Feld `alw`, ausgegeben als `0` oder `1`. Die Bedeutung als aktuelle Ladefreigabe stammt aus gepinnter Wattpilot-Drittquellenevidenz; der Flex-Mitschnitt bestätigt Feld und Typ. |
+| `chargingDecisionCode` | Unveränderter Ganzzahlwert aus `modelStatus`; keine unbestätigte Text-Enum. |
+| `chargingDecisionInternalCode` | Unveränderter Ganzzahlwert aus `msi`; keine unbestätigte Text-Enum. |
+| `errorCode` | Unveränderter Ganzzahlwert aus `err`; keine unbestätigte Fehler-Enum. |
+| `maximumCurrentLimit` | Unveränderter Ganzzahlwert aus `ama`; als maximale Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
+| `temperatureCurrentLimit` | Unveränderter Ganzzahlwert aus `amt`; als temperaturbedingte Stromgrenze in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
+| `minimumChargingCurrent` | Unveränderter Ganzzahlwert aus `mca`; als Mindestladestrom in Ampere nur aufgrund gepinnter Drittquellenevidenz interpretiert. |
 | `nextTripTime` | Protokollwert als `HH:MM`; als Sekunden nach Mitternacht interpretiert. |
 | `energyTotal` | `eto / 1000`, mit zwei Nachkommastellen. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen. |
 | `energySincePlugIn` | `wh`, mit zwei Nachkommastellen; als Wh interpretiert. |
@@ -239,6 +246,8 @@ Das Modul stellt exakt folgende 23 öffentlichen Readings bereit:
 | `lastCommandRequestId` | Korrelations-ID des letzten gesicherten Befehls. |
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. |
+
+Die sieben operativen Status-Readings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte unverändert.
 
 Die Bedeutungen und Einheiten der verwendeten `nrg`-Positionen sowie die Einheiten von `eto` und `wh` sind Implementierungs- beziehungsweise historische Interpretationen. Der dokumentierte Flex-Mitschnitt bestätigt Struktur und Datentypen, aber nicht unabhängig alle Einheiten, Enum-Bedeutungen oder Schreibrechte.
 

@@ -26,14 +26,14 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 
 - Observed as a number with representative value `32` in the Flex capture.
 - Historical alias and meaning candidate: `chargingCurrent`, requested charging current in amperes.
-- Version 2.0.0 exposes `chargingCurrent`, accepts integer values 6–32 A, and sends `amp` through `setValue`.
+- Version 2.0.1 exposes `chargingCurrent`, accepts integer values 6–32 A, and sends `amp` through `setValue`.
 - Actual Flex 43.4 writability, full accepted range, and device-side validation were not established by a real command test.
 
 ### `frc`
 
 - Observed as a number with representative value `0`.
 - Pinned Wattpilot-specific evidence gives `0=Neutral`, `1=Off`, `2=On`.
-- Version 2.0.0 exposes `forceState` values `neutral`, `off`, and `on` and sends `0`, `1`, and `2` respectively.
+- Version 2.0.1 exposes `forceState` values `neutral`, `off`, and `on` and sends `0`, `1`, and `2` respectively.
 - The enum and write behavior have not been reproduced on the documented Flex device.
 
 ### `nrg`
@@ -41,6 +41,10 @@ Root [`API.md`](../API.md) is the stable entry point linking the empirical refer
 - Observed as an array with exactly 16 numeric elements.
 - Historical and implementation candidates assign voltage, current, phase power, total power, and power-factor positions.
 - The capture confirms the shape, not the index meanings or units.
+
+## Version 2.0.1 FHEM exposure boundary
+
+Version 2.0.1 exposes `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca` as public FHEM readings. This does not promote the historical aliases or units to official Flex facts. `chargingAllowed` is emitted as `0|1`; decision and error fields remain raw integer codes; current-limit fields remain raw integers with their ampere interpretation explicitly qualified as pinned third-party evidence. No write command is added for these fields.
 
 ## Charging, vehicle, and access fields
 

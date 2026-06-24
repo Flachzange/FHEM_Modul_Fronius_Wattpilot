@@ -100,7 +100,10 @@ for my $path (sort @test_files) {
 
 my @public_readings = qw(
     state firmwareVersion authHashMode carState forceState chargingCurrent
-    chargingMode nextTripTime energyTotal energySincePlugIn
+    chargingMode chargingAllowed chargingDecisionCode
+    chargingDecisionInternalCode errorCode maximumCurrentLimit
+    temperatureCurrentLimit minimumChargingCurrent nextTripTime
+    energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
     lastCommandStatus lastCommandError
@@ -165,7 +168,7 @@ for my $entry (@active_docs) {
     ok(defined($migration), "$label migration matrix is extractable");
     my $pairs = migration_pairs($migration // '');
     is(scalar keys %$pairs, scalar @migration_pairs,
-        "$label migration matrix contains exactly the complete 23-reading and five-command contract");
+        "$label migration matrix contains exactly the 23 historical reading mappings and five command mappings");
     for my $pair (@migration_pairs) {
         my ($old, $new) = @$pair;
         is($pairs->{$old . "\0" . $new}, 1,
