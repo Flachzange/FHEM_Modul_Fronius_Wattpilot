@@ -12,7 +12,10 @@
 # The GNU General Public License can be found at http://www.gnu.org/copyleft/gpl.html.
 # A copy of the license is distributed with this module as LICENSE.
 #
-# Author: Dennis Gramespacher
+# Original author: Dennis Gramespacher
+# Author of the version 2.x redesign and implementation: Flachzange
+# AI-assisted development support: OpenAI ChatGPT
+# Technical decisions and release responsibility: Flachzange
 #
 # Quellen / Referenzen:
 # 1. https://github.com/joscha82/wattpilot
@@ -33,7 +36,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.1';
+my $WATTPILOT_VERSION = '2.0.2';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -2071,10 +2074,11 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.1",
+  "version": "v2.0.2",
   "release_status": "testing",
   "author": [
-    "Dennis Gramespacher <>"
+    "Dennis Gramespacher <>",
+    "Flachzange <>"
   ],
   "license": [
     "gpl_2"
@@ -2112,6 +2116,15 @@ sub Wattpilot_WriteJson($$) {
     }
   },
   "x_fhem_module_name": "Wattpilot",
+  "x_fhem_original_author": [
+    "Dennis Gramespacher"
+  ],
+  "x_fhem_version_2_author": [
+    "Flachzange"
+  ],
+  "x_development_assistance": [
+    "OpenAI ChatGPT"
+  ],
   "x_fhem_maintainer": [
     "Flachzange"
   ],

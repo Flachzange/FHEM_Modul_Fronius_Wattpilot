@@ -18,6 +18,8 @@ This repository contains the FHEM module `Wattpilot` for local communication wit
 - Global subroutines use the `Wattpilot_` prefix.
 - License: GPL-2.0-or-later
 - Original author: Dennis Gramespacher
+- Version 2.x redesign and implementation: Flachzange
+- Development assistance for version 2.x: OpenAI ChatGPT (AI-assisted design, implementation, review, testing, and documentation; technical decisions and release responsibility remain with the maintainer)
 - Repository maintainer: Flachzange
 - Release status: testing / experimental
 - Embedded META is registered through `FHEM::Meta::InitMod`.

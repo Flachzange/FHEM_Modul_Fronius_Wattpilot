@@ -10,7 +10,7 @@ use JSON qw(decode_json);
 use Wattpilot::RepositoryCheck qw(contains_mojibake);
 
 my @required = qw(
-    72_Wattpilot.pm AGENTS.md ARCHITECTURE.md CHANGELOG.md TESTING.md
+    72_Wattpilot.pm AGENTS.md ARCHITECTURE.md AUTHORS.md CHANGELOG.md TESTING.md
     REVIEW-CHECKLIST.md .gitignore .github/pull_request_template.md
     .github/workflows/ci.yml t/72_Wattpilot.t t/lib/DevIo.pm
     t/lib/FHEM/Meta.pm t/repository_text_check.t t/architecture_guard.t

@@ -2,6 +2,15 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [v2.0.2] - 2026-06-24
+
+### Autorenschaft und Entwicklungsunterstützung im Modul
+
+- Der Modulheader weist Dennis Gramespacher als ursprünglichen Autor und Flachzange als Autor der Neuentwicklung und grundlegenden Überarbeitung der Version 2.x aus.
+- OpenAI ChatGPT wird im Modulheader und in den eingebetteten META-Daten als KI-gestützte Entwicklungsunterstützung genannt; technische Entscheidungen und Release-Verantwortung verbleiben bei Flachzange.
+- Die META-Autorenliste enthält Dennis Gramespacher und Flachzange. Zusätzliche `x_...`-Felder trennen ursprüngliche Autorenschaft, Version-2.x-Autorenschaft und Entwicklungsunterstützung eindeutig.
+- `AUTHORS.md`, beide READMEs und die Projektregeln dokumentieren dieselbe Zuordnung. Reload-Sicherheit innerhalb der 2.x-Reihe ist als grundsätzliches Kompatibilitätsziel festgeschrieben.
+
 ## [v2.0.1] - 2026-06-24
 
 ### Operative Status-Readings
@@ -12,6 +21,11 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Es wurden keine neuen Set-Befehle oder Geräte-Konfigurationsattribute ergänzt.
 
 ## [v2.0.0] - 2026-06-23
+
+### Autorenschaft und Entwicklungsunterstützung
+
+- Die Neuentwicklung und grundlegende Überarbeitung der Version 2.x stammt von Flachzange.
+- Architektur, Implementierung, Review, Tests und Dokumentation entstanden mit KI-Unterstützung durch OpenAI ChatGPT. Technische Entscheidungen und Release-Verantwortung verbleiben bei Flachzange. Dennis Gramespacher bleibt als ursprünglicher Autor des Moduls ausgewiesen.
 
 ### FHEM-Schnittstellenhärtung
 
