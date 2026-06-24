@@ -82,7 +82,11 @@ electrical-update gating, and `nrg` phase/total readings. Energy counters are
 processed before the gate; `interval` and `update_while_idle` apply only to the
 `nrg`-derived voltage, current, and power group. Missing partial-update fields
 never reset readings, and only real device-supplied zero values create zero
-readings.
+readings. `modelStatus` and `msi` each produce both an unmodified numeric code
+and a lowerCamelCase text reading. The text table is a compatibility mapping
+from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
+based on pinned Wattpilot-specific evidence that it is the internal variant of
+the same decision. Unknown numeric values remain explicit as `unknown:<code>`.
 
 The device Internal `VERSION` is module-owned. Define sets it from the central
 module version, and Initialize refreshes it for existing Wattpilot hashes during

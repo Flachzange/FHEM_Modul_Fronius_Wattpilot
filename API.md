@@ -4,7 +4,7 @@ This file is the stable entry point for the repository's JSON/WebSocket API docu
 
 ## Public FHEM interface
 
-The active public interface of version 2.0.3 is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands. The Internal `VERSION` reports the module version; wallbox firmware remains separate in `firmwareVersion`.
+The active public interface of version 2.0.3 is documented in the embedded English and German command reference in [`72_Wattpilot.pm`](72_Wattpilot.pm), with setup examples in [`README_en.md`](README_en.md) and [`README.md`](README.md). The protocol documents below describe evidence and internal protocol mappings; they do not define additional public readings or set commands. `chargingDecision` and `chargingDecisionInternal` are public convenience mappings of the corresponding raw code readings and retain `unknown:<code>` for unmapped values. The Internal `VERSION` reports the module version; wallbox firmware remains separate in `firmwareVersion`. `chargingDecisionCode` and `chargingDecisionInternalCode` retain the raw device values, while `chargingDecision` and `chargingDecisionInternal` expose a documented compatibility text mapping with explicit `unknown:<code>` fallbacks.
 
 Old 1.x public names appear only in explicit breaking-change or historical mapping sections. Version 2.0 provides no aliases or automatic migration for them.
 

@@ -100,8 +100,8 @@ for my $path (sort @test_files) {
 
 my @public_readings = qw(
     state firmwareVersion authHashMode carState forceState chargingCurrent
-    chargingMode chargingAllowed chargingDecisionCode
-    chargingDecisionInternalCode errorCode maximumCurrentLimit
+    chargingMode chargingAllowed chargingDecisionCode chargingDecision
+    chargingDecisionInternalCode chargingDecisionInternal errorCode maximumCurrentLimit
     temperatureCurrentLimit minimumChargingCurrent nextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3

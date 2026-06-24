@@ -45,8 +45,8 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 30,
-    'central reading definition contains all 30 public readings');
+is(scalar(keys %{$interface->{readings}}), 32,
+    'central reading definition contains all 32 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -59,7 +59,9 @@ is_deeply(
         charging_mode => 'chargingMode',
         charging_allowed => 'chargingAllowed',
         charging_decision_code => 'chargingDecisionCode',
+        charging_decision => 'chargingDecision',
         charging_decision_internal_code => 'chargingDecisionInternalCode',
+        charging_decision_internal => 'chargingDecisionInternal',
         error_code => 'errorCode',
         maximum_current_limit => 'maximumCurrentLimit',
         temperature_current_limit => 'temperatureCurrentLimit',
@@ -81,7 +83,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 30 public reading names match the 2.x contract');
+    'all 32 public reading names match the 2.x contract');
 is($interface->{readings}{car_state}, 'carState',
     'central reading definition exposes the 2.0 car-state name');
 is_deeply($interface->{carStates},
@@ -93,6 +95,44 @@ is_deeply($interface->{forceStates},
 is_deeply($interface->{chargingModes},
     { 3 => 'default', 4 => 'eco', 5 => 'nextTrip' },
     'central charging-mode labels expose the 2.0 contract');
+is_deeply($interface->{chargingDecisions},
+    {
+        0 => 'notChargingBecauseNoChargeCtrlData',
+        1 => 'notChargingBecauseOvertemperature',
+        2 => 'notChargingBecauseAccessControlWait',
+        3 => 'chargingBecauseForceStateOn',
+        4 => 'notChargingBecauseForceStateOff',
+        5 => 'notChargingBecauseScheduler',
+        6 => 'notChargingBecauseEnergyLimit',
+        7 => 'chargingBecauseAwattarPriceLow',
+        8 => 'chargingBecauseAutomaticStopTestLadung',
+        9 => 'chargingBecauseAutomaticStopNotEnoughTime',
+        10 => 'chargingBecauseAutomaticStop',
+        11 => 'chargingBecauseAutomaticStopNoClock',
+        12 => 'chargingBecausePvSurplus',
+        13 => 'chargingBecauseFallbackGoEDefault',
+        14 => 'chargingBecauseFallbackGoEScheduler',
+        15 => 'chargingBecauseFallbackDefault',
+        16 => 'notChargingBecauseFallbackGoEAwattar',
+        17 => 'notChargingBecauseFallbackAwattar',
+        18 => 'notChargingBecauseFallbackAutomaticStop',
+        19 => 'chargingBecauseCarCompatibilityKeepAlive',
+        20 => 'chargingBecauseChargePauseNotAllowed',
+        22 => 'notChargingBecauseSimulateUnplugging',
+        23 => 'notChargingBecausePhaseSwitch',
+        24 => 'notChargingBecauseMinPauseDuration',
+        26 => 'notChargingBecauseError',
+        27 => 'notChargingBecauseLoadManagementDoesntWant',
+        28 => 'notChargingBecauseOcppDoesntWant',
+        29 => 'notChargingBecauseReconnectDelay',
+        30 => 'notChargingBecauseAdapterBlocking',
+        31 => 'notChargingBecauseUnderfrequencyControl',
+        32 => 'notChargingBecauseUnbalancedLoad',
+        33 => 'chargingBecauseDischargingPvBattery',
+        34 => 'notChargingBecauseGridMonitoring',
+        35 => 'notChargingBecauseOcppFallback',
+    },
+    'central charging-decision labels expose the compatibility mapping');
 is($interface->{lifecycle}{credential_error}, 'credentialError',
     'central lifecycle definition exposes the 2.0 credential error value');
 is_deeply(
@@ -164,7 +204,9 @@ my %expected_reading = (
     chargingMode => 'eco',
     chargingAllowed => 0,
     chargingDecisionCode => 23,
+    chargingDecision => 'notChargingBecausePhaseSwitch',
     chargingDecisionInternalCode => 27,
+    chargingDecisionInternal => 'notChargingBecauseLoadManagementDoesntWant',
     errorCode => 0,
     maximumCurrentLimit => 32,
     temperatureCurrentLimit => 31,
