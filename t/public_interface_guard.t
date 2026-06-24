@@ -191,4 +191,26 @@ for my $entry (@active_docs) {
     }
 }
 
+my $readme_de = $active_docs[0][1];
+my $readme_en = $active_docs[1][1];
+like($commandref_en, qr/exact relationship, evaluation order, precedence, and any role of <code>cpDisabledRequest<\/code> are not confirmed/s,
+    'English commandref documents the unconfirmed modelStatus/msi relationship');
+like($commandref_en, qr/does not claim that <code>modelStatus<\/code> is necessarily the final\/effective decision/s,
+    'English commandref avoids a final-decision claim');
+like($commandref_de, qr/<code>cpDisabledRequest<\/code>.*Wattpilot Flex.*nicht best/s,
+    'German commandref documents the unconfirmed modelStatus/msi relationship');
+like($commandref_de, qr/<code>modelStatus<\/code>.*abschlie.*wirksame Entscheidung/s,
+    'German commandref avoids a final-decision claim');
+like($readme_en, qr/The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed/s,
+    'English README preserves the decision-field uncertainty');
+like($readme_de, qr/`cpDisabledRequest`.*Wattpilot Flex.*nicht best/s,
+    'German README preserves the decision-field uncertainty');
+
+my $protocol_doc = read_utf8(File::Spec->catfile($root, 'docs', 'WATTPILOT-FLEX-JSON-API.md'));
+like($protocol_doc, qr/no causal chain is inferred/s,
+    'Flex protocol documentation forbids an unsupported causal-chain inference');
+my $protocol_sources = read_utf8(File::Spec->catfile($root, 'docs', 'PROTOCOL-SOURCES.md'));
+like($protocol_sources, qr/differing values are retained as independent device-supplied diagnostics without inferring a causal chain/s,
+    'protocol provenance records the modelStatus/msi evidence limit');
+
 done_testing;
