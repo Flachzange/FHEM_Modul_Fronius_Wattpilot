@@ -36,7 +36,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.9';
+my $WATTPILOT_VERSION = '2.0.10';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -1754,12 +1754,39 @@ sub Wattpilot_SetPvBattery($@) {
     return Wattpilot_PvBatteryUsage($name);
 }
 
+sub Wattpilot_SetOptions() {
+    return join(' ',
+        $WATTPILOT_COMMAND_NAME{password},
+        "$WATTPILOT_COMMAND_NAME{force_state}:neutral,off,on",
+        "$WATTPILOT_COMMAND_NAME{charging_current}:slider,6,1,32",
+        "$WATTPILOT_COMMAND_NAME{charging_mode}:default,eco,nextTrip",
+        $WATTPILOT_COMMAND_NAME{pv_surplus_start_power},
+        "$WATTPILOT_COMMAND_NAME{pv_surplus_enabled}:0,1",
+        "$WATTPILOT_COMMAND_NAME{zero_feed_in_enabled}:0,1",
+        "$WATTPILOT_COMMAND_NAME{pv_control_preference}:preferFromGrid,default,preferToGrid",
+        "$WATTPILOT_COMMAND_NAME{phase_switch_mode}:auto,force1,force3",
+        $WATTPILOT_COMMAND_NAME{three_phase_switch_power},
+        $WATTPILOT_COMMAND_NAME{phase_switch_delay},
+        $WATTPILOT_COMMAND_NAME{minimum_phase_switch_interval},
+        $WATTPILOT_COMMAND_NAME{minimum_charge_time},
+        "$WATTPILOT_COMMAND_NAME{charging_pause_allowed}:0,1",
+        $WATTPILOT_COMMAND_NAME{minimum_charging_pause_duration},
+        $WATTPILOT_COMMAND_NAME{minimum_charging_interval},
+        "$WATTPILOT_COMMAND_NAME{reconnect}:noArg",
+        $WATTPILOT_COMMAND_NAME{pv_battery},
+        $WATTPILOT_COMMAND_NAME{next_trip_time},
+    );
+}
+
 sub Wattpilot_Set($@) {
     my ($hash, @a) = @_;
     my $name = $hash->{NAME};
     my $cmd = $a[1] // '';
     my $val = $a[2];
+    my $set_options = Wattpilot_SetOptions();
 
+    return "Unknown argument $cmd, choose one of $set_options"
+        if $cmd eq '?';
     return "Device is disabled" if(Wattpilot_IsDisabled($name));
 
     if ($cmd eq $WATTPILOT_COMMAND_NAME{reconnect}) {
@@ -1880,26 +1907,7 @@ sub Wattpilot_Set($@) {
         return undef;
     }
 
-    return "Unknown argument $cmd, choose one of "
-        . "$WATTPILOT_COMMAND_NAME{password} "
-        . "$WATTPILOT_COMMAND_NAME{force_state}:neutral,off,on "
-        . "$WATTPILOT_COMMAND_NAME{charging_current}:slider,6,1,32 "
-        . "$WATTPILOT_COMMAND_NAME{charging_mode}:default,eco,nextTrip "
-        . "$WATTPILOT_COMMAND_NAME{pv_surplus_start_power} "
-        . "$WATTPILOT_COMMAND_NAME{pv_surplus_enabled}:0,1 "
-        . "$WATTPILOT_COMMAND_NAME{zero_feed_in_enabled}:0,1 "
-        . "$WATTPILOT_COMMAND_NAME{pv_control_preference}:preferFromGrid,default,preferToGrid "
-        . "$WATTPILOT_COMMAND_NAME{phase_switch_mode}:auto,force1,force3 "
-        . "$WATTPILOT_COMMAND_NAME{three_phase_switch_power} "
-        . "$WATTPILOT_COMMAND_NAME{phase_switch_delay} "
-        . "$WATTPILOT_COMMAND_NAME{minimum_phase_switch_interval} "
-        . "$WATTPILOT_COMMAND_NAME{minimum_charge_time} "
-        . "$WATTPILOT_COMMAND_NAME{charging_pause_allowed}:0,1 "
-        . "$WATTPILOT_COMMAND_NAME{minimum_charging_pause_duration} "
-        . "$WATTPILOT_COMMAND_NAME{minimum_charging_interval} "
-        . "$WATTPILOT_COMMAND_NAME{reconnect} "
-        . "$WATTPILOT_COMMAND_NAME{pv_battery} "
-        . "$WATTPILOT_COMMAND_NAME{next_trip_time}";
+    return "Unknown argument $cmd, choose one of $set_options";
 }
 
 sub Wattpilot_SendSecure($$$) {
@@ -2462,6 +2470,7 @@ sub Wattpilot_WriteJson($$) {
   </ul>
   <p>Version 2.0.7 classifies every public reading. Stored or user-selectable configuration values use the exact <code>config</code> prefix; Set-command names remain unchanged. There are no compatibility aliases, duplicate readings, automatic reading cleanup, DbLog migration, or transition period. Old reading entries may remain stale in an existing FHEM device after reload and must be removed or avoided through a fresh definition.</p>
   <p>Version 2.0.9 consistently abbreviates state of charge as <code>SoC</code> in public reading names and renames <code>configPvBatteryDischargeEndTime</code> to <code>configPvBatteryDischargeStopTime</code>. No old-name aliases or migration are provided.</p>
+  <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list and returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled. Actual Set operations remain blocked while disabled.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2720,6 +2729,7 @@ sub Wattpilot_WriteJson($$) {
     <li>Alte namensbasierte Credential-Schlüssel werden weder gelesen noch gelöscht. Veröffentlichte 1.6.x-Versionen sind die letzte Linie mit dieser Upgrade-Unterstützung.</li>
   </ul>
   <p>Version 2.0.7 klassifiziert jedes öffentliche Reading. Gespeicherte oder vom Benutzer auswählbare Konfigurationswerte verwenden das feste Präfix <code>config</code>; die Namen der Set-Befehle bleiben unverändert. Es gibt keine Kompatibilitätsaliase, parallelen Readings, automatische Reading-Bereinigung, DbLog-Migration oder Übergangsfrist. Alte Reading-Einträge können nach einem Reload in einem bestehenden FHEM-Device als nicht mehr aktualisierte Werte erhalten bleiben und müssen manuell entfernt oder durch eine frische Definition vermieden werden.</p>
+  <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus und liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2966,7 +2976,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.9",
+  "version": "v2.0.10",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

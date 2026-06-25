@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.9 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.10 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.0.9; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.0.10; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.0.9 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.0.10 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -217,7 +217,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 
 ## Current FHEM 2.0 mapping
 
-The names below describe the current version-2.0.9 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.0.10 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |

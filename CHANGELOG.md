@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.0.10] - 2026-06-25
+
+### Korrekte FHEMWEB-Set-Liste
+
+- `reconnect` wird in der Set-Befehlsliste nun als `reconnect:noArg` veröffentlicht. FHEMWEB zeigt dadurch kein unnötiges Wertefeld für diesen argumentlosen Befehl an.
+- Die Set-Liste wird zentral durch `Wattpilot_SetOptions` erzeugt und sowohl für die normale Hilfe als auch für unbekannte Befehle verwendet.
+- `set <name> ?` wird vor der Laufzeitsperre für `disable=1` beantwortet. Dadurch erhält FHEMWEB auch bei deaktiviertem Device eine gültige Befehlsliste statt des Satzes `Device is disabled`, dessen Wörter zuvor als scheinbare Set-Befehle interpretiert wurden.
+- Tatsächliche Set-Befehle bleiben bei `disable=1` unverändert gesperrt.
+- Regressionstests prüfen die identische Befehlsliste im aktiven und deaktivierten Zustand, `reconnect:noArg` sowie das Fehlen der falschen Einträge `module`, `disabled` und `is`.
+
 ## [v2.0.9] - 2026-06-24
 
 ### Gruppierte PV-Speicher-Setter und konsistente SoC-Namen
