@@ -26,7 +26,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'legacyWallbox', TYPE => 'Wattpilot',
         FUUID => '00000000-0000-0000-0000-000000000027',
@@ -34,7 +33,6 @@ sub fresh_device {
         SERIAL => '10000001',
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'example-value';
     return $hash;
 }
@@ -58,7 +56,7 @@ is(main::Wattpilot_Define(
     'legacy profile definition succeeds');
 main::Wattpilot_Parse($hash, encode_json($fixture->{hello}));
 is($hash->{SERIAL}, '10000001', 'configured serial remains available for legacy PBKDF2');
-is($hash->{VERSION}, '2.0.10', 'legacy hello preserves the module VERSION Internal');
+is($hash->{VERSION}, '2.1.0', 'legacy hello preserves the module VERSION Internal');
 is($hash->{READINGS}{firmwareVersion}{VAL}, '36.3',
     'legacy hello exposes device firmware separately');
 is(main::Wattpilot_GetAuthHashMode($hash, $fixture->{authRequired}), 'pbkdf2',

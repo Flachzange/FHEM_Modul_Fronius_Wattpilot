@@ -5,8 +5,11 @@ script_dir=${0%/*}
 [ "$script_dir" = "$0" ] && script_dir=.
 cd "$script_dir/.."
 
-version=$(sed -n "s/^my \\\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
+version=$(awk -F"'" '/^my \$WATTPILOT_VERSION = / { print $2; exit }' 72_Wattpilot.pm)
 [ -n "$version" ] || { echo "Cannot determine module version" >&2; exit 1; }
+
+release_files=scripts/release-files.txt
+[ -f "$release_files" ] || { echo "Missing release file manifest: $release_files" >&2; exit 1; }
 
 epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}
 package="Wattpilot_v$version"
@@ -17,46 +20,51 @@ archive="dist/$package.zip"
 rm -rf dist
 mkdir -p "$package_dir"
 
-ci_raw="$package_dir/.validation-ci.raw"
-if ! sh scripts/ci.sh > "$ci_raw" 2>&1; then
-    cat "$ci_raw"
-    exit 1
+if [ "${WATTPILOT_SKIP_SOURCE_CI:-0}" = 1 ]; then
+    printf '%s\n' 'source_ci=prevalidated' > "$package_dir/validation-ci.txt"
+else
+    ci_raw="$package_dir/.validation-ci.raw"
+    if ! sh scripts/ci.sh > "$ci_raw" 2>&1; then
+        cat "$ci_raw"
+        exit 1
+    fi
+    sed -E 's/^(Files=[0-9]+, Tests=[0-9]+),.*$/\1/' "$ci_raw" > "$package_dir/validation-ci.txt"
+    rm "$ci_raw"
 fi
-sed -E 's/^(Files=[0-9]+, Tests=[0-9]+),.*$/\1/' "$ci_raw" > "$package_dir/validation-ci.txt"
-rm "$ci_raw"
 cat "$package_dir/validation-ci.txt"
 
-for file in 72_Wattpilot.pm API.md ARCHITECTURE.md AUTHORS.md README.md README_en.md CHANGELOG.md TESTING.md REVIEW-CHECKLIST.md LICENSE; do
+while IFS= read -r file || [ -n "$file" ]; do
+    case "$file" in ''|'#'*) continue ;; esac
+    [ -f "$file" ] || { echo "Missing release source: $file" >&2; exit 1; }
+    mkdir -p "$package_dir/$(dirname "$file")"
     cp "$file" "$package_dir/$file"
-done
-mkdir -p "$package_dir/docs" "$package_dir/t/fixtures"
-cp docs/*.md "$package_dir/docs/"
-cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json t/fixtures/legacy-protocol2-session.json t/fixtures/pv-battery-settings-flex-43.4.json "$package_dir/t/fixtures/"
+done < "$release_files"
 cp 72_Wattpilot.pm "$standalone"
 
-cat > "$package_dir/validation-build.txt" <<EOF
+cat > "$package_dir/validation-build.txt" <<EOF2
 version=$version
 source_date_epoch=$epoch
 source_commit=$(git rev-parse HEAD)
-EOF
+EOF2
+
+{
+    sed '/^[[:space:]]*$/d; /^[[:space:]]*#/d' "$release_files"
+    printf '%s\n' validation-ci.txt validation-build.txt MANIFEST SHA256SUMS
+} | LC_ALL=C sort -u > "$package_dir/MANIFEST"
 
 (
     cd "$package_dir"
-    find . -type f -print | sed 's#^./##' | LC_ALL=C sort
-    printf '%s\n' MANIFEST SHA256SUMS
-) | LC_ALL=C sort -u > "$package_dir/MANIFEST"
-
-(
-    cd "$package_dir"
-    find . -type f ! -name SHA256SUMS -print | sed 's#^./##' | LC_ALL=C sort |
-        while IFS= read -r file; do sha256sum "$file"; done
+    while IFS= read -r file; do
+        [ "$file" = SHA256SUMS ] && continue
+        sha256sum "$file"
+    done < MANIFEST
 ) > "$package_dir/SHA256SUMS"
 
 find dist -exec touch -d "@$epoch" {} +
 perl scripts/create_zip.pl "$package_dir" "$archive" "$epoch"
 sha256sum "$archive" > "$archive.sha256"
 
-if ! sh scripts/verify-release.sh "$version" > "dist/verification-output.txt" 2>&1; then
+if ! WATTPILOT_SKIP_SOURCE_CI=1 sh scripts/verify-release.sh "$version" > "dist/verification-output.txt" 2>&1; then
     cat "dist/verification-output.txt"
     exit 1
 fi

@@ -15,7 +15,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'interfaceWallbox',
         TYPE => 'Wattpilot',
@@ -26,7 +25,6 @@ sub fresh_device {
         TEST_OPEN => 1,
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     return $hash;
 }
 

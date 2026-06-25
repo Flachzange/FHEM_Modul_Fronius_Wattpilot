@@ -13,7 +13,7 @@ my @required = qw(
     72_Wattpilot.pm AGENTS.md ARCHITECTURE.md AUTHORS.md CHANGELOG.md TESTING.md
     REVIEW-CHECKLIST.md .gitignore .github/pull_request_template.md
     .github/workflows/ci.yml t/72_Wattpilot.t t/lib/DevIo.pm
-    t/lib/FHEM/Meta.pm t/repository_text_check.t t/architecture_guard.t
+    t/lib/FHEM/Meta.pm t/repository_text_check.t t/architecture_guard.t t/release_tooling.t
     t/fixtures/fullStatus-flex-43.4.json
     t/fixtures/deltaStatus-flex-43.4.json scripts/ci.sh
     t/fixtures/fullStatus-flex-observed.json t/fixtures/README.md
@@ -23,7 +23,7 @@ my @required = qw(
     t/operational_status_readings.t t/runtime_fixes_2_0_3.t
     scripts/check_commandref.pl scripts/check_repository.pl
     scripts/check_meta.pl scripts/build-release.sh scripts/verify-release.sh
-    scripts/create_zip.pl scripts/check_reproducible_release.sh
+    scripts/create_zip.pl scripts/check_reproducible_release.sh scripts/release-files.txt
     scripts/lib/Wattpilot/RepositoryCheck.pm
     docs/PROTOCOL-SOURCES.md docs/WATTPILOT-FLEX-JSON-API.md
     docs/PROTOCOL-CONFLICTS.md docs/READING-CATEGORIES.md
@@ -31,6 +31,31 @@ my @required = qw(
 
 my @missing = grep { !-f $_ } @required;
 die "Missing required files: @missing\n" if @missing;
+
+
+open my $release_fh, '<:encoding(UTF-8)', 'scripts/release-files.txt'
+    or die "Cannot read release file manifest: $!\n";
+my @release_files;
+while (my $line = <$release_fh>) {
+    chomp $line;
+    next if $line =~ /^\s*(?:#|$)/;
+    die "Invalid release path '$line'\n"
+        if $line =~ m{^/|(?:^|/)\.\.(?:/|$)};
+    push @release_files, $line;
+}
+close $release_fh;
+my %release_seen;
+my @release_duplicates = grep { $release_seen{$_}++ } @release_files;
+die "Duplicate release files: @release_duplicates\n" if @release_duplicates;
+my @release_missing = grep { !-f $_ } @release_files;
+die "Missing release sources: @release_missing\n" if @release_missing;
+for my $required_release (
+    qw(72_Wattpilot.pm AUTHORS.md docs/READING-CATEGORIES.md)
+) {
+    die "Required release source is not in scripts/release-files.txt: "
+        . "$required_release\n"
+        unless $release_seen{$required_release};
+}
 
 open my $git_fh, '-|', 'git', 'ls-files', '-z', '--'
     or die "Cannot list tracked files: $!\n";
@@ -132,5 +157,36 @@ local $/;
 my $ignore = <$ignore_fh>;
 close $ignore_fh;
 die "dist/ must remain ignored\n" unless $ignore =~ m{^/dist/\s*$}m;
+
+open my $module_fh, '<:encoding(UTF-8)', '72_Wattpilot.pm'
+    or die "Cannot read module for version checks: $!\n";
+my $module_source = do { local $/; <$module_fh> };
+close $module_fh;
+my ($version) = $module_source
+    =~ /^my \$WATTPILOT_VERSION = '([^']+)';/m;
+die "Missing module version\n" unless defined $version;
+die "Embedded META version differs from module version\n"
+    unless $module_source =~ /"version"\s*:\s*"v\Q$version\E"/;
+
+open my $changelog_fh, '<:encoding(UTF-8)', 'CHANGELOG.md'
+    or die "Cannot read changelog: $!\n";
+my $changelog = do { local $/; <$changelog_fh> };
+close $changelog_fh;
+die "Current changelog heading differs from module version\n"
+    unless $changelog =~ /^## \[v\Q$version\E\]/m;
+
+for my $readme (
+    qw(
+        README.md README_en.md API.md docs/READING-CATEGORIES.md
+        docs/WATTPILOT-FLEX-JSON-API.md
+    )
+) {
+    open my $version_fh, '<:encoding(UTF-8)', $readme
+        or die "Cannot read $readme for version checks: $!\n";
+    my $text = do { local $/; <$version_fh> };
+    close $version_fh;
+    die "$readme does not mention current version $version\n"
+        unless index($text, $version) >= 0;
+}
 
 print "Repository and UTF-8 checks passed (" . scalar(@maintained_text) . " maintained text files)\n";

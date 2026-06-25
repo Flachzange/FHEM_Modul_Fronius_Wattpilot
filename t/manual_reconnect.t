@@ -16,7 +16,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     $DevIo::NOW = 1000;
     my $hash = {
         NAME => 'reconnectWallbox',
@@ -33,7 +32,6 @@ sub fresh_device {
         },
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} =
         'synthetic-reconnect-password';
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} =

@@ -3,9 +3,9 @@ package DevIo;
 use strict;
 use warnings;
 
-our $FHEM_SOURCE_REVISION = 'fd552d5ca20ab5745575de1c752c75a9392e1946';
-our $FHEM_TIMER_SOURCE_REVISION = 'fd552d5ca20ab5745575de1c752c75a9392e1946';
-our $FHEM_ATTR_SOURCE_REVISION = 'b7d60838a845b19cc8e54ce0cdc4a8eda27ad105';
+our $FHEM_SOURCE_REVISION = '0ae38bf79d19d8d598c065bf84b3990b33063c4b';
+our $FHEM_TIMER_SOURCE_REVISION = '0ae38bf79d19d8d598c065bf84b3990b33063c4b';
+our $FHEM_ATTR_SOURCE_REVISION = '0ae38bf79d19d8d598c065bf84b3990b33063c4b';
 our $NOW;
 our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
@@ -52,6 +52,23 @@ sub command_attr {
     $main::attr{$name}{$attribute} = $value;
     return undef;
 }
+
+# Models fhem.pl CommandModify at the pinned revision: OLDDEF and the new DEF
+# are installed before DefFn is called, and only DEF is restored on a veto.
+sub command_modify {
+    my ($name, $new_def) = @_;
+    return "Define $name first" if !defined $main::defs{$name};
+    my $hash = $main::defs{$name};
+    $hash->{OLDDEF} = $hash->{DEF};
+    $hash->{DEF} = $new_def;
+    my $definition = "$name $hash->{TYPE}";
+    $definition .= " $new_def" if defined($new_def) && $new_def ne '';
+    my $reply = main::Wattpilot_Define($hash, $definition);
+    $hash->{DEF} = $hash->{OLDDEF} if defined($reply) && $reply ne '';
+    delete $hash->{OLDDEF};
+    return $reply;
+}
+
 
 # Models fhem.pl CommandRename at the pinned revision: framework-owned hashes
 # and attributes move before RenameFn, and the callback reply is discarded.

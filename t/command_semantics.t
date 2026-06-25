@@ -14,7 +14,6 @@ require File::Spec->catfile($root, '72_Wattpilot.pm');
 sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'testWallbox', TYPE => 'Wattpilot',
         FUUID => '00000000-0000-0000-0000-000000000008',
@@ -22,7 +21,6 @@ sub fresh_device {
         TEST_OPEN => 1, helper => { authenticated => 1 },
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
     return $hash;
 }

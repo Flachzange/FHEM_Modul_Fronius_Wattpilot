@@ -246,7 +246,7 @@ like($protocol_sources, qr/No pinned Wattpilot-specific source documents a <code
     'protocol provenance records the missing fullStatus request evidence');
 
 my $testing_doc = read_utf8(File::Spec->catfile($root, 'TESTING.md'));
-like($testing_doc, qr/fd552d5ca20ab5745575de1c752c75a9392e1946/s,
+like($testing_doc, qr/0ae38bf79d19d8d598c065bf84b3990b33063c4b/s,
     'testing documentation records the current FHEM source audit revision');
 like($testing_doc, qr/successful asynchronous .*opened.*before invoking the module callback/is,
     'testing documentation records the audited DevIo opened-before-callback side effect');

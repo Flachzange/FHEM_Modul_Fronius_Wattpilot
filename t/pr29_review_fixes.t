@@ -16,7 +16,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'reviewWallbox', TYPE => 'Wattpilot',
         FUUID => '00000000-0000-0000-0000-000000000029',
@@ -24,7 +23,6 @@ sub fresh_device {
         SERIAL => '10000029', TEST_OPEN => 1,
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     return $hash;
 }
 

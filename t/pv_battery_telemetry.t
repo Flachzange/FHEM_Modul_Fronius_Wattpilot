@@ -16,7 +16,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'batteryWallbox',
         TYPE => 'Wattpilot',
@@ -27,7 +26,6 @@ sub fresh_device {
         helper => { authenticated => 1 },
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     $attr{$hash->{NAME}}{update_while_idle} = 1;
     return $hash;
 }

@@ -17,10 +17,8 @@
 # AI-assisted development support: OpenAI ChatGPT
 # Technical decisions and release responsibility: Flachzange
 #
-# Quellen / Referenzen:
-# 1. https://github.com/joscha82/wattpilot
-# 2. https://wiki.fhem.de/wiki/Websocket
-# 3. https://github.com/tim2zg/ioBroker.fronius-wattpilot
+# Protocol-source provenance and confidence boundaries are maintained in
+# docs/PROTOCOL-SOURCES.md.
 ##############################################
 
 package main;
@@ -28,7 +26,12 @@ package main;
 use strict;
 use warnings;
 use bytes ();
-use B qw(svref_2object SVf_POK SVp_POK);
+use B qw(
+    svref_2object
+    SVf_POK SVp_POK
+    SVf_IOK SVp_IOK
+    SVf_NOK SVp_NOK
+);
 use DevIo;
 use FHEM::Meta;
 use JSON;
@@ -36,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.0.10';
+my $WATTPILOT_VERSION = '2.1.0';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -45,6 +48,45 @@ my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
+my %WATTPILOT_STATUS_SCHEMA = (
+    car         => { kind => 'integer' },
+    frc         => { kind => 'integer' },
+    ftt         => { kind => 'clock_seconds', allow_end_of_day => 0 },
+    amp         => { kind => 'integer' },
+    lmo         => { kind => 'integer' },
+    modelStatus => { kind => 'integer' },
+    msi         => { kind => 'integer' },
+    err         => { kind => 'integer' },
+    ama         => { kind => 'integer' },
+    amt         => { kind => 'integer' },
+    mca         => { kind => 'integer' },
+    frm         => { kind => 'integer' },
+    psm         => { kind => 'integer' },
+    fbuf_akkuMode => { kind => 'nonnegative_integer' },
+    eto         => { kind => 'number' },
+    wh          => { kind => 'number' },
+    fbuf_pAkku  => { kind => 'number' },
+    fbuf_akkuSOC => { kind => 'percentage' },
+    fam         => { kind => 'percentage' },
+    pdt         => { kind => 'percentage' },
+    fst         => { kind => 'nonnegative_number' },
+    spl3        => { kind => 'nonnegative_number' },
+    mpwst       => { kind => 'nonnegative_number' },
+    mptwt       => { kind => 'nonnegative_number' },
+    fmt         => { kind => 'nonnegative_number' },
+    mcpd        => { kind => 'nonnegative_number' },
+    mci         => { kind => 'nonnegative_number' },
+    pdls        => { kind => 'clock_seconds', allow_end_of_day => 0 },
+    pdlo        => { kind => 'clock_seconds', allow_end_of_day => 1 },
+    alw         => { kind => 'boolean' },
+    fup         => { kind => 'boolean' },
+    fzf         => { kind => 'boolean' },
+    fap         => { kind => 'boolean' },
+    pdte        => { kind => 'boolean' },
+    pdle        => { kind => 'boolean' },
+    nrg         => { kind => 'nrg' },
+);
+
 my %WATTPILOT_READING_NAME = (
     state                   => 'state',
     firmware_version        => 'firmwareVersion',
@@ -319,12 +361,8 @@ sub Wattpilot_Initialize($) {
     $hash->{ReadyFn}  = \&Wattpilot_Ready;
     $hash->{ShutdownFn} = \&Wattpilot_Shutdown;
     
-    # Attribut-Liste:
-    # interval: Schieberegler von 0 bis 300, Schrittweite 5 (Sekunden)
-    # update_while_idle: Boolean (0/1) um Updates auch im Leerlauf zu erzwingen
-    # defaultAmp: Standard-Stromstärke (kann als Slider dargestellt werden, z.B. 6-32A)
-    $hash->{AttrList} = "debug:1,0 interval:slider,0,5,300 update_while_idle:0,1 defaultAmp:slider,6,1,32 disable:0,1 rawJsonLog:0,1 authHash:auto,pbkdf2,bcrypt authHashCost:slider,4,1,14 " .
-	$readingFnAttributes;
+    $hash->{AttrList} = "interval:slider,0,5,300 update_while_idle:0,1 disable:0,1 rawJsonLog:0,1 authHash:auto,pbkdf2,bcrypt authHashCost:slider,4,1,14 " .
+        $readingFnAttributes;
 
     return FHEM::Meta::InitMod(__FILE__, $hash);
 }
@@ -500,40 +538,86 @@ sub Wattpilot_FinishTimer($$) {
         && ($hash->{helper}{timers}{$ctx->{kind}} // undef) == $ctx;
 }
 
-sub Wattpilot_Define($$) {
-    my ($hash, $def) = @_;
+sub Wattpilot_ParseDefinition($) {
+    my ($def) = @_;
     my @a = split("[ \t][ \t]*", $def);
 
-    if(@a < 3 || @a > 4) {
-        return "Usage: define <name> Wattpilot <IP> [Serial]";
-    }
+    return (undef, "Usage: define <name> Wattpilot <IP> [Serial]")
+        if @a < 3 || @a > 4;
 
-    my $name = $a[0];
-    my $ip = $a[2];
-    my $serial = $a[3] if (defined $a[3]);
-    if (defined($serial) && $serial !~ /^\d+$/) {
-        return "Serial must contain digits only";
+    my $serial = $a[3] if defined $a[3];
+    return (undef, "Serial must contain digits only")
+        if defined($serial) && $serial !~ /^\d+$/;
+
+    return ({
+        name => $a[0],
+        device_name => "ws:$a[2]:80/ws",
+        serial => $serial,
+    }, undef);
+}
+
+sub Wattpilot_SameOptionalScalar($$) {
+    my ($left, $right) = @_;
+    return 1 if !defined($left) && !defined($right);
+    return 0 if !defined($left) || !defined($right);
+    return $left eq $right;
+}
+
+sub Wattpilot_ClearDefinitionSessionState($) {
+    my ($hash) = @_;
+    Wattpilot_StopIdleRefresh($hash);
+    delete $hash->{helper}{idleRefreshAttempted};
+    delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
+    delete $hash->{helper}{pendingReconnectAfterOpen};
+    delete $hash->{helper}{car_state};
+    delete $hash->{LAST_UPDATE};
+}
+
+sub Wattpilot_Define($$) {
+    my ($hash, $def) = @_;
+    my ($definition, $error) = Wattpilot_ParseDefinition($def);
+    return $error if defined $error;
+
+    my $is_modify = exists $hash->{OLDDEF};
+    my $old_device_name = $hash->{DeviceName};
+    my $old_serial = $hash->{SERIAL};
+    my $definition_changed = !$is_modify
+        || !Wattpilot_SameOptionalScalar(
+            $old_device_name, $definition->{device_name})
+        || !Wattpilot_SameOptionalScalar(
+            $old_serial, $definition->{serial});
+
+    if ($is_modify && $definition_changed) {
+        Wattpilot_AbortPendingRequests($hash, 'definition changed');
+        Wattpilot_ClearDefinitionSessionState($hash);
+        Wattpilot_InvalidateSession($hash, {
+            devioName => $hash->{NAME},
+            devioDevice => $old_device_name,
+        });
+    } elsif (!$is_modify) {
+        Wattpilot_NextLifecycleGeneration($hash);
     }
 
     delete $hash->{helper}{undefined};
     delete $hash->{helper}{deleting};
     delete $hash->{helper}{shuttingDown};
     delete $hash->{helper}{timeoutRetryUsed};
-    Wattpilot_NextLifecycleGeneration($hash);
 
-    # DevIo WebSocket URL Format: ws:host:port/path
-    $hash->{DeviceName} = "ws:$ip:80/ws";
+    $hash->{DeviceName} = $definition->{device_name};
     $hash->{VERSION} = $WATTPILOT_VERSION;
-    $hash->{SERIAL} = $serial;
+    if (defined $definition->{serial}) {
+        $hash->{SERIAL} = $definition->{serial};
+    } else {
+        delete $hash->{SERIAL};
+    }
+
     # DevIo privacy masks only its initial opening line. devioLoglevel reduces
     # direct DevIo diagnostics, but cannot control transitive HttpUtils logs.
     $hash->{devioLoglevel} = 6;
-
-    # WebSocket spezifische Header
     $hash->{header}{'User-Agent'} = 'FHEM';
 
-    $modules{Wattpilot}{defptr}{$name} = $hash;
-    Wattpilot_ApplyConfiguredState($hash, 2);
+    Wattpilot_ApplyConfiguredState($hash, 2)
+        if !$is_modify || $definition_changed;
     return undef;
 }
 
@@ -544,7 +628,6 @@ sub Wattpilot_Undefine($$) {
     Wattpilot_InvalidateSession($hash);
     RemoveInternalTimer($hash);
 
-    delete $modules{Wattpilot}{defptr}{$name};
     return undef;
 }
 
@@ -562,7 +645,6 @@ sub Wattpilot_Delete($$) {
 sub Wattpilot_RestoreAfterFailedDelete($$) {
     my ($hash, $name) = @_;
 
-    $modules{Wattpilot}{defptr}{$name} = $hash;
     delete $hash->{helper}{undefined};
     delete $hash->{helper}{deleting};
     delete $hash->{helper}{shuttingDown};
@@ -594,8 +676,6 @@ sub Wattpilot_Rename($$) {
             : $hash->{DeviceName},
     });
 
-    delete $modules{Wattpilot}{defptr}{$old_name};
-    $modules{Wattpilot}{defptr}{$new_name} = $hash;
     Wattpilot_ApplyConfiguredState($hash, 1, undef, $was_active);
     return undef; # CommandRename ignores RenameFn replies in the audited FHEM revision.
 }
@@ -837,11 +917,44 @@ sub Wattpilot_IsScalarString($) {
     return defined($value) && !ref($value);
 }
 
-sub Wattpilot_IsJsonString($) {
+sub Wattpilot_ScalarFlags($) {
     my ($value) = @_;
     return 0 if !defined($value) || ref($value);
-    my $flags = svref_2object(\$value)->FLAGS;
+    return svref_2object(\$value)->FLAGS;
+}
+
+sub Wattpilot_IsJsonString($) {
+    my ($value) = @_;
+    my $flags = Wattpilot_ScalarFlags($value);
     return ($flags & (SVf_POK | SVp_POK)) ? 1 : 0;
+}
+
+sub Wattpilot_IsJsonNumber($) {
+    my ($value) = @_;
+    my $flags = Wattpilot_ScalarFlags($value);
+    return 0 if !$flags;
+    return 0 if $flags & (SVf_POK | SVp_POK);
+    return ($flags & (SVf_IOK | SVp_IOK | SVf_NOK | SVp_NOK)) ? 1 : 0;
+}
+
+sub Wattpilot_ParseJsonFiniteNumber($) {
+    my ($value) = @_;
+    return undef if !Wattpilot_IsJsonNumber($value);
+    my $number = 0 + $value;
+    return undef if "$number" =~ /(?:inf|nan)/i;
+    return $number;
+}
+
+sub Wattpilot_IsJsonInteger($) {
+    my ($value) = @_;
+    my $number = Wattpilot_ParseJsonFiniteNumber($value);
+    return 0 if !defined $number;
+    return $number == int($number) ? 1 : 0;
+}
+
+sub Wattpilot_IsJsonBoolean($) {
+    my ($value) = @_;
+    return JSON::is_bool($value) ? 1 : 0;
 }
 
 sub Wattpilot_MessageTypeForLog($) {
@@ -853,6 +966,8 @@ sub Wattpilot_MessageTypeForLog($) {
     return $type;
 }
 
+# User-entered Set values arrive as strings. These parsers are intentionally
+# separate from the exact JSON-type validators used for incoming messages.
 sub Wattpilot_IsNumber($) {
     my ($value) = @_;
     return 0 if !Wattpilot_IsScalarString($value);
@@ -912,24 +1027,57 @@ sub Wattpilot_ParseClockTimeToSeconds($$) {
     return ($hours * 3600) + ($minutes * 60);
 }
 
-sub Wattpilot_SecondsSinceMidnightToTime($) {
-    my ($value) = @_;
-    return undef if !Wattpilot_IsInteger($value);
-    return undef if $value < 0 || $value > 86400 || $value % 60 != 0;
+sub Wattpilot_SecondsSinceMidnightToTime($;$) {
+    my ($value, $allow_end_of_day) = @_;
+    $allow_end_of_day = 1 if !defined $allow_end_of_day;
+    return undef if !Wattpilot_IsJsonInteger($value);
+    my $maximum = $allow_end_of_day ? 86400 : 86340;
+    return undef if $value < 0 || $value > $maximum || $value % 60 != 0;
     my $hours = int($value / 3600);
     my $minutes = int(($value % 3600) / 60);
     return sprintf("%02d:%02d", $hours, $minutes);
 }
 
-sub Wattpilot_IsInteger($) {
-    my ($value) = @_;
-    return Wattpilot_IsScalarString($value) && $value =~ /^-?(?:0|[1-9]\d*)$/;
-}
+sub Wattpilot_NormalizeStatusValue($$) {
+    my ($value, $spec) = @_;
+    my $kind = $spec->{kind};
 
-sub Wattpilot_IsBoolean($) {
-    my ($value) = @_;
-    return 1 if JSON::is_bool($value);
-    return Wattpilot_IsScalarString($value) && $value =~ /^(?:0|1)$/;
+    if ($kind eq 'integer' || $kind eq 'nonnegative_integer') {
+        return undef if !Wattpilot_IsJsonInteger($value);
+        my $normalized = int($value);
+        return undef if $kind eq 'nonnegative_integer' && $normalized < 0;
+        return $normalized;
+    }
+
+    if ($kind eq 'number' || $kind eq 'nonnegative_number'
+        || $kind eq 'percentage') {
+        my $normalized = Wattpilot_ParseJsonFiniteNumber($value);
+        return undef if !defined $normalized;
+        return undef if $kind ne 'number' && $normalized < 0;
+        return undef if $kind eq 'percentage' && $normalized > 100;
+        return $normalized;
+    }
+
+    if ($kind eq 'clock_seconds') {
+        return undef if !Wattpilot_IsJsonInteger($value);
+        my $maximum = $spec->{allow_end_of_day} ? 86400 : 86340;
+        return undef if $value < 0 || $value > $maximum || $value % 60 != 0;
+        return int($value);
+    }
+
+    if ($kind eq 'boolean') {
+        return Wattpilot_IsJsonBoolean($value) ? $value : undef;
+    }
+
+    if ($kind eq 'nrg') {
+        return undef if ref($value) ne 'ARRAY' || @$value < 12;
+        for my $entry (@$value[0 .. 11]) {
+            return undef if !defined Wattpilot_ParseJsonFiniteNumber($entry);
+        }
+        return [@$value];
+    }
+
+    die "Unknown Wattpilot status schema kind: $kind";
 }
 
 sub Wattpilot_NormalizeStatus($$) {
@@ -937,105 +1085,22 @@ sub Wattpilot_NormalizeStatus($$) {
     return undef if ref($input_status) ne 'HASH';
 
     my %status = %$input_status;
-    my %integer = map { $_ => 1 } qw(
-        car frc ftt amp lmo modelStatus msi err ama amt mca frm psm
-    );
-    my %nonnegative_integer = map { $_ => 1 } qw(fbuf_akkuMode);
-    my %number = map { $_ => 1 } qw(eto wh);
-    my %finite_number = map { $_ => 1 } qw(fbuf_pAkku);
-    my %percentage = map { $_ => 1 } qw(fbuf_akkuSOC fam pdt);
-    my %nonnegative_number = map { $_ => 1 } qw(
-        fst spl3 mpwst mptwt fmt mcpd mci
-    );
-    my %seconds_since_midnight = map { $_ => 1 } qw(pdls pdlo);
-    my %boolean = map { $_ => 1 } qw(alw fup fzf fap pdte pdle);
-    for my $key (keys %integer) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        if (!Wattpilot_IsInteger($status{$key})) {
+    for my $key (keys %WATTPILOT_STATUS_SCHEMA) {
+        next if !exists $status{$key};
+        if (!defined $status{$key}) {
+            delete $status{$key};
+            next;
+        }
+
+        my $normalized = Wattpilot_NormalizeStatusValue(
+            $status{$key}, $WATTPILOT_STATUS_SCHEMA{$key});
+        if (!defined $normalized) {
             Log3 $hash->{NAME}, 2,
                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
             delete $status{$key};
+            next;
         }
-    }
-    for my $key (keys %nonnegative_integer) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        if (!Wattpilot_IsInteger($status{$key}) || $status{$key} < 0) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        }
-    }
-    for my $key (keys %number) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        if (!Wattpilot_IsNumber($status{$key})) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        }
-    }
-    for my $key (keys %finite_number) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        my $value = Wattpilot_ParseFiniteNumber($status{$key});
-        if (!defined($value)) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        } else {
-            $status{$key} = $value;
-        }
-    }
-    for my $key (keys %percentage) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        my $value = Wattpilot_ParsePercentage($status{$key});
-        if (!defined($value)) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        } else {
-            $status{$key} = $value;
-        }
-    }
-    for my $key (keys %nonnegative_number) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        my $value = Wattpilot_ParseFiniteNonNegativeNumber($status{$key});
-        if (!defined($value)) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        } else {
-            $status{$key} = $value;
-        }
-    }
-    for my $key (keys %seconds_since_midnight) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        if (!Wattpilot_IsInteger($status{$key})
-            || $status{$key} < 0
-            || $status{$key} > 86400
-            || $status{$key} % 60 != 0) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        } else {
-            $status{$key} = int($status{$key});
-        }
-    }
-    for my $key (keys %boolean) {
-        next if !exists($status{$key}) || !defined($status{$key});
-        if (!Wattpilot_IsBoolean($status{$key})) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
-            delete $status{$key};
-        }
-    }
-    if (exists($status{nrg}) && defined($status{nrg})) {
-        my $valid = ref($status{nrg}) eq 'ARRAY'
-            && @{$status{nrg}} >= 12
-            && !grep { !defined($_) || !Wattpilot_IsNumber($_) } @{$status{nrg}}[0..11];
-        if (!$valid) {
-            Log3 $hash->{NAME}, 2,
-                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=nrg";
-            delete $status{nrg};
-        }
+        $status{$key} = $normalized;
     }
     return \%status;
 }
@@ -1059,13 +1124,17 @@ sub Wattpilot_DispatchMessage($$) {
 
     if ($type eq 'hello') {
         $hash->{helper}{deviceType} = $json->{devicetype}
-            if Wattpilot_IsScalarString($json->{devicetype});
+            if Wattpilot_IsJsonString($json->{devicetype});
         $hash->{helper}{protocol} = int($json->{protocol})
-            if Wattpilot_IsInteger($json->{protocol});
+            if Wattpilot_IsJsonInteger($json->{protocol});
         $hash->{SERIAL} = $json->{serial}
-            if (!$hash->{SERIAL} && Wattpilot_IsScalarString($json->{serial}) && $json->{serial} =~ /^\d+$/);
-        if (Wattpilot_IsScalarString($json->{version})) {
-            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{firmware_version}, $json->{version}, 1);
+            if (!$hash->{SERIAL}
+                && Wattpilot_IsJsonString($json->{serial})
+                && $json->{serial} =~ /^\d+$/);
+        if (Wattpilot_IsJsonString($json->{version})) {
+            readingsSingleUpdate(
+                $hash, $WATTPILOT_READING_NAME{firmware_version},
+                $json->{version}, 1);
         }
         Log3 $name, 4, "Wattpilot ($name) - Hello received";
     } elsif ($type eq 'authRequired') {
@@ -1075,7 +1144,8 @@ sub Wattpilot_DispatchMessage($$) {
     } elsif ($type eq 'authSuccess') {
         if (!$hash->{helper}{authPending}) {
             Log3 $name, 1, "Wattpilot ($name) - Authentication success arrived outside an active challenge";
-            Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_sequence_invalid});
+            Wattpilot_AbortAuthentication(
+                $hash, $WATTPILOT_LIFECYCLE_STATE{auth_sequence_invalid});
             return 0;
         }
         Log3 $name, 2, "Wattpilot ($name) - Authentication Successful";
@@ -1083,31 +1153,50 @@ sub Wattpilot_DispatchMessage($$) {
         delete $hash->{helper}{authPending};
         delete $hash->{helper}{authHashMode};
         Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
-        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{initializing}, 1);
+        readingsSingleUpdate(
+            $hash, $WATTPILOT_READING_NAME{state},
+            $WATTPILOT_LIFECYCLE_STATE{initializing}, 1);
         Wattpilot_ScheduleTimer(
             $hash, 'lifecycle_timeout', $WATTPILOT_INITIALIZATION_TIMEOUT,
             'Wattpilot_LifecycleTimeout', { phase => 'initialization' });
     } elsif ($type eq 'authError') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication failed";
-        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_failed});
+        Wattpilot_AbortAuthentication(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{auth_failed});
     } elsif ($type eq 'fullStatus' || $type eq 'deltaStatus') {
         if (ref($json->{status}) ne 'HASH') {
             Log3 $name, 2, "Wattpilot ($name) - Ignoring status message with missing or invalid status";
             return 0;
         }
+
+        my $partial = $type eq 'deltaStatus' ? 1 : 0;
+        if ($type eq 'fullStatus' && exists $json->{partial}) {
+            if (!Wattpilot_IsJsonBoolean($json->{partial})) {
+                Log3 $name, 2,
+                    "Wattpilot ($name) - Ignoring fullStatus with invalid partial value";
+                return 0;
+            }
+            $partial = $json->{partial} ? 1 : 0;
+        }
+
         my $status = Wattpilot_NormalizeStatus($hash, $json->{status});
-        Wattpilot_UpdateReadings($hash, $status, $type);
+        my $message = { type => $type, partial => $partial };
+        Wattpilot_UpdateReadings($hash, $status, $message);
         Wattpilot_MarkInitialized($hash)
             if $hash->{helper}{authenticated}
-            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{initializing};
+            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{initializing}
+            && ($type eq 'deltaStatus' || !$partial);
     } elsif ($type eq 'response') {
-        if (exists($json->{success}) && !Wattpilot_IsBoolean($json->{success})) {
-            Log3 $name, 2, "Wattpilot ($name) - Ignoring response with invalid success value";
+        if (exists($json->{success})
+            && !Wattpilot_IsJsonBoolean($json->{success})) {
+            Log3 $name, 2,
+                "Wattpilot ($name) - Ignoring response with invalid success value";
             return 0;
         }
         if (exists($json->{success}) && $json->{success}
             && ref($json->{status}) ne 'HASH') {
-            Log3 $name, 2, "Wattpilot ($name) - Ignoring successful response with missing or invalid status";
+            Log3 $name, 2,
+                "Wattpilot ($name) - Ignoring successful response with missing or invalid status";
             return 0;
         }
         if (ref($json->{status}) eq 'HASH') {
@@ -1121,7 +1210,8 @@ sub Wattpilot_DispatchMessage($$) {
         # Observed on Wattpilot Flex firmware 43.4 during connection startup.
         # The module does not use their payloads and deliberately ignores them.
     } else {
-        Log3 $name, 3, "Wattpilot ($name) - Ignoring unsupported JSON message type=$type_for_log";
+        Log3 $name, 3,
+            "Wattpilot ($name) - Ignoring unsupported JSON message type=$type_for_log";
     }
     return 1;
 }
@@ -1214,12 +1304,10 @@ sub Wattpilot_UpdateImmediateReadings($$) {
     }
 
     if (defined $status->{ftt}) {
-        my $secs = $status->{ftt};
-        my $h = int($secs / 3600);
-        my $m = int(($secs % 3600) / 60);
+        my $time = Wattpilot_SecondsSinceMidnightToTime($status->{ftt}, 0);
         readingsBulkUpdate(
-            $hash, $WATTPILOT_READING_NAME{next_trip_time},
-            sprintf("%02d:%02d", $h, $m));
+            $hash, $WATTPILOT_READING_NAME{next_trip_time}, $time)
+            if defined $time;
     }
 
     readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{charging_current}, $status->{amp})
@@ -1297,7 +1385,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my ($protocol_key, $reading_key) = @$field;
         next if !defined $status->{$protocol_key};
         my $time = Wattpilot_SecondsSinceMidnightToTime(
-            $status->{$protocol_key});
+            $status->{$protocol_key}, $protocol_key eq 'pdlo');
         readingsBulkUpdate(
             $hash, $WATTPILOT_READING_NAME{$reading_key}, $time)
             if defined $time;
@@ -1354,7 +1442,8 @@ sub Wattpilot_HasValidNrg($) {
     my ($status) = @_;
     return 0 if ref($status->{nrg}) ne 'ARRAY';
     return 0 if @{$status->{nrg}} < 12;
-    return !grep { !defined($_) || !Wattpilot_IsNumber($_) } @{$status->{nrg}}[0..11];
+    return !grep { !defined(Wattpilot_ParseJsonFiniteNumber($_)) }
+        @{$status->{nrg}}[0..11];
 }
 
 sub Wattpilot_HasBatteryTelemetry($) {
@@ -1422,7 +1511,8 @@ sub Wattpilot_HandleCarTransition($$) {
 }
 
 sub Wattpilot_ShouldProcessVolatileReadings($$$$) {
-    my ($hash, $status, $message_type, $now) = @_;
+    my ($hash, $status, $message, $now) = @_;
+    my $message_type = $message->{type};
     my $name = $hash->{NAME};
     my $has_valid_nrg = Wattpilot_HasValidNrg($status);
     my $has_battery_telemetry = Wattpilot_HasBatteryTelemetry($status);
@@ -1431,7 +1521,7 @@ sub Wattpilot_ShouldProcessVolatileReadings($$$$) {
     if ($hash->{helper}{idleRefreshAwaitingReconnectNrg}
         && !$has_valid_nrg
         && $message_type eq 'fullStatus'
-        && !$status->{partial}) {
+        && !$message->{partial}) {
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     }
     return 0 if !$has_volatile_input;
@@ -1493,9 +1583,12 @@ sub Wattpilot_UpdateNrgReadings($$) {
 }
 
 sub Wattpilot_UpdateReadings($$;$) {
-    my ($hash, $status, $message_type) = @_;
+    my ($hash, $status, $message) = @_;
     return if ref($status) ne 'HASH';
-    $message_type //= 'deltaStatus';
+    $message = { type => ($message // 'deltaStatus'), partial => 0 }
+        if ref($message) ne 'HASH';
+    $message->{type} //= 'deltaStatus';
+    $message->{partial} = $message->{partial} ? 1 : 0;
 
     my $previous_car_state = $hash->{helper}{car_state};
     my $now = gettimeofday();
@@ -1509,7 +1602,7 @@ sub Wattpilot_UpdateReadings($$;$) {
     Wattpilot_HandleCarTransition($hash, $previous_car_state);
     Wattpilot_UpdateEnergyReadings($hash, $status);
     if (Wattpilot_ShouldProcessVolatileReadings(
-            $hash, $status, $message_type, $now)) {
+            $hash, $status, $message, $now)) {
         my $cache = $hash->{helper}{volatileTelemetryCache} // {};
         Wattpilot_UpdateNrgReadings($hash, $cache);
         Wattpilot_UpdateBatteryReadings($hash, $cache);
@@ -1535,8 +1628,8 @@ sub Wattpilot_SendAuth($$) {
         return;
     }
 
-    if (!Wattpilot_IsScalarString($json->{token1}) || $json->{token1} eq ''
-        || !Wattpilot_IsScalarString($json->{token2}) || $json->{token2} eq '') {
+    if (!Wattpilot_IsJsonString($json->{token1}) || $json->{token1} eq ''
+        || !Wattpilot_IsJsonString($json->{token2}) || $json->{token2} eq '') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication challenge has invalid tokens";
         Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_challenge_invalid});
         return;
@@ -1662,8 +1755,8 @@ sub Wattpilot_BcryptSerialRawSalt($$) {
 
 
 
-sub Wattpilot_AbortPendingRequestsForReconnect($) {
-    my ($hash) = @_;
+sub Wattpilot_AbortPendingRequests($$) {
+    my ($hash, $reason) = @_;
     my $pending = $hash->{helper}{pendingRequests};
     return if ref($pending) ne 'HASH' || !keys %$pending;
 
@@ -1674,7 +1767,12 @@ sub Wattpilot_AbortPendingRequestsForReconnect($) {
     Wattpilot_CancelTimer($hash, 'command_timeout');
     delete $hash->{helper}{pendingRequests};
     Wattpilot_SetCommandReadings(
-        $hash, $request_id, 'failed', 'reconnect requested');
+        $hash, $request_id, 'failed', $reason);
+}
+
+sub Wattpilot_AbortPendingRequestsForReconnect($) {
+    my ($hash) = @_;
+    return Wattpilot_AbortPendingRequests($hash, 'reconnect requested');
 }
 
 sub Wattpilot_ManualReconnect($) {
@@ -1982,8 +2080,12 @@ sub Wattpilot_SetCommandReadings($$$$) {
 
 sub Wattpilot_NormalizeRequestId($) {
     my ($request_id) = @_;
-    return undef if !defined($request_id) || ref($request_id);
-    my $normalized = "$request_id";
+    if (Wattpilot_IsJsonInteger($request_id)) {
+        return undef if $request_id < 0;
+        return int($request_id);
+    }
+    return undef if !Wattpilot_IsJsonString($request_id);
+    my $normalized = $request_id;
     $normalized =~ s/sm$//;
     return $normalized =~ /^\d+$/ ? int($normalized) : undef;
 }
@@ -2148,10 +2250,6 @@ sub Wattpilot_Attr(@) {
         Log3 $name, 1, "Wattpilot ($name) - WARNING: raw JSON logging is active and may contain sensitive authentication, network, device, and operational data";
     }
 
-    if($attrName eq "interval") {
-        # Hier könnte Logik stehen, falls das Intervall sofortige Aktionen erfordert
-    }
-
     if ($attrName eq "update_while_idle") {
         my $enabled = $cmd eq "set" && defined($attrVal) && $attrVal eq "1";
         if ($enabled) {
@@ -2172,7 +2270,7 @@ sub Wattpilot_ValidateAttribute($$) {
     my ($attr_name, $attr_value) = @_;
 
     my %boolean_attribute = map { $_ => 1 } qw(
-        debug update_while_idle disable rawJsonLog
+        update_while_idle disable rawJsonLog
     );
     if ($boolean_attribute{$attr_name}) {
         return "$attr_name must be 0 or 1"
@@ -2186,15 +2284,6 @@ sub Wattpilot_ValidateAttribute($$) {
             || $attr_value !~ /^\d+$/
             || $attr_value < 0
             || $attr_value > 300;
-        return undef;
-    }
-
-    if ($attr_name eq "defaultAmp") {
-        return "defaultAmp must be an integer from 6 to 32"
-            if !defined($attr_value)
-            || $attr_value !~ /^\d+$/
-            || $attr_value < 6
-            || $attr_value > 32;
         return undef;
     }
 
@@ -2238,7 +2327,7 @@ sub Wattpilot_GetAuthHashMode($$) {
                 && ($hash->{helper}{protocol} // -1) == 2;
         die "Missing auth hash outside legacy Wattpilot protocol 2";
     }
-    die "Invalid announced auth hash" if !Wattpilot_IsScalarString($json->{hash});
+    die "Invalid announced auth hash" if !Wattpilot_IsJsonString($json->{hash});
     my $device_mode = lc($json->{hash});
     return "bcrypt" if ($device_mode eq "bcrypt");
     return "pbkdf2" if ($device_mode eq "pbkdf2");
@@ -2473,6 +2562,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.7 classifies every public reading. Stored or user-selectable configuration values use the exact <code>config</code> prefix; Set-command names remain unchanged. There are no compatibility aliases, duplicate readings, automatic reading cleanup, DbLog migration, or transition period. Old reading entries may remain stale in an existing FHEM device after reload and must be removed or avoided through a fresh definition.</p>
   <p>Version 2.0.9 consistently abbreviates state of charge as <code>SoC</code> in public reading names and renames <code>configPvBatteryDischargeEndTime</code> to <code>configPvBatteryDischargeStopTime</code>. No old-name aliases or migration are provided.</p>
   <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
+  <p>Version 2.1.0 fixes FHEM <code>modify</code>/<code>defmod</code> lifecycle transitions, preserves top-level <code>fullStatus.partial</code> metadata, enforces exact JSON field types and safe clock validation, and removes the no-op <code>debug</code> and <code>defaultAmp</code> attributes. Changed definitions reconnect once only after successful validation; invalid modifications leave the active session unchanged.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2538,7 +2628,8 @@ sub Wattpilot_WriteJson($$) {
     <b>&lt;IP-Address&gt;</b>: Local IP address of the Wattpilot.<br>
     <b>&lt;Serial&gt;</b>: Optional digits-only serial number. If omitted, the module uses the value from the device <code>hello</code> message.<br>
     <br>
-    Set the password separately with <code>set &lt;name&gt; password &lt;secret&gt;</code>.
+    Set the password separately with <code>set &lt;name&gt; password &lt;secret&gt;</code>.<br>
+    A successful FHEM <code>modify</code> or <code>defmod</code> endpoint/serial change terminates the old session and schedules exactly one reconnect. Invalid modifications are rejected before connection, timer, credential, reading, or helper state changes.
   </ul>
   <br>
 
@@ -2616,10 +2707,6 @@ sub Wattpilot_WriteJson($$) {
         Selects authentication hashing. <code>auto</code> accepts announced PBKDF2 or bcrypt; a missing hash selects PBKDF2 only for the evidenced predecessor <code>devicetype=wattpilot</code>, protocol-2 profile. Changing the attribute invalidates the current session and schedules one fresh login when possible.</li>
     <li><code>authHashCost &lt;4-14&gt;</code><br>
         bcrypt cost for newly derived authentication hashes. Changing it invalidates the current session.</li>
-    <li><code>debug &lt;0|1&gt;</code><br>
-        Retained attribute without separate runtime handling in the current implementation.</li>
-    <li><code>defaultAmp &lt;6-32&gt;</code><br>
-        Retained attribute without separate runtime handling in the current implementation.</li>
   </ul>
   <br>
 
@@ -2731,7 +2818,9 @@ sub Wattpilot_WriteJson($$) {
     <li>Alte namensbasierte Credential-Schlüssel werden weder gelesen noch gelöscht. Veröffentlichte 1.6.x-Versionen sind die letzte Linie mit dieser Upgrade-Unterstützung.</li>
   </ul>
   <p>Version 2.0.7 klassifiziert jedes öffentliche Reading. Gespeicherte oder vom Benutzer auswählbare Konfigurationswerte verwenden das feste Präfix <code>config</code>; die Namen der Set-Befehle bleiben unverändert. Es gibt keine Kompatibilitätsaliase, parallelen Readings, automatische Reading-Bereinigung, DbLog-Migration oder Übergangsfrist. Alte Reading-Einträge können nach einem Reload in einem bestehenden FHEM-Device als nicht mehr aktualisierte Werte erhalten bleiben und müssen manuell entfernt oder durch eine frische Definition vermieden werden.</p>
+  <p>Version 2.0.9 kürzt den Ladezustand in öffentlichen Reading-Namen einheitlich als <code>SoC</code> ab und benennt <code>configPvBatteryDischargeEndTime</code> in <code>configPvBatteryDischargeStopTime</code> um. Es gibt keine Aliase oder Migration für die alten Namen.</p>
   <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
+  <p>Version 2.1.0 korrigiert die FHEM-Lebenszyklen von <code>modify</code>/<code>defmod</code>, erhält das Top-Level-Metadatum <code>fullStatus.partial</code>, erzwingt exakte JSON-Feldtypen und sichere Uhrzeitvalidierung und entfernt die wirkungslosen Attribute <code>debug</code> und <code>defaultAmp</code>. Geänderte Definitionen verbinden sich erst nach vollständiger erfolgreicher Prüfung genau einmal neu; ungültige Änderungen lassen die aktive Sitzung unverändert.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2797,7 +2886,8 @@ sub Wattpilot_WriteJson($$) {
     <b>&lt;IP-Adresse&gt;</b>: Lokale IP-Adresse des Wattpilot.<br>
     <b>&lt;Seriennummer&gt;</b>: Optional und ausschließlich aus Ziffern. Ohne Angabe wird der Wert aus der <code>hello</code>-Nachricht übernommen.<br>
     <br>
-    Das Passwort wird separat mit <code>set &lt;name&gt; password &lt;secret&gt;</code> gesetzt.
+    Das Passwort wird separat mit <code>set &lt;name&gt; password &lt;secret&gt;</code> gesetzt.<br>
+    Eine erfolgreiche Endpoint-/Seriennummernänderung mit FHEM <code>modify</code> oder <code>defmod</code> beendet die alte Sitzung und plant genau einen Reconnect. Ungültige Änderungen werden abgewiesen, bevor Verbindung, Timer, Credentials, Readings oder Helper-Zustand verändert werden.
   </ul>
   <br>
 
@@ -2875,10 +2965,6 @@ sub Wattpilot_WriteJson($$) {
         Wählt das Authentifizierungsverfahren. <code>auto</code> akzeptiert angekündigtes PBKDF2 oder bcrypt; ein fehlender Hash wählt nur beim belegten Vorgängerprofil <code>devicetype=wattpilot</code>, Protokoll 2, PBKDF2. Eine Änderung verwirft die aktuelle Sitzung und plant nach Möglichkeit genau eine frische Anmeldung.</li>
     <li><code>authHashCost &lt;4-14&gt;</code><br>
         bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes. Eine Änderung verwirft die aktuelle Sitzung.</li>
-    <li><code>debug &lt;0|1&gt;</code><br>
-        Beibehaltenes Attribut ohne eigene Runtime-Behandlung im aktuellen Stand.</li>
-    <li><code>defaultAmp &lt;6-32&gt;</code><br>
-        Beibehaltenes Attribut ohne eigene Runtime-Behandlung im aktuellen Stand.</li>
   </ul>
   <br>
 
@@ -2978,7 +3064,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.0.10",
+  "version": "v2.1.0",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",
