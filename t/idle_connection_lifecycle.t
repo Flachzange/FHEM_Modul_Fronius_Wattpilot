@@ -62,6 +62,15 @@ sub due_in {
     DevIo::run_due_timers($DevIo::NOW);
 }
 
+sub seed_telemetry_clock {
+    my ($hash, $interval) = @_;
+    $hash->{helper}{telemetryClock} = {
+        lastFlush => $DevIo::NOW,
+        nextFlush => $DevIo::NOW + $interval,
+        interval => $interval,
+    };
+}
+
 my %registration;
 main::Wattpilot_Initialize(\%registration);
 ok(ref($registration{ShutdownFn}) eq 'CODE', 'ShutdownFn is registered');
@@ -108,7 +117,7 @@ $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
-$hash->{helper}{telemetryPublication}{nrg}{lastUpdate} = $DevIo::NOW;
+seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1, nrg => nrg(0) }));
@@ -124,7 +133,7 @@ $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
-$hash->{helper}{telemetryPublication}{nrg}{lastUpdate} = $DevIo::NOW;
+seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
@@ -158,7 +167,7 @@ $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
-$hash->{helper}{telemetryPublication}{nrg}{lastUpdate} = $DevIo::NOW;
+seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
@@ -179,7 +188,7 @@ $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
-$hash->{helper}{telemetryPublication}{nrg}{lastUpdate} = $DevIo::NOW;
+seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
@@ -199,7 +208,7 @@ $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
-$hash->{helper}{telemetryPublication}{nrg}{lastUpdate} = $DevIo::NOW;
+seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));

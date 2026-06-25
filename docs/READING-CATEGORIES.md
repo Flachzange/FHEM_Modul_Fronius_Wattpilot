@@ -19,16 +19,18 @@ Publication policies:
   public value changed, so identical snapshots do not renew timestamps or
   create events;
 - `interval`: cache the newest valid value for that telemetry owner and publish
-  it only when that owner's independent interval permits it. `interval=0`
-  disables rate limiting.
+  all eligible dirty owners on one shared interval clock. `interval=0` disables
+  rate limiting and publishes eligible dirty values immediately.
 
-The interval owners `energy`, `nrg`, and `battery` are independent. Input from
-one owner neither publishes cached values nor advances timestamps for another.
+The data owners `energy`, `nrg`, and `battery` keep separate caches and dirty
+fields but share one flush timer and one FHEM reading transaction. Input from
+one owner neither publishes cached values nor changes dirty state for another.
 The `electrical` and `battery` idle gates are controlled by
-`update_while_idle`; cumulative energy and all discrete readings are not
-suppressed merely because the vehicle is idle. Missing, `null`, wrong-type,
-malformed, out-of-range, or incomplete input preserves the previous reading
-and consumes no interval.
+`update_while_idle`. Energy has no artificial idle gate, but it becomes dirty
+only when its formatted public value differs from the published reading;
+identical snapshots therefore renew neither timestamps nor events. Missing,
+`null`, wrong-type, malformed, out-of-range, or incomplete input preserves the
+previous reading and does not move the shared clock.
 
 There are no compatibility aliases, duplicate old/new readings, automatic
 reading migration, or DbLog migration. Existing automations and history
@@ -74,8 +76,8 @@ queries must be adapted explicitly.
 | `pv_battery_discharge_start_time` | `configPvBatteryDischargeStartTime` | `configuration` | `status:pdls` | `immediate` | `none` | `pdls` | `clock` | `preserve` | App start time for the discharge window. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
 | `pv_battery_discharge_stop_time` | `configPvBatteryDischargeStopTime` | `configuration` | `status:pdlo` | `immediate` | `none` | `pdlo` | `clock` | `preserve` | App end time for the discharge window. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
 | `next_trip_time` | `configNextTripTime` | `configuration` | `status:ftt` | `immediate` | `none` | `ftt` | `clock` | `preserve` | Configured next-trip target time; Set command remains `nextTripTime`. |
-| `energy_total` | `energyTotal` | `telemetry` | `status:eto` | `interval` | `none` | `energy` | `decimal2` | `preserve` | Total measured energy. |
-| `energy_since_plug_in` | `energySincePlugIn` | `telemetry` | `status:wh` | `interval` | `none` | `energy` | `decimal2` | `preserve` | Measured energy since plug-in. |
+| `energy_total` | `energyTotal` | `telemetry` | `status:eto` | `interval` | `none` | `energy` | `decimal2` | `preserve` | Total measured energy; queued only when the formatted public value changes, then published on the shared telemetry tick. |
+| `energy_since_plug_in` | `energySincePlugIn` | `telemetry` | `status:wh` | `interval` | `none` | `energy` | `decimal2` | `preserve` | Measured energy since plug-in; queued only when the formatted public value changes, then published on the shared telemetry tick. |
 | `voltage_l1` | `voltageL1` | `telemetry` | `status:nrg[0]` | `interval` | `electrical` | `nrg` | `decimal2` | `preserve` | Current L1 voltage. |
 | `voltage_l2` | `voltageL2` | `telemetry` | `status:nrg[1]` | `interval` | `electrical` | `nrg` | `decimal2` | `preserve` | Current L2 voltage. |
 | `voltage_l3` | `voltageL3` | `telemetry` | `status:nrg[2]` | `interval` | `electrical` | `nrg` | `decimal2` | `preserve` | Current L3 voltage. |

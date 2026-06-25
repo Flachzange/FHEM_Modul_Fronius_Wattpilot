@@ -16,7 +16,7 @@ than additional installable Perl modules:
 - secured command correlation and response timeouts;
 - local manual reconnect orchestration and pending-command termination;
 - status normalization and public reading updates;
-- idle-refresh and electrical-reading rate limiting.
+- idle-refresh and shared-clock telemetry publication.
 
 ## Credential model
 
@@ -71,9 +71,10 @@ FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `Und
 | `jsonBuffer` | current logical JSON continuation/session |
 | `car_state` | current device-hash runtime state |
 | idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single automatic refresh reconnect, while a manual reconnect clears the episode state |
-| `telemetryPublication.energy` | cumulative-energy cache, dirty fields, and independent `interval` history; energy is not idle-gated |
-| `telemetryPublication.nrg` | electrical `nrg` cache, dirty fields, and independent `interval` history; controlled by the electrical idle gate |
-| `telemetryPublication.battery` | stationary-battery SOC/power cache, dirty fields, and independent `interval` history; controlled by the battery idle gate |
+| `telemetryClock` | shared telemetry interval boundary and one typed `telemetry_flush` timer; reset on interval changes and session invalidation |
+| `telemetryPublication.energy` | cumulative-energy latest-value cache and dirty fields; dirty only when the formatted public value changes; no artificial idle gate |
+| `telemetryPublication.nrg` | electrical `nrg` latest-value cache and dirty fields; controlled by the electrical idle gate |
+| `telemetryPublication.battery` | stationary-battery SOC/power latest-value cache and dirty fields; controlled by the battery idle gate |
 | `msg_id` | current device-hash request sequence |
 
 ## Status and reading pipeline
@@ -112,27 +113,29 @@ runtime `%WATTPILOT_READING_POLICY`:
   are immediate-on-change; repeated identical public values neither renew
   their timestamps nor create events;
 - cumulative energy, electrical `nrg`, and stationary-battery SOC/power are
-  interval-controlled by three independent owners: `energy`, `nrg`, and
-  `battery`.
+  interval-controlled by three data owners: `energy`, `nrg`, and `battery`,
+  which share one interval clock and one typed flush timer.
 
-Each interval owner stores only its newest valid values, a dirty-field set, and
-its own `lastUpdate`. A message can publish only telemetry supplied validly by
-that same owner; it never republishes another owner's cached values. Input from
-battery therefore cannot consume the next electrical update, energy cannot
-consume either electrical or battery cadence, and discrete status input cannot
-release cached telemetry. Invalid, incomplete, missing, or `null` input neither
-dirties a cache nor advances an interval history. At the exact interval
-boundary the latest valid dirty values are eligible; `interval=0` disables the
-rate limit.
+Each owner stores only its newest valid values and a dirty-field set. The shared
+tick publishes all eligible dirty owners in one FHEM bulk-reading transaction,
+so their readings receive the same transaction timestamp. Owner separation is
+still strict: battery input cannot publish cached `nrg`, energy cannot release
+battery data, and immediate status input cannot flush telemetry early. Energy
+becomes dirty only when its formatted public value differs from the currently
+published reading; identical `eto`/`wh` values therefore renew neither
+timestamps nor events. Invalid, incomplete, missing, or `null` input does not
+become dirty and does not move the shared clock. `interval=0` disables rate
+limiting and immediately publishes eligible dirty values.
 
 `update_while_idle` applies only to the `electrical` and `battery` gates. While
 charging, electrical telemetry is eligible regardless of the attribute. While
 idle with `update_while_idle=1`, electrical and stationary-battery telemetry
-remain eligible. With `update_while_idle=0`, those two groups stay passive
-except for the bounded one-time charging-to-idle refresh/reconnect path.
-Cumulative energy and discrete status/diagnostic readings remain active under
-their normal policies in every vehicle state. No polling command or synthetic
-zero value is introduced.
+remain eligible on the shared clock. With `update_while_idle=0`, those two
+owners stay passive except for the bounded one-time charging-to-idle `nrg`
+refresh/reconnect path. Energy is not artificially idle-gated: a changed
+late-arriving final value can still publish, while identical snapshots remain
+silent. The repository does not claim when or how often the device sends
+`eto`/`wh`. No polling command or synthetic zero value is introduced.
 
 `modelStatus` and `msi` each produce an unmodified numeric code and a
 lowerCamelCase compatibility text reading. Each code/text pair is updated

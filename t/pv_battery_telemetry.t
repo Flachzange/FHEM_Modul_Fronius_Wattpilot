@@ -48,9 +48,9 @@ sub reading_value {
     return $hash->{READINGS}{$name}{VAL};
 }
 
-sub telemetry_last {
-    my ($hash, $owner) = @_;
-    return $hash->{helper}{telemetryPublication}{$owner}{lastUpdate};
+sub reading_time {
+    my ($hash, $name) = @_;
+    return $hash->{READINGS}{$name}{TIME};
 }
 
 sub updates_since {
@@ -85,10 +85,8 @@ subtest 'combined status exposes independently published PV-battery telemetry' =
         'PV-battery mode remains an unmodified raw code');
     is(reading_value($hash, 'power'), '690.00',
         'nrg power is emitted from the same status message');
-    is(telemetry_last($hash, 'nrg'), 100,
-        'electrical cadence is recorded');
-    is(telemetry_last($hash, 'battery'), 100,
-        'battery cadence is recorded independently');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'electrical and battery telemetry share one transaction timestamp');
 
     $DevIo::NOW = 101;
     ok(parse_status($hash, 'deltaStatus', {
@@ -167,58 +165,55 @@ subtest 'invalid battery values neither overwrite readings nor cadence state' =>
     }
 };
 
-subtest 'battery-only input uses an independent cadence' => sub {
+subtest 'battery-only and nrg input share one cadence without cross-publication' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $DevIo::NOW = 1_000;
     ok(parse_status($hash, 'fullStatus', {
-        partial => JSON::false(), car => 2,
+        car => 2,
         fbuf_akkuSOC => 50,
         fbuf_pAkku => -500,
         fbuf_akkuMode => 1,
         nrg => nrg(500),
-    }), 'combined baseline establishes independent cadences');
+    }), 'combined baseline starts the common telemetry clock');
 
     my $cycle_start = scalar @DevIo::READING_UPDATES;
-    $DevIo::NOW = 1_030;
+    $DevIo::NOW = 1_029;
     ok(parse_status($hash, 'deltaStatus', {
         fbuf_akkuSOC => 49,
         fbuf_pAkku => -700,
         fbuf_akkuMode => 2,
-    }), 'battery-only boundary delta starts the battery cycle');
-    is(reading_value($hash, 'pvBatterySoC'), '49.0',
-        'fresh SOC is published with one decimal place');
-    is(reading_value($hash, 'pvBatteryPower'), '-700.00',
-        'fresh battery power is published at the battery boundary');
+    }), 'battery-only input is cached before the common tick');
     is(reading_value($hash, 'pvBatteryModeCode'), 2,
-        'battery mode is published immediately on change');
-    is(reading_value($hash, 'power'), '500.00',
-        'battery input does not republish cached nrg');
-    is(telemetry_last($hash, 'battery'), 1_030,
-        'battery input advances battery history');
-    is(telemetry_last($hash, 'nrg'), 1_000,
-        'battery input leaves electrical history unchanged');
-    my @cycle = map { $_->[1] } updates_since($cycle_start);
-    ok(!grep($_ eq 'power', @cycle) && grep($_ eq 'pvBatteryPower', @cycle),
-        'battery input publishes only affected battery readings');
+        'battery mode remains immediate-on-change');
+    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
+        'battery telemetry waits for the common tick');
 
-    $DevIo::NOW = 1_031;
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(700) }),
-        'fresh nrg is independently eligible at its boundary');
-    is(reading_value($hash, 'power'), '700.00',
-        'battery cadence cannot starve fresh nrg');
+        'fresh nrg in the same cycle is cached');
+    is(reading_value($hash, 'power'), '500.00',
+        'nrg also waits for the common tick');
+
+    DevIo::run_due_timers(1_030);
+    is(reading_value($hash, 'pvBatterySoC'), '49.0',
+        'fresh SOC publishes with one decimal place');
     is(reading_value($hash, 'pvBatteryPower'), '-700.00',
-        'nrg input does not republish battery telemetry');
-    is(telemetry_last($hash, 'nrg'), 1_031,
-        'nrg advances only electrical history');
+        'fresh battery power publishes on the common tick');
+    is(reading_value($hash, 'power'), '700.00',
+        'fresh nrg publishes on the same common tick');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'nrg and battery receive the same timestamp');
+    my @cycle = map { $_->[1] } updates_since($cycle_start);
+    ok(grep($_ eq 'power', @cycle) && grep($_ eq 'pvBatteryPower', @cycle),
+        'the tick publishes fresh values from both dirty owners');
 };
 
-subtest 'matched responses use the same independent battery cadence' => sub {
+subtest 'matched responses cache battery telemetry for the common tick' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $DevIo::NOW = 2_000;
     ok(parse_status($hash, 'fullStatus', {
-        partial => JSON::false(), car => 2,
+        car => 2,
         fbuf_akkuSOC => 60,
         fbuf_pAkku => -600,
         fbuf_akkuMode => 1,
@@ -240,66 +235,71 @@ subtest 'matched responses use the same independent battery cadence' => sub {
         },
     })), 'successful response is accepted');
     is(reading_value($hash, 'pvBatteryPower'), '-600.00',
-        'response telemetry remains rate-limited');
+        'response telemetry remains cached before the tick');
     is(reading_value($hash, 'pvBatteryModeCode'), 2,
         'response mode change is immediate-on-change');
-    is(telemetry_last($hash, 'battery'), 2_000,
-        'response inside the interval does not advance battery cadence');
 
-    $DevIo::NOW = 2_030;
+    $DevIo::NOW = 2_029;
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(650) }),
-        'nrg at its boundary is accepted');
+        'nrg in the same cycle is cached independently');
     is(reading_value($hash, 'pvBatteryPower'), '-600.00',
-        'unrelated nrg cannot flush response-cached battery data');
-    is(telemetry_last($hash, 'battery'), 2_000,
-        'nrg does not advance battery history');
+        'nrg input does not publish response-cached battery data early');
 
-    ok(parse_status($hash, 'deltaStatus', { fbuf_pAkku => -1200 }),
-        'battery input at its boundary triggers battery publication');
+    DevIo::run_due_timers(2_030);
     is(reading_value($hash, 'pvBatterySoC'), '61.0',
-        'latest response-cached SOC becomes visible');
+        'latest response-cached SOC becomes visible at the tick');
     is(reading_value($hash, 'pvBatteryPower'), '-1200.00',
-        'latest battery power becomes visible');
-    is(telemetry_last($hash, 'battery'), 2_030,
-        'battery input advances battery cadence');
+        'latest response-cached battery power becomes visible at the tick');
+    is(reading_value($hash, 'power'), '650.00',
+        'fresh nrg becomes visible at the same tick');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'matched response and nrg values share one timestamp');
 };
 
-subtest 'idle policy applies independently to electrical and battery telemetry' => sub {
-    my $hash = fresh_device();
-    $attr{$hash->{NAME}}{interval} = 0;
-    $attr{$hash->{NAME}}{update_while_idle} = 0;
+subtest 'idle policy gates nrg and battery together on the common clock' => sub {
+    my $suppressed = fresh_device();
+    $attr{$suppressed->{NAME}}{interval} = 30;
+    $attr{$suppressed->{NAME}}{update_while_idle} = 0;
     $DevIo::NOW = 3_000;
-    ok(parse_status($hash, 'fullStatus', {
-        partial => JSON::false(), car => 1,
+    ok(parse_status($suppressed, 'fullStatus', {
+        car => 1,
         fbuf_akkuSOC => 40,
         fbuf_pAkku => 250.126,
         fbuf_akkuMode => 1,
         nrg => nrg(0),
     }), 'idle telemetry is accepted while publication is disabled');
-    ok(!exists $hash->{READINGS}{pvBatteryPower},
+    ok(!exists $suppressed->{READINGS}{pvBatteryPower},
         'idle battery telemetry stays passive');
-    ok(!exists $hash->{READINGS}{power},
+    ok(!exists $suppressed->{READINGS}{power},
         'idle nrg telemetry stays passive');
-    is(reading_value($hash, 'pvBatteryModeCode'), 1,
+    is(reading_value($suppressed, 'pvBatteryModeCode'), 1,
         'discrete battery mode still publishes immediately');
-    ok(!defined telemetry_last($hash, 'battery'),
-        'suppressed battery telemetry does not advance battery cadence');
-    ok(!defined telemetry_last($hash, 'nrg'),
-        'suppressed nrg does not advance electrical cadence');
+    DevIo::run_due_timers(3_030);
+    ok(!exists $suppressed->{READINGS}{pvBatteryPower}
+        && !exists $suppressed->{READINGS}{power},
+        'the common tick keeps both idle-gated owners passive');
 
-    $attr{$hash->{NAME}}{update_while_idle} = 1;
-    $DevIo::NOW = 3_001;
-    ok(parse_status($hash, 'deltaStatus', { nrg => nrg(0) }),
-        'valid idle nrg publishes only the electrical group');
-    is(reading_value($hash, 'power'), '0.00',
-        'idle nrg is published');
-    ok(!exists $hash->{READINGS}{pvBatteryPower},
-        'nrg does not flush cached battery telemetry');
-
-    ok(parse_status($hash, 'deltaStatus', { fbuf_pAkku => 250.126 }),
-        'valid battery input publishes the battery group independently');
-    is(reading_value($hash, 'pvBatteryPower'), '250.13',
-        'battery telemetry publishes with its own input');
+    my $enabled = fresh_device();
+    $attr{$enabled->{NAME}}{interval} = 30;
+    $attr{$enabled->{NAME}}{update_while_idle} = 1;
+    $DevIo::NOW = 3_100;
+    ok(parse_status($enabled, 'fullStatus', {
+        car => 1,
+        fbuf_pAkku => 200,
+        nrg => nrg(0),
+    }), 'idle telemetry is initially published when enabled');
+    $DevIo::NOW = 3_129;
+    ok(parse_status($enabled, 'deltaStatus', {
+        fbuf_pAkku => 250.126,
+        nrg => nrg(10),
+    }), 'fresh idle nrg and battery values are cached');
+    DevIo::run_due_timers(3_130);
+    is(reading_value($enabled, 'power'), '10.00',
+        'idle nrg publishes on the common tick');
+    is(reading_value($enabled, 'pvBatteryPower'), '250.13',
+        'idle battery telemetry publishes on the same tick');
+    is(reading_time($enabled, 'power'), reading_time($enabled, 'pvBatteryPower'),
+        'idle nrg and battery share one timestamp');
 };
 
 subtest 'interval zero publishes each valid telemetry group independently' => sub {

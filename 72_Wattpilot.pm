@@ -608,6 +608,10 @@ sub Wattpilot_InterfaceSnapshot() {
         readingCategories => { %WATTPILOT_READING_CATEGORY },
         readingPolicy   => { map { $_ => { %{$WATTPILOT_READING_POLICY{$_}} } }
             keys %WATTPILOT_READING_POLICY },
+        telemetryCadence => {
+            mode => 'shared',
+            owners => [sort keys %WATTPILOT_TELEMETRY_OWNER_IDLE_GATE],
+        },
         commands       => { %WATTPILOT_COMMAND_NAME },
         carStates      => { %WATTPILOT_CAR_STATE },
         forceStates    => { %WATTPILOT_FORCE_STATE },
@@ -808,6 +812,7 @@ sub Wattpilot_ClearDefinitionSessionState($) {
     delete $hash->{helper}{pendingReconnectAfterOpen};
     delete $hash->{helper}{car_state};
     delete $hash->{helper}{telemetryPublication};
+    delete $hash->{helper}{telemetryClock};
     delete $hash->{LAST_UPDATE};
     delete $hash->{LAST_BATTERY_UPDATE};
 }
@@ -1722,10 +1727,34 @@ sub Wattpilot_HasEnergyTelemetry($) {
 
 sub Wattpilot_TelemetryGroupState($$) {
     my ($hash, $owner) = @_;
-    return $hash->{helper}{telemetryPublication}{$owner} //= {
+    my $state = $hash->{helper}{telemetryPublication}{$owner} //= {
         cache => {},
         dirty => {},
     };
+    delete $state->{lastUpdate};
+    return $state;
+}
+
+sub Wattpilot_FormatEnergyTelemetry($$) {
+    my ($key, $value) = @_;
+    return sprintf('%.2f', $value / 1000) if $key eq 'eto';
+    return sprintf('%.2f', $value) if $key eq 'wh';
+    return undef;
+}
+
+sub Wattpilot_CacheEnergyTelemetry($$$) {
+    my ($hash, $state, $key) = @_;
+    my $value = $state->{cache}{$key};
+    my $formatted = Wattpilot_FormatEnergyTelemetry($key, $value);
+    return if !defined $formatted;
+    my $reading_key = $key eq 'eto' ? 'energy_total' : 'energy_since_plug_in';
+    my $reading = $WATTPILOT_READING_NAME{$reading_key};
+    my $published = $hash->{READINGS}{$reading}{VAL};
+    if (!defined($published) || $published ne $formatted) {
+        $state->{dirty}{$key} = 1;
+    } else {
+        delete $state->{dirty}{$key};
+    }
 }
 
 sub Wattpilot_CacheTelemetry($$) {
@@ -1748,7 +1777,7 @@ sub Wattpilot_CacheTelemetry($$) {
     for my $key (qw(eto wh)) {
         next if !defined $status->{$key};
         $energy->{cache}{$key} = $status->{$key};
-        $energy->{dirty}{$key} = 1;
+        Wattpilot_CacheEnergyTelemetry($hash, $energy, $key);
     }
 }
 
@@ -1763,27 +1792,16 @@ sub Wattpilot_TelemetryGroupHasDirty($) {
     return ref($state->{dirty}) eq 'HASH' && keys %{$state->{dirty}};
 }
 
-sub Wattpilot_TelemetryGroupEligible($$$;$) {
-    my ($hash, $owner, $now, $bypass) = @_;
+sub Wattpilot_TelemetryOwnerEligible($$;$) {
+    my ($hash, $owner, $bypass) = @_;
     $bypass //= 0;
     my $state = Wattpilot_TelemetryGroupState($hash, $owner);
     return 0 if !Wattpilot_TelemetryGroupHasDirty($state);
+    return 1 if $bypass;
 
     my $idle_gate = $WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner} // 'none';
-    if ($idle_gate ne 'none'
-        && !$bypass
-        && !Wattpilot_TelemetryIdleGateOpen($hash)) {
-        return 0;
-    }
-
-    my $interval = AttrVal($hash->{NAME}, 'interval', 0);
-    if (!$bypass && $interval > 0 && defined $state->{lastUpdate}
-        && $now - $state->{lastUpdate} < $interval) {
-        return 0;
-    }
-
-    $state->{lastUpdate} = $now;
-    return 1;
+    return 1 if $idle_gate eq 'none';
+    return Wattpilot_TelemetryIdleGateOpen($hash);
 }
 
 sub Wattpilot_UpdateBatteryReadings($$) {
@@ -1850,11 +1868,11 @@ sub Wattpilot_UpdateEnergyReadings($$) {
 
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{energy_total},
-        sprintf('%.2f', $cache->{eto} / 1000))
+        Wattpilot_FormatEnergyTelemetry('eto', $cache->{eto}))
         if $dirty->{eto};
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{energy_since_plug_in},
-        sprintf('%.2f', $cache->{wh}))
+        Wattpilot_FormatEnergyTelemetry('wh', $cache->{wh}))
         if $dirty->{wh};
 
     $state->{dirty} = {};
@@ -1880,6 +1898,137 @@ sub Wattpilot_UpdateNrgReadings($$) {
     $state->{dirty} = {};
 }
 
+sub Wattpilot_HasEligibleTelemetry($;$) {
+    my ($hash, $nrg_bypass) = @_;
+    $nrg_bypass //= 0;
+    return 1 if Wattpilot_TelemetryOwnerEligible(
+        $hash, $WATTPILOT_ENERGY_OWNER);
+    return 1 if Wattpilot_TelemetryOwnerEligible(
+        $hash, $WATTPILOT_NRG_OWNER, $nrg_bypass);
+    return 1 if Wattpilot_TelemetryOwnerEligible(
+        $hash, $WATTPILOT_BATTERY_OWNER);
+    return 0;
+}
+
+sub Wattpilot_FlushTelemetryOwners($$;$) {
+    my ($hash, $owners, $nrg_bypass) = @_;
+    $nrg_bypass //= 0;
+    my %wanted = map { $_ => 1 } @$owners;
+    my $updated = 0;
+
+    if ($wanted{$WATTPILOT_ENERGY_OWNER}
+        && Wattpilot_TelemetryOwnerEligible($hash, $WATTPILOT_ENERGY_OWNER)) {
+        Wattpilot_UpdateEnergyReadings(
+            $hash, Wattpilot_TelemetryGroupState($hash, $WATTPILOT_ENERGY_OWNER));
+        $updated = 1;
+    }
+
+    if ($wanted{$WATTPILOT_NRG_OWNER}
+        && Wattpilot_TelemetryOwnerEligible(
+            $hash, $WATTPILOT_NRG_OWNER, $nrg_bypass)) {
+        Wattpilot_UpdateNrgReadings(
+            $hash, Wattpilot_TelemetryGroupState($hash, $WATTPILOT_NRG_OWNER));
+        $updated = 1;
+    }
+
+    if ($wanted{$WATTPILOT_BATTERY_OWNER}
+        && Wattpilot_TelemetryOwnerEligible($hash, $WATTPILOT_BATTERY_OWNER)) {
+        Wattpilot_UpdateBatteryReadings(
+            $hash, Wattpilot_TelemetryGroupState($hash, $WATTPILOT_BATTERY_OWNER));
+        $updated = 1;
+    }
+
+    return $updated;
+}
+
+sub Wattpilot_FlushAllTelemetry($;$) {
+    my ($hash, $nrg_bypass) = @_;
+    return Wattpilot_FlushTelemetryOwners($hash, [
+        $WATTPILOT_ENERGY_OWNER,
+        $WATTPILOT_NRG_OWNER,
+        $WATTPILOT_BATTERY_OWNER,
+    ], $nrg_bypass);
+}
+
+sub Wattpilot_HasTelemetryInput($) {
+    my ($status) = @_;
+    return 1 if Wattpilot_HasValidNrg($status);
+    return 1 if Wattpilot_HasBatteryTelemetry($status);
+    return 1 if Wattpilot_HasEnergyTelemetry($status);
+    return 0;
+}
+
+sub Wattpilot_ScheduleTelemetryFlush($) {
+    my ($hash) = @_;
+    my $clock = $hash->{helper}{telemetryClock};
+    return undef if ref($clock) ne 'HASH' || !defined $clock->{nextFlush};
+    my $delay = $clock->{nextFlush} - gettimeofday();
+    $delay = 0 if $delay < 0;
+    return Wattpilot_ScheduleTimer(
+        $hash, 'telemetry_flush', $delay, 'Wattpilot_TelemetryFlush');
+}
+
+sub Wattpilot_StartTelemetryClock($$$) {
+    my ($hash, $now, $interval) = @_;
+    $hash->{helper}{telemetryClock} = {
+        lastFlush => $now,
+        nextFlush => $now + $interval,
+        interval => $interval,
+    };
+    Wattpilot_ScheduleTelemetryFlush($hash);
+}
+
+sub Wattpilot_ResetTelemetryClock($) {
+    my ($hash) = @_;
+    Wattpilot_CancelTimer($hash, 'telemetry_flush');
+    delete $hash->{helper}{telemetryClock};
+}
+
+sub Wattpilot_AdvanceTelemetryClock($$$) {
+    my ($hash, $now, $interval) = @_;
+    my $clock = $hash->{helper}{telemetryClock} //= {};
+    my $next = $clock->{nextFlush} // $now;
+    $next += $interval while $next <= $now;
+    $clock->{lastFlush} = $now;
+    $clock->{nextFlush} = $next;
+    $clock->{interval} = $interval;
+    Wattpilot_ScheduleTelemetryFlush($hash);
+}
+
+sub Wattpilot_FlushTelemetryClockIfDue($$$) {
+    my ($hash, $now, $interval) = @_;
+    my $clock = $hash->{helper}{telemetryClock};
+    return 0 if ref($clock) ne 'HASH';
+    return 0 if !defined($clock->{nextFlush}) || $now < $clock->{nextFlush};
+    Wattpilot_CancelTimer($hash, 'telemetry_flush');
+    Wattpilot_FlushAllTelemetry($hash);
+    Wattpilot_AdvanceTelemetryClock($hash, $now, $interval);
+    return 1;
+}
+
+sub Wattpilot_TelemetryFlush($) {
+    my ($arg) = @_;
+    my $ctx = ref($arg) eq 'HASH' && exists($arg->{hash}) ? $arg : undef;
+    my $hash = $ctx ? $ctx->{hash} : $arg;
+    return if !$ctx || !Wattpilot_TimerContextValid($hash, $ctx);
+    Wattpilot_FinishTimer($hash, $ctx);
+
+    my $interval = AttrVal($hash->{NAME}, 'interval', 0);
+    if ($interval <= 0) {
+        delete $hash->{helper}{telemetryClock};
+        return;
+    }
+
+    if (Wattpilot_HasEligibleTelemetry($hash)) {
+        readingsBeginUpdate($hash);
+        Wattpilot_FlushAllTelemetry($hash);
+        readingsEndUpdate($hash, 1);
+    }
+
+    my $now = gettimeofday();
+    Wattpilot_AdvanceTelemetryClock($hash, $now, $interval);
+}
+
 sub Wattpilot_UpdateReadings($$;$) {
     my ($hash, $status, $message) = @_;
     return if ref($status) ne 'HASH';
@@ -1902,24 +2051,23 @@ sub Wattpilot_UpdateReadings($$;$) {
     Wattpilot_UpdateImmediateReadings($hash, $status);
     Wattpilot_HandleCarTransition($hash, $previous_car_state);
 
-    my $energy = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_ENERGY_OWNER);
-    if (Wattpilot_HasEnergyTelemetry($status)
-        && Wattpilot_TelemetryGroupEligible($hash, $WATTPILOT_ENERGY_OWNER, $now)) {
-        Wattpilot_UpdateEnergyReadings($hash, $energy);
-    }
-
     my $idle_bypass = Wattpilot_NrgIdleBypass($hash, $status, $message);
-    my $nrg = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_NRG_OWNER);
-    if (Wattpilot_HasValidNrg($status)
-        && Wattpilot_TelemetryGroupEligible(
-            $hash, $WATTPILOT_NRG_OWNER, $now, $idle_bypass)) {
-        Wattpilot_UpdateNrgReadings($hash, $nrg);
+    my $interval = AttrVal($hash->{NAME}, 'interval', 0);
+    if ($interval <= 0) {
+        Wattpilot_ResetTelemetryClock($hash);
+        Wattpilot_FlushAllTelemetry($hash, $idle_bypass);
+    } else {
+        Wattpilot_FlushTelemetryClockIfDue($hash, $now, $interval);
+        Wattpilot_FlushTelemetryOwners(
+            $hash, [$WATTPILOT_NRG_OWNER], 1)
+            if $idle_bypass;
     }
 
-    my $battery = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_BATTERY_OWNER);
-    if (Wattpilot_HasBatteryTelemetry($status)
-        && Wattpilot_TelemetryGroupEligible($hash, $WATTPILOT_BATTERY_OWNER, $now)) {
-        Wattpilot_UpdateBatteryReadings($hash, $battery);
+    if ($interval > 0
+        && Wattpilot_HasTelemetryInput($status)
+        && ref($hash->{helper}{telemetryClock}) ne 'HASH') {
+        Wattpilot_FlushAllTelemetry($hash);
+        Wattpilot_StartTelemetryClock($hash, $now, $interval);
     }
 
     readingsEndUpdate($hash, 1);
@@ -2423,6 +2571,7 @@ sub Wattpilot_ClearConnectionState($) {
     delete $hash->{helper}{protocol};
     delete $hash->{helper}{jsonBuffer};
     delete $hash->{helper}{volatileTelemetryCache};
+    delete $hash->{helper}{telemetryClock};
     if (ref($hash->{helper}{telemetryPublication}) eq 'HASH') {
         for my $state (values %{$hash->{helper}{telemetryPublication}}) {
             next if ref($state) ne 'HASH';
@@ -2570,6 +2719,10 @@ sub Wattpilot_Attr(@) {
     if ($attrName eq "verbose" && $cmd eq "set" && defined($attrVal) && $attrVal >= 5
         && AttrVal($name, "rawJsonLog", 0) eq "1") {
         Log3 $name, 1, "Wattpilot ($name) - WARNING: raw JSON logging is active and may contain sensitive authentication, network, device, and operational data";
+    }
+
+    if ($attrName eq "interval" && ($cmd eq "set" || $cmd eq "del")) {
+        Wattpilot_ResetTelemetryClock($hash);
     }
 
     if ($attrName eq "update_while_idle") {
@@ -2885,7 +3038,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.9 consistently abbreviates state of charge as <code>SoC</code> in public reading names and renames <code>configPvBatteryDischargeEndTime</code> to <code>configPvBatteryDischargeStopTime</code>. No old-name aliases or migration are provided.</p>
   <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
   <p>Version 2.1.0 fixes FHEM <code>modify</code>/<code>defmod</code> lifecycle transitions, preserves top-level <code>fullStatus.partial</code> metadata, enforces exact JSON field types and safe clock validation, and removes the no-op <code>debug</code> and <code>defaultAmp</code> attributes. Changed definitions reconnect once only after successful validation; invalid modifications leave the active session unchanged.</p>
-  <p>Version 2.1.1 gives energy, electrical, and stationary-battery telemetry independent interval histories, prevents cross-group starvation, and publishes discrete status/diagnostic readings immediately only when their public value changes.</p>
+  <p>Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and in one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish immediately only when their public value changes.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3019,9 +3172,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        Rate-limits cumulative energy, electrical <code>nrg</code>, and stationary-battery SOC/power telemetry with independent histories. <code>0</code> disables rate limiting. Only valid input from the same group can publish that group's latest cached values; unrelated groups never renew stale reading timestamps. Invalid or incomplete input consumes no interval. Configuration readings remain immediate, and discrete status/diagnostic readings are immediate-on-change. <code>deltaStatus</code> supplies device-side field filtering, but no official per-field Flex update frequency is inferred from it because no public Fronius local-WebSocket specification for such frequencies is evidenced.</li>
+        Rate-limits cumulative energy, electrical <code>nrg</code>, and stationary-battery SOC/power telemetry on one shared clock. Every data owner retains only its newest valid values and its own dirty fields; each tick publishes all eligible dirty owners in one FHEM reading transaction. Input from one owner never publishes or advances another owner. Energy becomes dirty only when the formatted public value actually differs from the published reading. <code>0</code> disables rate limiting and publishes eligible dirty values immediately. Invalid or incomplete input neither becomes dirty nor moves the shared clock. Configuration readings remain immediate, and discrete status/diagnostic readings are immediate-on-change. <code>deltaStatus</code> supplies device-side field filtering, but no official per-field Flex update frequency is inferred from it because no public Fronius local-WebSocket specification for such frequencies is evidenced.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps electrical <code>nrg</code> and stationary-battery SOC/power passive while not charging. <code>1</code> admits real incoming idle values through each group's own cadence. After charging-to-idle, one valid device-supplied <code>nrg</code> may bypass the electrical rate limit; otherwise at most one controlled reconnect is used. Energy remains interval-controlled in idle, discrete status remains immediate-on-change, no polling command is invented, and no zero value is synthesized.</li>
+        <code>0</code> keeps electrical <code>nrg</code> and stationary-battery SOC/power passive while not charging. <code>1</code> admits real incoming idle values on the shared telemetry clock. After charging-to-idle, one valid device-supplied <code>nrg</code> may bypass the clock once; otherwise at most one controlled reconnect is used. The attribute does not gate energy: <code>eto</code>/<code>wh</code> are queued only when their formatted public values actually change, so identical snapshots do not renew timestamps. No device emission frequency is claimed, no polling command is invented, and no zero value is synthesized.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -3108,7 +3261,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configNextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
     <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
     <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
-    <li>The two energy readings are controlled by <code>interval</code> through their own energy history, remain eligible while idle, and cannot consume electrical or battery cadence.</li>
+    <li>The two energy readings use the shared telemetry clock but a separate latest-value cache. They are queued only when the formatted public value changes; identical <code>fullStatus</code>, <code>deltaStatus</code>, or response values do not renew timestamps or create events. They do not consume or release electrical or battery data.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Values from <code>nrg[0..2]</code>, interpreted as volts.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Values from <code>nrg[4..6]</code>, interpreted as amperes.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
@@ -3144,7 +3297,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.9 kürzt den Ladezustand in öffentlichen Reading-Namen einheitlich als <code>SoC</code> ab und benennt <code>configPvBatteryDischargeEndTime</code> in <code>configPvBatteryDischargeStopTime</code> um. Es gibt keine Aliase oder Migration für die alten Namen.</p>
   <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <p>Version 2.1.0 korrigiert die FHEM-Lebenszyklen von <code>modify</code>/<code>defmod</code>, erhält das Top-Level-Metadatum <code>fullStatus.partial</code>, erzwingt exakte JSON-Feldtypen und sichere Uhrzeitvalidierung und entfernt die wirkungslosen Attribute <code>debug</code> und <code>defaultAmp</code>. Geänderte Definitionen verbinden sich erst nach vollständiger erfolgreicher Prüfung genau einmal neu; ungültige Änderungen lassen die aktive Sitzung unverändert.</p>
-  <p>Version 2.1.1 trennt die Intervallhistorien für Energie-, elektrische und stationäre Speichertelemetrie, verhindert gruppenübergreifendes Verhungern und veröffentlicht diskrete Status-/Diagnosewerte sofort nur bei tatsächlicher Änderung.</p>
+  <p>Version 2.1.1 behält getrennte Latest-Value-Caches und Dirty-Felder für Energie-, elektrische und stationäre Speichertelemetrie, veröffentlicht aber alle zulässigen geänderten Gruppen über einen gemeinsamen Intervalltakt und eine FHEM-Reading-Transaktion. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts vorgemerkt; diskrete Status-/Diagnosewerte erscheinen sofort nur bei tatsächlicher Änderung.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3278,9 +3431,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Begrenzt kumulative Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie mit getrennten Historien. <code>0</code> deaktiviert das Rate-Limit. Nur ein gültiger Eingang derselben Gruppe darf deren neuesten Cache veröffentlichen; andere Gruppen erneuern keine alten Reading-Zeitstempel. Ungültige oder unvollständige Werte verbrauchen kein Intervall. Konfigurationsreadings bleiben sofort, diskrete Status-/Diagnosewerte sofort-bei-Änderung. <code>deltaStatus</code> liefert eine geräteseitige Feldfilterung; daraus wird keine offizielle Aktualisierungsfrequenz einzelner Flex-Felder abgeleitet, weil keine öffentliche Fronius-Local-WebSocket-Spezifikation dafür belegt ist.</li>
+        Begrenzt kumulative Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie über einen gemeinsamen Takt. Jeder Dateneigentümer behält nur seine neuesten gültigen Werte und eigene Dirty-Felder; jeder Tick veröffentlicht alle zulässigen geänderten Eigentümer in einer FHEM-Reading-Transaktion. Eine Gruppe veröffentlicht oder verschiebt niemals eine andere. Energie wird nur dirty, wenn sich der formatierte öffentliche Wert gegenüber dem veröffentlichten Reading tatsächlich ändert. <code>0</code> deaktiviert das Rate-Limit und veröffentlicht zulässige geänderte Werte sofort. Ungültige oder unvollständige Eingaben werden nicht dirty und verschieben den Takt nicht. Konfigurationsreadings bleiben sofort, diskrete Status-/Diagnosewerte sofort-bei-Änderung. <code>deltaStatus</code> liefert eine geräteseitige Feldfilterung; daraus wird keine offizielle Aktualisierungsfrequenz einzelner Flex-Felder abgeleitet, weil keine öffentliche Fronius-Local-WebSocket-Spezifikation dafür belegt ist.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie im Idle passiv. <code>1</code> verarbeitet echte Idle-Werte über die jeweils eigene Historie. Nach Charging-zu-Idle darf ein gültiges Geräte-<code>nrg</code> das elektrische Rate-Limit einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Energie bleibt im Idle intervallgesteuert, diskreter Status sofort-bei-Änderung; kein Polling-Kommando und keine synthetischen Nullwerte.</li>
+        <code>0</code> belässt elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie im Idle passiv. <code>1</code> verarbeitet echte Idle-Werte im gemeinsamen Telemetrietakt. Nach Charging-zu-Idle darf ein gültiges Geräte-<code>nrg</code> den Takt einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Das Attribut sperrt Energie nicht: <code>eto</code>/<code>wh</code> werden nur vorgemerkt, wenn sich ihr formatierter öffentlicher Wert tatsächlich ändert; identische Statuswerte erneuern keine Zeitstempel. Es wird keine Geräte-Sendefrequenz behauptet, kein Polling-Kommando erfunden und kein Nullwert synthetisiert.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -3367,7 +3520,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configNextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
     <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
     <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>
-    <li>Die beiden Energie-Readings werden über eine eigene Energiehistorie durch <code>interval</code> begrenzt, bleiben im Idle zulässig und verbrauchen weder elektrische noch Batterie-Cadence.</li>
+    <li>Die beiden Energie-Readings verwenden den gemeinsamen Telemetrietakt, behalten aber einen getrennten Latest-Value-Cache. Sie werden nur vorgemerkt, wenn sich der formatierte öffentliche Wert ändert; identische Werte aus <code>fullStatus</code>, <code>deltaStatus</code> oder Responses erneuern weder Zeitstempel noch Events. Elektrische oder Batteriedaten werden dadurch weder verbraucht noch freigegeben.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Werte aus <code>nrg[0..2]</code>, als Volt interpretiert.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Werte aus <code>nrg[4..6]</code>, als Ampere interpretiert.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>

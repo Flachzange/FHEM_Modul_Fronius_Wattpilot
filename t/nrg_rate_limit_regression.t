@@ -30,8 +30,14 @@ sub fresh_device {
 }
 
 sub nrg {
-    my ($power) = @_;
-    return [230, 231, 232, 0, 1, 1, 1, 230, 231, 232, 0, $power];
+    my ($power, $current) = @_;
+    $current //= 1;
+    return [
+        230, 231, 232, 0,
+        $current, $current, $current,
+        230 * $current, 231 * $current, 232 * $current,
+        0, $power,
+    ];
 }
 
 sub parse_status {
@@ -47,18 +53,17 @@ sub reading_value {
     return $hash->{READINGS}{$reading}{VAL};
 }
 
-sub telemetry_last {
-    my ($hash, $owner) = @_;
-    return $hash->{helper}{telemetryPublication}{$owner}{lastUpdate};
+sub reading_time {
+    my ($hash, $reading) = @_;
+    return $hash->{READINGS}{$reading}{TIME};
 }
 
-sub updates_since {
-    my ($start) = @_;
-    return () if $start > $#DevIo::READING_UPDATES;
-    return @DevIo::READING_UPDATES[$start .. $#DevIo::READING_UPDATES];
+sub clock_next {
+    my ($hash) = @_;
+    return $hash->{helper}{telemetryClock}{nextFlush};
 }
 
-subtest 'charging uses the current car state before nrg gating' => sub {
+subtest 'charging nrg uses one shared telemetry clock for both idle settings' => sub {
     for my $idle_setting (0, 1) {
         my $hash = fresh_device();
         $attr{$hash->{NAME}}{interval} = 30;
@@ -66,66 +71,66 @@ subtest 'charging uses the current car state before nrg gating' => sub {
 
         $DevIo::NOW = 1_000;
         ok(parse_status($hash, 'fullStatus', {
-            partial => JSON::false(),
             car => 2,
             nrg => nrg(690),
         }), "charging fullStatus is accepted with update_while_idle=$idle_setting");
         is(reading_value($hash, 'power'), '690.00',
-            "charging nrg is processed with update_while_idle=$idle_setting");
+            "charging nrg is initially published with update_while_idle=$idle_setting");
         is($hash->{helper}{car_state}, 2,
             'car helper contains the charging state from the same message');
-        is(telemetry_last($hash, 'nrg'), 1_000,
-            'valid charging nrg establishes interval history');
+        is(clock_next($hash), 1_030,
+            'the shared telemetry clock starts at one exact boundary');
 
         $DevIo::NOW = 1_029;
         ok(parse_status($hash, 'deltaStatus', { nrg => nrg(750) }),
-            'charging delta without a car field is accepted');
+            'charging delta before the boundary is cached');
         is(reading_value($hash, 'power'), '690.00',
-            'charging nrg remains rate-limited before the boundary');
-        is(telemetry_last($hash, 'nrg'), 1_000,
-            'rate-limited nrg does not advance interval history');
+            'charging nrg remains unchanged before the shared boundary');
+        is(clock_next($hash), 1_030,
+            'input does not move the shared boundary');
 
         $DevIo::NOW = 1_030;
         ok(parse_status($hash, 'deltaStatus', { nrg => nrg(900) }),
-            'charging delta at the exact interval boundary is accepted');
+            'charging delta at the exact shared boundary is accepted');
         is(reading_value($hash, 'power'), '900.00',
-            'charging nrg updates at the exact interval boundary');
-        is(telemetry_last($hash, 'nrg'), 1_030,
-            'processed boundary nrg advances interval history');
+            'latest charging nrg publishes at the exact shared boundary');
+        is(clock_next($hash), 1_060,
+            'the shared clock advances by exactly one interval');
     }
 };
 
-subtest 'idle policy remains explicit for both attribute values' => sub {
+subtest 'idle nrg follows update_while_idle without creating another clock' => sub {
     my $suppressed = fresh_device();
-    $attr{$suppressed->{NAME}}{interval} = 0;
+    $attr{$suppressed->{NAME}}{interval} = 30;
     $attr{$suppressed->{NAME}}{update_while_idle} = 0;
     $DevIo::NOW = 2_000;
     ok(parse_status($suppressed, 'fullStatus', {
-        partial => JSON::false(),
         car => 1,
         nrg => nrg(0),
     }), 'idle fullStatus is accepted while idle updates are disabled');
     ok(!exists $suppressed->{READINGS}{power},
         'idle nrg stays passive with update_while_idle=0');
-    ok(!defined telemetry_last($suppressed, 'nrg'),
-        'suppressed idle nrg does not establish interval history');
+    is(clock_next($suppressed), 2_030,
+        'suppressed telemetry still belongs to the single shared clock');
+    DevIo::run_due_timers(2_030);
+    ok(!exists $suppressed->{READINGS}{power},
+        'the common tick respects the closed idle gate');
 
     my $enabled = fresh_device();
-    $attr{$enabled->{NAME}}{interval} = 0;
+    $attr{$enabled->{NAME}}{interval} = 30;
     $attr{$enabled->{NAME}}{update_while_idle} = 1;
     $DevIo::NOW = 2_100;
     ok(parse_status($enabled, 'fullStatus', {
-        partial => JSON::false(),
         car => 1,
         nrg => nrg(0),
     }), 'idle fullStatus is accepted while idle updates are enabled');
     is(reading_value($enabled, 'power'), '0.00',
-        'real idle nrg is processed with update_while_idle=1');
-    is(telemetry_last($enabled, 'nrg'), 2_100,
-        'processed idle nrg establishes interval history');
+        'real idle nrg is initially published when enabled');
+    is(clock_next($enabled), 2_130,
+        'idle nrg uses the same shared clock structure');
 };
 
-subtest 'interval zero disables electrical rate limiting' => sub {
+subtest 'interval zero disables the shared rate limit' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 0;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
@@ -141,67 +146,43 @@ subtest 'interval zero disables electrical rate limiting' => sub {
         'second unlimited charging delta is accepted');
     is(reading_value($hash, 'power'), '200.00',
         'interval=0 admits consecutive nrg values');
-    is(telemetry_last($hash, 'nrg'), 3_001,
-        'latest valid unlimited nrg records its timestamp');
+    ok(!exists $hash->{helper}{telemetryClock},
+        'interval=0 does not leave a shared timer clock behind');
 };
 
-subtest 'electrical and battery telemetry use independent cadences' => sub {
+subtest 'battery-first ordering cannot starve nrg on the common tick' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
 
     $DevIo::NOW = 4_000;
     ok(parse_status($hash, 'fullStatus', {
-        partial => JSON::false(),
         car => 2,
         fbuf_akkuSOC => 51,
         fbuf_pAkku => -400,
-        fbuf_akkuMode => 1,
         nrg => nrg(690),
-    }), 'combined charging fullStatus is accepted');
-    is(telemetry_last($hash, 'nrg'), 4_000,
-        'combined status establishes the electrical cadence');
-    is(telemetry_last($hash, 'battery'), 4_000,
-        'combined status independently establishes the battery cadence');
+    }), 'combined charging baseline is accepted');
 
-    my $updates_before_battery_delta = scalar @DevIo::READING_UPDATES;
-    $DevIo::NOW = 4_030;
+    $DevIo::NOW = 4_029;
     ok(parse_status($hash, 'deltaStatus', {
         fbuf_akkuSOC => 50,
         fbuf_pAkku => -500,
-        fbuf_akkuMode => 2,
-    }), 'battery-only delta at its boundary is accepted');
-    is(reading_value($hash, 'power'), '690.00',
-        'battery input leaves the electrical value unchanged');
-    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
-        'fresh battery telemetry is published at its boundary');
-    is(telemetry_last($hash, 'nrg'), 4_000,
-        'battery input does not advance electrical history');
-    is(telemetry_last($hash, 'battery'), 4_030,
-        'battery input advances only battery history');
-    my @battery_cycle = map { $_->[1] }
-        updates_since($updates_before_battery_delta);
-    ok(!grep($_ eq 'power', @battery_cycle)
-        && grep($_ eq 'pvBatteryPower', @battery_cycle),
-        'battery input publishes no cached electrical readings');
-
-    my $updates_before_nrg_delta = scalar @DevIo::READING_UPDATES;
+    }), 'battery-first delta is cached');
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(900) }),
-        'fresh nrg immediately after battery is accepted');
+        'fresh nrg immediately after battery is cached');
+    is(reading_value($hash, 'power'), '690.00',
+        'neither owner publishes before the common tick');
+
+    DevIo::run_due_timers(4_030);
     is(reading_value($hash, 'power'), '900.00',
-        'fresh nrg is not starved by battery history');
-    is(telemetry_last($hash, 'nrg'), 4_030,
-        'nrg input advances only electrical history');
-    is(telemetry_last($hash, 'battery'), 4_030,
-        'nrg input leaves battery history unchanged');
-    my @nrg_cycle = map { $_->[1] }
-        updates_since($updates_before_nrg_delta);
-    ok(grep($_ eq 'power', @nrg_cycle)
-        && !grep($_ eq 'pvBatteryPower', @nrg_cycle),
-        'nrg input publishes no cached battery readings');
+        'fresh nrg is not starved by battery input');
+    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
+        'fresh battery input publishes on the same tick');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'nrg and battery receive the same FHEM timestamp');
 };
 
-subtest 'invalid or incomplete nrg cannot consume the interval' => sub {
+subtest 'invalid or incomplete nrg cannot dirty or move the common clock' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
@@ -212,28 +193,33 @@ subtest 'invalid or incomplete nrg cannot consume the interval' => sub {
     is(reading_value($hash, 'power'), '300.00',
         'baseline nrg is visible');
 
-    $DevIo::NOW = 5_030;
+    $DevIo::NOW = 5_029;
     ok(parse_status($hash, 'deltaStatus', {
         amp => 16,
         nrg => [230, 231, 232],
     }), 'delta with incomplete nrg and another valid field is accepted');
-    is(reading_value($hash, 'power'), '300.00',
-        'incomplete nrg leaves the existing electrical readings unchanged');
     is(reading_value($hash, 'configChargingCurrent'), 16,
         'another valid field in the same delta still updates');
-    is(telemetry_last($hash, 'nrg'), 5_000,
-        'incomplete nrg does not consume the interval');
+    ok(!keys %{$hash->{helper}{telemetryPublication}{nrg}{dirty}},
+        'incomplete nrg does not dirty the electrical owner');
+    is(clock_next($hash), 5_030,
+        'incomplete nrg does not move the common boundary');
+
+    DevIo::run_due_timers(5_030);
+    is(reading_value($hash, 'power'), '300.00',
+        'empty electrical owner publishes nothing at the tick');
 
     $DevIo::NOW = 5_031;
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(400) }),
-        'valid nrg following an incomplete array is accepted');
+        'valid nrg after the empty tick is cached');
+    is(reading_value($hash, 'power'), '300.00',
+        'valid nrg waits for the next shared tick');
+    DevIo::run_due_timers(5_060);
     is(reading_value($hash, 'power'), '400.00',
-        'valid nrg following an incomplete array is processed');
-    is(telemetry_last($hash, 'nrg'), 5_031,
-        'the later valid nrg advances interval history');
+        'the valid nrg publishes at the next shared tick');
 };
 
-subtest 'observed Flex 43.4 fullStatus initializes independent telemetry groups' => sub {
+subtest 'observed fullStatus and matched responses use the common clock' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 1;
@@ -250,72 +236,36 @@ subtest 'observed Flex 43.4 fullStatus initializes independent telemetry groups'
     ok(main::Wattpilot_DispatchMessage($hash, $fixture),
         'sanitized observed Flex fullStatus is accepted');
     is(reading_value($hash, 'voltageL1'), '230.00',
-        'observed Flex voltage is published while idle updates are enabled');
-    is(reading_value($hash, 'power'), '0.00',
-        'observed Flex total power is published');
+        'observed Flex voltage is initially published');
     is(reading_value($hash, 'pvBatteryPower'), '-1525.00',
-        'observed Flex battery power is published');
-    is(telemetry_last($hash, 'nrg'), 5_500,
-        'observed fullStatus establishes electrical cadence');
-    is(telemetry_last($hash, 'battery'), 5_500,
-        'observed fullStatus establishes battery cadence separately');
-
-    my $battery_cycle_start = scalar @DevIo::READING_UPDATES;
-    $DevIo::NOW = 5_530;
-    ok(parse_status($hash, 'deltaStatus', {
-        fbuf_akkuSOC => 59.94,
-        fbuf_pAkku => -1400,
-    }), 'observed-style idle battery delta starts its own cycle');
-    is(reading_value($hash, 'pvBatterySoC'), '59.9',
-        'idle battery SOC is rounded to one decimal place');
-    is(reading_value($hash, 'voltageL1'), '230.00',
-        'electrical reading remains unchanged');
-    is(telemetry_last($hash, 'nrg'), 5_500,
-        'battery input does not advance electrical cadence');
-    is(telemetry_last($hash, 'battery'), 5_530,
-        'battery input advances battery cadence');
-    my @battery_cycle = map { $_->[1] }
-        updates_since($battery_cycle_start);
-    ok(!grep($_ eq 'voltageL1', @battery_cycle)
-        && grep($_ eq 'pvBatterySoC', @battery_cycle),
-        'idle battery input publishes only fresh battery readings');
-};
-
-subtest 'fullStatus, deltaStatus, and matched response share the nrg gate' => sub {
-    my $hash = fresh_device();
-    $attr{$hash->{NAME}}{interval} = 30;
-    $attr{$hash->{NAME}}{update_while_idle} = 1;
-
-    $DevIo::NOW = 6_000;
-    ok(parse_status($hash, 'fullStatus', {
-        partial => JSON::false(),
-        car => 1,
-        nrg => nrg(10),
-    }), 'fullStatus nrg is accepted');
-    is(reading_value($hash, 'power'), '10.00',
-        'fullStatus nrg uses the electrical gate');
-
-    $DevIo::NOW = 6_030;
-    ok(parse_status($hash, 'deltaStatus', { nrg => nrg(20) }),
-        'deltaStatus nrg is accepted at the boundary');
-    is(reading_value($hash, 'power'), '20.00',
-        'deltaStatus nrg updates through the same gate');
+        'observed Flex battery power is initially published');
+    is(clock_next($hash), 5_530,
+        'observed fullStatus starts one common telemetry clock');
 
     $hash->{helper}{pendingRequests}{51} = {
         key => 'syntheticNrgReadback',
-        sentAt => 6_060,
+        sentAt => 5_529,
     };
-    $DevIo::NOW = 6_060;
+    $DevIo::NOW = 5_529;
     ok(main::Wattpilot_Parse($hash, encode_json({
         type => 'response',
         requestId => 51,
         success => JSON::true(),
-        status => { nrg => nrg(30) },
-    })), 'matched response carrying nrg is accepted at the boundary');
+        status => {
+            nrg => nrg(30),
+            fbuf_pAkku => -1400,
+        },
+    })), 'matched response carrying telemetry is accepted');
+    is(reading_value($hash, 'power'), '0.00',
+        'matched response remains cached before the tick');
+
+    DevIo::run_due_timers(5_530);
     is(reading_value($hash, 'power'), '30.00',
-        'matched response nrg uses the same electrical interval gate');
-    is(telemetry_last($hash, 'nrg'), 6_060,
-        'matched response advances history only after valid nrg processing');
+        'matched response nrg publishes on the common tick');
+    is(reading_value($hash, 'pvBatteryPower'), '-1400.00',
+        'matched response battery power publishes on the common tick');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'response owners share one transaction timestamp');
 };
 
 done_testing;

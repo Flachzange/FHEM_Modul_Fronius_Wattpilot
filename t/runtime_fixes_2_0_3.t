@@ -106,19 +106,31 @@ $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 0;
 $attr{$hash->{NAME}}{interval} = 300;
 $DevIo::NOW = 5_000;
-$hash->{helper}{telemetryPublication}{nrg}{lastUpdate} = $DevIo::NOW;
 main::Wattpilot_UpdateReadings($hash, {
     car => 2,
+    eto => 780000,
+    wh => 6700,
+    nrg => [231, 231, 231, 0, 1, 1, 1, 220, 220, 220, 0, 660],
+}, 'fullStatus');
+$DevIo::NOW = 5_001;
+main::Wattpilot_UpdateReadings($hash, {
     eto => 781000,
     wh => 6800,
     nrg => [232, 232, 232, 0, 1, 1, 1, 230, 230, 230, 0, 690],
 }, 'deltaStatus');
+is($hash->{READINGS}{energyTotal}{VAL}, '780.00',
+    'changed energy waits behind the shared interval gate');
+is($hash->{READINGS}{power}{VAL}, '660.00',
+    'changed nrg waits behind the same shared interval gate');
+DevIo::run_due_timers(5_300);
 is($hash->{READINGS}{energyTotal}{VAL}, '781.00',
-    'energyTotal updates while interval suppresses charging nrg');
+    'changed energy publishes on the common telemetry tick');
 is($hash->{READINGS}{energySincePlugIn}{VAL}, '6800.00',
-    'energySincePlugIn updates while interval suppresses charging nrg');
-ok(!exists $hash->{READINGS}{voltageL1},
-    'recent nrg history keeps charging telemetry behind its interval gate');
+    'changed plug-in energy publishes on the common telemetry tick');
+is($hash->{READINGS}{power}{VAL}, '690.00',
+    'changed nrg publishes on the common telemetry tick');
+is($hash->{READINGS}{energyTotal}{TIME}, $hash->{READINGS}{power}{TIME},
+    'energy and nrg share one FHEM timestamp');
 
 $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
