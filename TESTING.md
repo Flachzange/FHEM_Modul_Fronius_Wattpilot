@@ -95,6 +95,19 @@ complete local suite passes with 25 test files and 2,951 tests. This remains a
 bounded core-path integration test, not a live FHEM process, real network, or
 physical Wattpilot test.
 
+Version 2.1.3 adds `t/declarative_schemas.t`. It checks that all 36 consumed
+status fields derive their validators and reading mappings from the authoritative
+reading inventory, that every immediate status reading executes its declared
+formatter, and that all 19 public Set commands have one schema entry. All 16
+ordinary one-value commands are exercised through schema-derived parser,
+protocol-key, JSON-type, and exact-arity behavior; `password`, `reconnect`, and
+grouped `pvBattery` remain explicit negative boundaries. The refactor does not
+require a real device because public protocol payloads and behavior are intended
+to remain equivalent; complete CI and release checks remain required before
+merge. The complete local suite passes with 26 test files and 3,045 tests
+using the same temporary external compatibility modules described for the
+preceding isolated-container runs.
+
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 
 For the version-2.0.6 development run after the issue-#51 correction, the complete suite passed with 20 test files and 2,650 tests. The isolated container again used temporary external compatibility modules for `JSON`, `Crypt::PBKDF2`, and `Crypt::URandom`; the fixed PBKDF2 vector passed. `Crypt::Bcrypt` was unavailable in this local environment, so the test suite skipped its one optional fixed bcrypt vector. The external modules are not repository or release files, and GitHub CI with the declared real dependencies remains required before release.

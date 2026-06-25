@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.1.3] - 2026-06-25
+
+### Declarative status and command schemas
+
+- Extended the existing authoritative reading inventory with incoming validators and formatter details. The runtime status schema and immediate publication list are now derived from that inventory instead of being maintained in separate branch tables.
+- Added one compact command schema for public names, FHEMWEB widget metadata, exact arity, parsers, protocol keys, JSON conversion, Usage text, and the established `chargingMode` error behavior. `password`, `reconnect`, and grouped `pvBattery` handling remain explicit.
+- Replaced repetitive immediate-reading and ordinary-Set branch chains with small generic helpers while keeping authentication, lifecycle, request correlation, telemetry caches, car transitions, and special protocol behavior visible. Public readings, commands, payloads, cadence, and command-result semantics are unchanged.
+- Added schema completeness and behavior guards for all 36 consumed status fields, all 19 public Set commands, all 16 ordinary Set parsers, JSON boolean output, validator rejection, formatter execution, and generated Set discovery.
+- Despite the added schema metadata, the module shrinks from 3,397 to 3,251 lines. `Wattpilot_UpdateImmediateReadings` drops from 158 to 14 lines and `Wattpilot_Set` from 134 to 50 lines; `Wattpilot_NormalizeStatus` and `Wattpilot_DispatchMessage` remain unchanged because their validation loop and lifecycle dispatch are already explicit.
+
 ## [v2.1.2] - 2026-06-25
 
 ### Public reading precision

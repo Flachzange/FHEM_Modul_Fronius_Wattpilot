@@ -92,17 +92,21 @@ not infer an official per-field Flex update frequency from them; no public
 Fronius local-WebSocket specification for such frequencies is evidenced.
 
 Incoming status data is copied and normalized once by
-`Wattpilot_NormalizeStatus`. A declarative status-field schema defines the
-exact JSON kind and semantic validator for every consumed field. Numeric
-strings and numeric/string boolean surrogates are rejected. Invalid known
-fields are removed from the copy; unknown fields are preserved, and the
+`Wattpilot_NormalizeStatus`. The authoritative reading inventory records each
+consumed status source together with its exact JSON validator, public formatter,
+publication policy, idle gate, and cache owner. `%WATTPILOT_STATUS_SCHEMA` and
+the immediate-publication list are derived from that inventory at module load;
+there is no second hand-maintained field/type table. Multiple public readings
+may intentionally share one protocol field, as with the charging-decision code
+and text pairs, and conflicting validators fail immediately during module load.
+Numeric strings and numeric/string boolean surrogates are rejected. Invalid
+known fields are removed from the copy; unknown fields are preserved, and the
 caller's structure is never mutated. Clock fields share range and whole-minute
-validation before formatting. The authoritative reading inventory also owns the
-public formatter. Measured and calculated physical values use one small decimal
-helper with exactly two places and positive zero after rounding; explicit
-percentage, integer, clock, duration, enum, and text exceptions remain visible
-in that inventory. Formatting never changes validated protocol values or setter
-payload types.
+validation before formatting. Measured and calculated physical values use one
+small decimal helper with exactly two places and positive zero after rounding;
+explicit percentage, integer, clock, duration, enum, and text exceptions remain
+visible in the same inventory. Formatting never changes validated protocol
+values or setter payload types.
 
 `Wattpilot_UpdateReadings` first applies validated internal control state. In
 particular, `car` updates `car_state` immediately before charging/idle gating,
@@ -158,6 +162,15 @@ explicit compatibility enums with `unknown:<value>` fallbacks, public power
 uses watts, and protocol millisecond durations are exposed as seconds. Time
 setters accept only values that convert exactly to valid whole protocol
 units.
+
+Ordinary one-value Set commands use one compact command inventory for the
+public name, FHEMWEB widget metadata, exact arity, parser, protocol key, JSON
+conversion, Usage text, and the established `chargingMode` invalid-value
+message. `Wattpilot_SetOptions` and ordinary dispatch derive from this
+inventory. The grouped `pvBattery` command, local `password` storage, and
+lifecycle-only `reconnect` remain explicit handlers. Authentication, request
+correlation, response handling, lifecycle changes, telemetry caches, and car
+transitions are not hidden behind a generic command engine.
 
 ## Development infrastructure
 

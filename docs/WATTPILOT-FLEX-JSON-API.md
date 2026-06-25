@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.1 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.3 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.1.1; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.1.3; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.1 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.3 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -223,7 +223,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
 
 
-The names below describe the current version-2.1.1 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.3 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -254,6 +254,8 @@ The exact relationship, evaluation order, precedence, and any role of `cpDisable
 Version 2.1.1 applies the same reading policy to complete and partial `fullStatus`, `deltaStatus`, and matched response `status`. Configuration fields are immediate after valid device confirmation. `car`, `alw`, `modelStatus`, `msi`, `err`, `amt`, and `fbuf_akkuMode` are immediate-on-change, so identical public values do not renew timestamps or create events. Cumulative energy (`eto`/`wh`), electrical `nrg`, and stationary-battery SOC/power keep separate `energy`, `nrg`, and `battery` latest-value caches and dirty fields but share one interval clock and one FHEM reading transaction. Only valid input changes its own owner; unrelated owners never republish stale cache values. `update_while_idle` gates only electrical and stationary-battery telemetry. Energy is queued only when its formatted public value actually changes; this is module behavior and does not claim when the device emits `eto`/`wh`. Missing, `null`, invalid, or incomplete fields preserve readings and do not move the shared clock.
 
 Version 2.1.2 keeps those protocol and publication semantics unchanged while standardizing public measured and calculated values to exactly two decimal places. Rounded negative zero becomes positive zero; documented percentages, integers, clocks, and durations remain explicit formatting exceptions.
+
+Version 2.1.3 keeps the same public protocol and publication behavior while deriving ordinary scalar status validation/formatting and one-value Set-command metadata from compact declarative inventories. Special handling for `nrg`, car transitions, decision pairs, stationary-battery telemetry, grouped `pvBattery`, local `password`, and lifecycle-only `reconnect` remains explicit.
 
 ## Complete observed status-key reference
 
