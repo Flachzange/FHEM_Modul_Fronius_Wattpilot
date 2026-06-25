@@ -2,6 +2,8 @@
 
 ## [v2.0.10] - 2026-06-25
 
+- Enforce exact argument counts for the single-value Set commands `password`, `forceState`, `chargingCurrent`, `chargingMode`, and `nextTripTime`; surplus arguments now return the documented Usage error without sending a frame or changing credential storage.
+
 ### Korrekte FHEMWEB-Set-Liste
 
 - `reconnect` wird in der Set-Befehlsliste nun als `reconnect:noArg` veröffentlicht. FHEMWEB zeigt dadurch kein unnötiges Wertefeld für diesen argumentlosen Befehl an.

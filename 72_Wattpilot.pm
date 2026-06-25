@@ -1795,12 +1795,14 @@ sub Wattpilot_Set($@) {
         return Wattpilot_ManualReconnect($hash);
     } elsif($cmd eq $WATTPILOT_COMMAND_NAME{force_state}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{force_state} <neutral|off|on>"
-            if !defined($val) || !exists($WATTPILOT_FORCE_COMMAND_VALUE{$val});
+            if @a != 3 || !defined($val)
+            || !exists($WATTPILOT_FORCE_COMMAND_VALUE{$val});
         return Wattpilot_SendSecure(
             $hash, "frc", int($WATTPILOT_FORCE_COMMAND_VALUE{$val}));
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_current}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_current} <6-32>"
-            if !defined($val) || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/;
+            if @a != 3 || !defined($val)
+            || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/;
         return Wattpilot_SendSecure($hash, "amp", int($val));
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{pv_surplus_start_power}) {
         my $watts = defined($val)
@@ -1880,7 +1882,7 @@ sub Wattpilot_Set($@) {
         return Wattpilot_SendSecure($hash, "mci", $milliseconds);
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_mode}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_mode} <default|eco|nextTrip>"
-            if !defined $val;
+            if @a != 3 || !defined $val;
         return "Unknown mode $val"
             if !exists $WATTPILOT_CHARGING_MODE_VALUE{$val};
         return Wattpilot_SendSecure(
@@ -1889,14 +1891,14 @@ sub Wattpilot_Set($@) {
         return Wattpilot_SetPvBattery($hash, @a[2 .. $#a]);
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{next_trip_time}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{next_trip_time} <HH:MM>"
-            if !defined($val)
+            if @a != 3 || !defined($val)
             || $val !~ /^(?:[01]\d|2[0-3]):[0-5]\d$/;
         my ($h, $m) = split(':', $val);
         my $seconds = ($h * 3600) + ($m * 60);
         return Wattpilot_SendSecure($hash, "ftt", int($seconds));
     } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{password}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{password} <secret>"
-            if !defined($a[2]) || $a[2] eq "";
+            if @a != 3 || !defined($a[2]) || $a[2] eq "";
 
         my $password_err = Wattpilot_StoreNewPassword($hash, $a[2]);
         return $password_err if defined $password_err;
@@ -2470,7 +2472,7 @@ sub Wattpilot_WriteJson($$) {
   </ul>
   <p>Version 2.0.7 classifies every public reading. Stored or user-selectable configuration values use the exact <code>config</code> prefix; Set-command names remain unchanged. There are no compatibility aliases, duplicate readings, automatic reading cleanup, DbLog migration, or transition period. Old reading entries may remain stale in an existing FHEM device after reload and must be removed or avoided through a fresh definition.</p>
   <p>Version 2.0.9 consistently abbreviates state of charge as <code>SoC</code> in public reading names and renames <code>configPvBatteryDischargeEndTime</code> to <code>configPvBatteryDischargeStopTime</code>. No old-name aliases or migration are provided.</p>
-  <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list and returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled. Actual Set operations remain blocked while disabled.</p>
+  <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2729,7 +2731,7 @@ sub Wattpilot_WriteJson($$) {
     <li>Alte namensbasierte Credential-Schlüssel werden weder gelesen noch gelöscht. Veröffentlichte 1.6.x-Versionen sind die letzte Linie mit dieser Upgrade-Unterstützung.</li>
   </ul>
   <p>Version 2.0.7 klassifiziert jedes öffentliche Reading. Gespeicherte oder vom Benutzer auswählbare Konfigurationswerte verwenden das feste Präfix <code>config</code>; die Namen der Set-Befehle bleiben unverändert. Es gibt keine Kompatibilitätsaliase, parallelen Readings, automatische Reading-Bereinigung, DbLog-Migration oder Übergangsfrist. Alte Reading-Einträge können nach einem Reload in einem bestehenden FHEM-Device als nicht mehr aktualisierte Werte erhalten bleiben und müssen manuell entfernt oder durch eine frische Definition vermieden werden.</p>
-  <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus und liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
+  <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>

@@ -217,6 +217,29 @@ is(main::Wattpilot_Set($hash, 'testWallbox', 'reconnect'),
     'Device is disabled',
     'actual Set operations remain blocked while the device is disabled');
 
+for my $case (
+    ['forceState', 'on'],
+    ['chargingCurrent', '16'],
+    ['chargingMode', 'eco'],
+    ['nextTripTime', '07:30'],
+    ['password', 'new-password'],
+) {
+    my ($command, $value) = @$case;
+    $hash = fresh_device();
+    my $password_key = 'Wattpilot_' . $hash->{FUUID} . '_password';
+    my $stored_password_before = $DevIo::KEY_VALUES{$password_key};
+    like(
+        main::Wattpilot_Set(
+            $hash, 'testWallbox', $command, $value, 'unexpected-extra'),
+        qr/^Usage:/,
+        "$command rejects an extra argument");
+    is(scalar @DevIo::WRITES, 0,
+        "$command extra argument sends no protocol frame");
+    is($DevIo::KEY_VALUES{$password_key}, $stored_password_before,
+        "$command extra argument leaves password storage unchanged")
+        if $command eq 'password';
+}
+
 $hash = fresh_device();
 is(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-password'), undef,
     'password command stores a new password');
