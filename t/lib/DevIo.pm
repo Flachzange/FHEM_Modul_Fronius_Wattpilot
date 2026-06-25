@@ -54,6 +54,18 @@ sub command_attr {
     return undef;
 }
 
+# Models fhem.pl CommandDeleteAttr at the pinned attribute revision: AttrFn is
+# called while the old attribute value is still visible, then storage is removed.
+sub command_delete_attr {
+    my ($name, $attribute) = @_;
+    return "Please define $name first" if !defined $main::defs{$name};
+    my $old = $main::attr{$name}{$attribute};
+    my $reply = main::Wattpilot_Attr('del', $name, $attribute, $old);
+    return $reply if defined($reply) && $reply ne '';
+    delete $main::attr{$name}{$attribute};
+    return undef;
+}
+
 # Models fhem.pl CommandModify at the pinned revision: OLDDEF and the new DEF
 # are installed before DefFn is called, and only DEF is restored on a veto.
 sub command_modify {
@@ -139,6 +151,15 @@ sub DevIo_OpenDev {
     my $dev = $hash->{DeviceName};
     my $level = $hash->{devioLoglevel} || 3;
     my $key = "$name.$dev";
+
+    # Pinned DevIo_OpenDev consumes DevIoJustClosed before attempting a new
+    # open. The ReadyFn owner remains installed and will invoke ReadyFn again.
+    if ($hash->{DevIoJustClosed}) {
+        delete $hash->{DevIoJustClosed};
+        push @OPEN_CALLBACKS, [$reopen, undef];
+        $callback->($hash, undef) if $callback;
+        return;
+    }
     if (!$reopen) {
         my $shown = AttrVal($name, 'privacy', 0) ? '(private)' : $dev;
         Log3($name, $level, "Opening $name device $shown");
@@ -254,14 +275,27 @@ sub complete_deferred_open {
 # complete frames. FIN is logged but not used to accumulate a logical message,
 # so tests may queue JSON continuations across decoded return values here.
 sub DevIo_SimpleRead {
+    my ($hash) = @_;
     my $value = shift @READS;
+
+    # A WebSocket Close control frame is decoded inside DevIo_DecodeWS. At the
+    # pinned revision it calls DevIo_CloseDev directly and returns undef, so no
+    # ReadyFn/NEXT_OPEN reconnect owner and no DevIoJustClosed marker exist.
+    if (ref($value) eq 'HASH' && ($value->{kind} // '') eq 'websocket_close') {
+        DevIo_CloseDev($hash);
+        return undef;
+    }
+
+    # Ordinary EOF/read loss is owned by DevIo_Disconnected: close, install a
+    # ReadyFn owner, publish disconnected and set DevIoJustClosed so the first
+    # ReadyFn OpenDev call is consumed without opening immediately.
     if (!defined $value) {
-        my $hash = $_[0];
+        return undef if !defined $hash->{FD};
         DevIo_CloseDev($hash);
         $READYFNLIST{$hash->{NAME}} = $hash;
         $READYFNLIST{($hash->{NAME} // '') . '.' . ($hash->{DeviceName} // '')} = $hash;
-        $hash->{NEXT_OPEN} = gettimeofday() + 60;
         readingsSingleUpdate($hash, 'state', 'disconnected', 1);
+        $hash->{DevIoJustClosed} = 1;
         push @TRIGGERS, 'DISCONNECTED';
     }
     return $value;

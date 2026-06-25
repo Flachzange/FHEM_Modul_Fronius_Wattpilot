@@ -20,13 +20,17 @@ Publication policies:
   create events;
 - `interval`: cache the newest valid value for that telemetry owner and publish
   all eligible dirty owners on one shared interval clock. `interval=0` disables
-  rate limiting and publishes eligible dirty values immediately.
+  rate limiting and publishes eligible dirty values immediately. A positive-to-zero
+  change, or deletion to the effective default zero, also flushes every currently
+  eligible queued owner in one reading transaction after cancelling the old clock.
 
 The data owners `energy`, `nrg`, and `battery` keep separate caches and dirty
 fields but share one flush timer and one FHEM reading transaction. Input from
 one owner neither publishes cached values nor changes dirty state for another.
-The `electrical` and `battery` idle gates are controlled by
-`update_while_idle`. Energy has no artificial idle gate, but it becomes dirty
+The `electrical` and `battery` ordinary-idle gates are controlled by
+`update_while_idle`. The bounded one-shot Charging-to-Idle `nrg` refresh applies
+with both attribute values; changing the attribute during that episode neither
+duplicates nor cancels it. Energy has no artificial idle gate, but it becomes dirty
 only when its formatted public value differs from the published reading;
 identical snapshots therefore renew neither timestamps nor events. Missing,
 `null`, wrong-type, malformed, out-of-range, or incomplete input preserves the

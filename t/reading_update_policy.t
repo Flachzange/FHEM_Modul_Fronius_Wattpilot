@@ -405,6 +405,109 @@ subtest 'configuration stays immediate and status paths share one policy' => sub
         'matched response uses the same nrg cadence');
 };
 
+subtest 'interval transition to zero flushes all currently eligible dirty owners' => sub {
+    my $hash = fresh_device();
+    $attr{$hash->{NAME}}{interval} = 30;
+    $attr{$hash->{NAME}}{update_while_idle} = 0;
+
+    $DevIo::NOW = 5_000;
+    ok(parse_status($hash, 'fullStatus', {
+        car => 2,
+        eto => 100_000,
+        wh => 1_000,
+        fbuf_akkuSOC => 50,
+        fbuf_pAkku => -500,
+        nrg => nrg(500),
+    }), 'charging baseline starts a positive shared interval');
+    my $old_ctx = $hash->{helper}{timers}{telemetry_flush};
+
+    $DevIo::NOW = 5_001;
+    ok(parse_status($hash, 'deltaStatus', {
+        eto => 101_000,
+        wh => 1_100,
+        fbuf_akkuSOC => 49,
+        fbuf_pAkku => -600,
+        nrg => nrg(600, 2),
+    }), 'all owners become dirty before the boundary');
+    is(reading_value($hash, 'power'), '500.00', 'nrg remains queued before interval zero');
+    is(reading_value($hash, 'pvBatteryPower'), '-500.00', 'battery remains queued before interval zero');
+    is(reading_value($hash, 'energyTotal'), '100.00', 'energy remains queued before interval zero');
+
+    $DevIo::NOW = 5_002;
+    my $events_before = scalar @DevIo::READING_EVENTS;
+    is(DevIo::command_attr($hash->{NAME}, 'interval', 0), undef,
+        'positive-to-zero transition is accepted');
+    is(reading_value($hash, 'power'), '600.00', 'eligible dirty nrg flushes immediately');
+    is(reading_value($hash, 'pvBatteryPower'), '-600.00', 'eligible dirty battery flushes immediately');
+    is(reading_value($hash, 'energyTotal'), '101.00', 'eligible changed energy flushes immediately');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'nrg and battery share the attribute-change transaction timestamp');
+    is(reading_time($hash, 'power'), reading_time($hash, 'energyTotal'),
+        'all flushed owners share one transaction timestamp');
+    ok(!exists $hash->{helper}{telemetryClock}, 'interval zero removes the shared clock');
+    ok(!exists $hash->{helper}{timers}{telemetry_flush}, 'interval zero removes timer ownership');
+    for my $owner (qw(nrg battery energy)) {
+        ok(!keys %{$hash->{helper}{telemetryPublication}{$owner}{dirty}},
+            "interval zero clears eligible $owner dirty state");
+    }
+    main::Wattpilot_TelemetryFlush($old_ctx);
+    is(reading_value($hash, 'power'), '600.00', 'stale old timer cannot republish after interval zero');
+
+    my $events_after_flush = scalar @DevIo::READING_EVENTS;
+    is(DevIo::command_attr($hash->{NAME}, 'interval', 0), undef,
+        'repeating interval zero is accepted');
+    is(scalar @DevIo::READING_EVENTS, $events_after_flush,
+        'repeating interval zero without dirty data emits no reading events');
+
+    $hash = fresh_device();
+    $attr{$hash->{NAME}}{interval} = 30;
+    $attr{$hash->{NAME}}{update_while_idle} = 0;
+    $DevIo::NOW = 5_100;
+    ok(parse_status($hash, 'fullStatus', {
+        car => 2, eto => 200_000, fbuf_pAkku => -700, nrg => nrg(700),
+    }), 'second charging baseline is accepted');
+    $DevIo::NOW = 5_101;
+    ok(parse_status($hash, 'deltaStatus', { car => 1 }),
+        'car transitions to idle');
+    # Consume the bounded idle bypass, then queue later ordinary idle input.
+    ok(parse_status($hash, 'deltaStatus', { nrg => nrg(0) }),
+        'authoritative one-shot idle nrg is accepted');
+    $DevIo::NOW = 5_102;
+    ok(parse_status($hash, 'deltaStatus', {
+        eto => 201_000, fbuf_pAkku => -800, nrg => nrg(800),
+    }), 'later idle telemetry is cached');
+    is(DevIo::command_attr($hash->{NAME}, 'interval', 0), undef,
+        'idle positive-to-zero transition is accepted');
+    is(reading_value($hash, 'energyTotal'), '201.00',
+        'changed energy remains eligible while idle');
+    isnt(reading_value($hash, 'power'), '800.00',
+        'ineligible ordinary idle nrg is not flushed by the attribute change');
+    isnt(reading_value($hash, 'pvBatteryPower'), '-800.00',
+        'ineligible idle battery is not flushed by the attribute change');
+    ok(keys %{$hash->{helper}{telemetryPublication}{nrg}{dirty}},
+        'ineligible idle nrg remains dirty and passive');
+    ok(keys %{$hash->{helper}{telemetryPublication}{battery}{dirty}},
+        'ineligible idle battery remains dirty and passive');
+    ok(!keys %{$hash->{helper}{telemetryPublication}{energy}{dirty}},
+        'eligible energy dirty state is consumed');
+
+    $hash = fresh_device();
+    $attr{$hash->{NAME}}{interval} = 30;
+    $attr{$hash->{NAME}}{update_while_idle} = 0;
+    $DevIo::NOW = 5_200;
+    ok(parse_status($hash, 'fullStatus', { car => 2, nrg => nrg(900) }),
+        'delete-attribute baseline is accepted');
+    $DevIo::NOW = 5_201;
+    ok(parse_status($hash, 'deltaStatus', { nrg => nrg(901) }),
+        'delete-attribute nrg becomes dirty');
+    is(DevIo::command_delete_attr($hash->{NAME}, 'interval'), undef,
+        'deleting interval is accepted');
+    is(reading_value($hash, 'power'), '901.00',
+        'deleting interval applies the effective default zero immediately');
+    ok(!exists $hash->{helper}{telemetryClock},
+        'deleting interval removes the old shared clock');
+};
+
 subtest 'shared telemetry clock owns one lifecycle-safe timer' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;

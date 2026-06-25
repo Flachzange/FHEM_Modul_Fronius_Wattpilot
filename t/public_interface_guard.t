@@ -281,6 +281,43 @@ like($protocol_doc,
 like($protocol_sources,
     qr/local FHEM safety\/UX constraint.*adds no `ama` setter/s,
     'protocol provenance records the local-only ama use');
+like($readme_en,
+    qr/first valid authenticated `fullStatus` or `deltaStatus` input completes initialization.*`partial=true` describes snapshot completeness only/s,
+    'English README documents partial fullStatus initialization');
+like($readme_de,
+    qr/authentifizierte `fullStatus`- oder `deltaStatus`-Input.*Initialisierung.*`partial=true`/s,
+    'German README documents partial fullStatus initialization');
+like($commandref_en,
+    qr/first valid authenticated <code>fullStatus<\/code> or <code>deltaStatus<\/code>.*<code>partial=true<\/code>.*completes initialization/s,
+    'English commandref documents partial fullStatus initialization');
+like($commandref_de,
+    qr/authentifizierte <code>fullStatus<\/code> oder <code>deltaStatus<\/code>.*<code>partial=true<\/code>.*Initialisierung/s,
+    'German commandref documents partial fullStatus initialization');
+like($readme_en,
+    qr/Changing a positive value to `0`, or deleting the attribute, immediately publishes already queued dirty owners.*currently eligible/s,
+    'English README documents interval-to-zero flush semantics');
+like($readme_de,
+    qr/positiver Wert auf `0`.*Attribut gel.*gepufferte.*Dirty-Gruppen.*sofort gemeinsam/s,
+    'German README documents interval-to-zero flush semantics');
+like($readme_en,
+    qr/With either attribute value.*one real `nrg`.*may bypass the clock once/s,
+    'English README documents the bounded idle refresh for both attribute values');
+like($readme_de,
+    qr/Bei beiden Attributwerten.*ein echtes `nrg`.*den Takt einmalig umgehen/s,
+    'German README documents the bounded idle refresh for both attribute values');
+like($protocol_sources,
+    qr/ordinary EOF.*DevIo_Disconnected.*ReadyFn.*WebSocket Close frame.*DevIo_CloseDev.*one module reconnect/s,
+    'protocol provenance records distinct DevIo reconnect ownership paths');
+my $architecture_doc = read_utf8(File::Spec->catfile($root, 'ARCHITECTURE.md'));
+like($architecture_doc,
+    qr/0ae38bf79d19d8d598c065bf84b3990b33063c4b.*Ordinary EOF.*DevIoJustClosed.*WebSocket Close.*exactly one guarded module reconnect/s,
+    'architecture pins and documents DevIo close-frame ownership');
+like($commandref_en,
+    qr/connection lost.*device disabled.*credentials changed.*authentication aborted.*lifecycle timeout.*reconnect requested.*definition changed.*session replaced/s,
+    'English commandref documents every stable session-finalization reason');
+like($commandref_de,
+    qr/connection lost.*device disabled.*credentials changed.*authentication aborted.*lifecycle timeout.*reconnect requested.*definition changed.*session replaced/s,
+    'German commandref documents every stable session-finalization reason');
 
 for my $entry (@active_docs) {
     my ($label, $text) = @$entry;

@@ -88,16 +88,22 @@ is($hash->{STATE}, 'authenticating',
 
 $hash = fresh_device();
 $hash->{TEST_OPEN} = 1;
+$hash->{FD} = 99;
 $hash->{helper}{car_state} = 1;
 $hash->{READINGS}{power}{VAL} = '55.00';
 main::Wattpilot_Attr('set', $hash->{NAME}, 'update_while_idle', '1');
-is(timer_count('idle_refresh'), 1,
-    'update_while_idle=1 starts idle window using the new AttrFn value before commit');
-main::Wattpilot_Attr('set', $hash->{NAME}, 'update_while_idle', '0');
 is(timer_count('idle_refresh'), 0,
-    'update_while_idle=0 stops an already running idle window before commit');
-ok(!exists $hash->{helper}{idleRefreshPending},
-    'update_while_idle=0 clears idle refresh state');
+    'changing update_while_idle while already idle does not create a refresh episode');
+$hash->{helper}{car_state} = 2;
+main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
+is(timer_count('idle_refresh'), 1,
+    'charging-to-idle starts the bounded refresh independently of the attribute');
+my $idle_timer_ctx = $hash->{helper}{timers}{idle_refresh};
+main::Wattpilot_Attr('set', $hash->{NAME}, 'update_while_idle', '0');
+is(timer_count('idle_refresh'), 1,
+    'changing update_while_idle does not cancel an active refresh episode');
+ok($hash->{helper}{timers}{idle_refresh} == $idle_timer_ctx,
+    'attribute change preserves the existing refresh owner');
 
 $hash = fresh_device();
 $hash->{helper}{car_state} = 1;
@@ -114,30 +120,32 @@ is($hash->{READINGS}{power}{VAL}, '0.00',
     'update_while_idle=1 processes real idle nrg values');
 
 $hash = fresh_device();
-$attr{$hash->{NAME}}{update_while_idle} = 1;
+$attr{$hash->{NAME}}{update_while_idle} = 0;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
+$hash->{FD} = 99;
 seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1, nrg => nrg(0) }));
 is($hash->{READINGS}{power}{VAL}, '0.00',
-    'charging-to-idle nrg in the same message bypasses the rate limit once');
+    'update_while_idle=0 still allows transition-message nrg once');
 is(timer_count('idle_refresh'), 0, 'same-message nrg cancels idle refresh');
 
 main::Wattpilot_Parse($hash, status_msg({ nrg => nrg(555) }));
 is($hash->{READINGS}{power}{VAL}, '0.00',
-    'the idle bypass is not reused for a second rate-limited nrg');
+    'subsequent ordinary idle nrg stays passive with update_while_idle=0');
 
 $hash = fresh_device();
-$attr{$hash->{NAME}}{update_while_idle} = 1;
+$attr{$hash->{NAME}}{update_while_idle} = 0;
 $attr{$hash->{NAME}}{interval} = 300;
 $hash->{TEST_OPEN} = 1;
+$hash->{FD} = 99;
 seed_telemetry_clock($hash, 300);
 $hash->{helper}{car_state} = 2;
 $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
-is(timer_count('idle_refresh'), 1, 'idle transition without nrg arms one refresh timer');
+is(timer_count('idle_refresh'), 1, 'update_while_idle=0 arms one refresh timer after charging');
 due_in(10);
 main::Wattpilot_Parse($hash, status_msg({ nrg => nrg(0) }));
 is($hash->{READINGS}{power}{VAL}, '0.00',
@@ -264,19 +272,48 @@ main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
 main::Wattpilot_Parse($hash, encode_json({
     type => 'fullStatus', partial => JSON::true, status => { amp => 16 },
 }));
-is($hash->{STATE}, 'initializing',
-    'partial fullStatus keeps initialization open');
+is($hash->{STATE}, 'connected',
+    'partial fullStatus establishes the authenticated session');
 is($hash->{READINGS}{configChargingCurrent}{VAL}, 16,
     'partial fullStatus is still applied incrementally');
-is(timer_count('lifecycle_timeout'), 1,
-    'partial fullStatus retains the initialization timeout');
-main::Wattpilot_Parse($hash, encode_json({
-    type => 'fullStatus', partial => JSON::false, status => { car => 1 },
-}));
-is($hash->{STATE}, 'connected',
-    'non-partial fullStatus completes initialization');
 is(timer_count('lifecycle_timeout'), 0,
-    'initialization timeout is cancelled after completion');
+    'partial fullStatus cancels the initialization timeout');
+my $connected_state = $hash->{STATE};
+main::Wattpilot_LifecycleTimeout({
+    hash => $hash,
+    kind => 'lifecycle_timeout',
+    generation => main::Wattpilot_CurrentLifecycleGeneration($hash) - 1,
+    name => $hash->{NAME},
+    fuuid => $hash->{FUUID},
+    phase => 'initialization',
+});
+is($hash->{STATE}, $connected_state,
+    'a stale initialization timeout cannot mutate the established session');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'fullStatus', partial => JSON::true, status => { car => 1 },
+}));
+is($hash->{READINGS}{carState}{VAL}, 'idle',
+    'later partial chunks continue to update only supplied fields');
+
+$hash = fresh_device();
+main::Wattpilot_Connect($hash);
+$hash->{helper}{authPending} = 1;
+main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'fullStatus', partial => JSON::true, status => [],
+}));
+is($hash->{STATE}, 'initializing',
+    'non-hash partial status cannot establish initialization');
+is(timer_count('lifecycle_timeout'), 1,
+    'malformed status leaves the initialization timeout active');
+
+$hash = fresh_device();
+$hash->{STATE} = 'authenticating';
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'fullStatus', partial => JSON::true, status => { amp => 14 },
+}));
+is($hash->{STATE}, 'authenticating',
+    'status received before authentication cannot initialize the session');
 
 $hash = fresh_device();
 main::Wattpilot_ScheduleConnect($hash, 10);
@@ -418,12 +455,54 @@ ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash,
 
 $hash = fresh_device();
 $hash->{TEST_OPEN} = 1;
+$hash->{TCPDev} = 1;
+$hash->{FD} = 99;
+$hash->{helper}{pendingRequests}{41} = { key => 'amp', sentAt => $DevIo::NOW };
+main::Wattpilot_ScheduleRequestTimeout($hash);
+$hash->{READINGS}{lastCommandStatus}{VAL} = 'pending';
 push @DevIo::READS, undef;
 main::Wattpilot_Read($hash);
-ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash, 'DevIo disconnect registers readyfnlist');
-ok(defined $hash->{NEXT_OPEN}, 'DevIo disconnect sets NEXT_OPEN');
-is(timer_count('connect'), 0, 'transport disconnect creates no module reconnect timer');
-ok(!exists $hash->{FD}, 'DevIo close removes FD state');
+ok($DevIo::READYFNLIST{$hash->{NAME}} == $hash, 'ordinary DevIo disconnect registers readyfnlist');
+ok($hash->{DevIoJustClosed}, 'ordinary DevIo disconnect marks the close for ReadyFn');
+is(timer_count('connect'), 0, 'ordinary transport disconnect creates no module reconnect timer');
+is($hash->{STATE}, 'disconnected', 'ordinary transport disconnect publishes truthful state');
+is($hash->{READINGS}{lastCommandStatus}{VAL}, 'failed',
+    'ordinary transport disconnect finalizes a pending command');
+is($hash->{READINGS}{lastCommandError}{VAL}, 'connection lost',
+    'ordinary transport disconnect exposes the redacted reason');
+my $open_count = scalar @DevIo::OPENS;
+main::Wattpilot_Ready($hash);
+is(scalar @DevIo::OPENS, $open_count + 1,
+    'first ReadyFn callback reaches DevIo OpenDev');
+ok(!DevIo::DevIo_IsOpen($hash),
+    'DevIoJustClosed consumes the first ReadyFn open without opening');
+is($hash->{STATE}, 'disconnected',
+    'consumed ReadyFn open does not enter authentication');
+main::Wattpilot_Ready($hash);
+ok(DevIo::DevIo_IsOpen($hash), 'later ReadyFn callback opens normally');
+is($hash->{STATE}, 'authenticating', 'later ReadyFn callback enters authentication');
+
+$hash = fresh_device();
+$hash->{TEST_OPEN} = 1;
+$hash->{TCPDev} = 1;
+$hash->{FD} = 99;
+$hash->{helper}{pendingRequests}{42} = { key => 'amp', sentAt => $DevIo::NOW };
+main::Wattpilot_ScheduleRequestTimeout($hash);
+push @DevIo::READS, { kind => 'websocket_close' };
+main::Wattpilot_Read($hash);
+is($hash->{STATE}, 'disconnected', 'WebSocket Close publishes disconnected');
+is(timer_count('connect'), 1, 'WebSocket Close installs exactly one module reconnect owner');
+ok(!exists $DevIo::READYFNLIST{$hash->{NAME}},
+    'WebSocket Close does not invent a DevIo ReadyFn owner');
+is($hash->{READINGS}{lastCommandError}{VAL}, 'connection lost',
+    'WebSocket Close finalizes pending commands consistently');
+push @DevIo::READS, { kind => 'websocket_close' };
+main::Wattpilot_Read($hash);
+is(timer_count('connect'), 1, 'repeated close callbacks cannot duplicate reconnect timers');
+my $stale_connect = $hash->{helper}{timers}{connect};
+main::Wattpilot_Attr('set', $hash->{NAME}, 'disable', '1');
+main::Wattpilot_Connect($stale_connect);
+is(scalar @DevIo::OPENS, 0, 'stale WebSocket-close reconnect is suppressed after disable');
 
 $hash = fresh_device();
 main::Wattpilot_ScheduleConnect($hash, 10);
