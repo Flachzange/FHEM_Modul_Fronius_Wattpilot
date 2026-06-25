@@ -42,7 +42,7 @@ $defs{$other->{NAME}} = $other;
 my $state_before = $hash->{STATE};
 my %registration;
 main::Wattpilot_Initialize(\%registration);
-is($hash->{VERSION}, '2.1.0',
+is($hash->{VERSION}, '2.1.1',
     'reload-style Initialize refreshes VERSION to the module version');
 is($other->{VERSION}, 'unchanged',
     'reload-style Initialize does not alter unrelated devices');
@@ -60,7 +60,7 @@ delete $hash->{VERSION};
 is(main::Wattpilot_Define(
         $hash, 'runtimeFixWallbox Wattpilot 192.0.2.203 20000003'), undef,
     'fresh definition succeeds');
-is($hash->{VERSION}, '2.1.0',
+is($hash->{VERSION}, '2.1.1',
     'fresh definition exposes the module version in VERSION');
 
 main::Wattpilot_DispatchMessage($hash, {
@@ -69,7 +69,7 @@ main::Wattpilot_DispatchMessage($hash, {
     devicetype => 'wattpilot_flex',
     protocol => 2,
 });
-is($hash->{VERSION}, '2.1.0',
+is($hash->{VERSION}, '2.1.1',
     'device hello firmware does not overwrite module VERSION');
 is($hash->{READINGS}{firmwareVersion}{VAL}, '43.4',
     'device hello firmware remains available as firmwareVersion');
@@ -105,19 +105,32 @@ ok(!exists $hash->{READINGS}{power},
 $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 0;
 $attr{$hash->{NAME}}{interval} = 300;
-$hash->{LAST_UPDATE} = time;
+$DevIo::NOW = 5_000;
 main::Wattpilot_UpdateReadings($hash, {
     car => 2,
+    eto => 780000,
+    wh => 6700,
+    nrg => [231, 231, 231, 0, 1, 1, 1, 220, 220, 220, 0, 660],
+}, 'fullStatus');
+$DevIo::NOW = 5_001;
+main::Wattpilot_UpdateReadings($hash, {
     eto => 781000,
     wh => 6800,
     nrg => [232, 232, 232, 0, 1, 1, 1, 230, 230, 230, 0, 690],
 }, 'deltaStatus');
+is($hash->{READINGS}{energyTotal}{VAL}, '780.00',
+    'changed energy waits behind the shared interval gate');
+is($hash->{READINGS}{power}{VAL}, '660.00',
+    'changed nrg waits behind the same shared interval gate');
+DevIo::run_due_timers(5_300);
 is($hash->{READINGS}{energyTotal}{VAL}, '781.00',
-    'energyTotal updates while interval suppresses charging nrg');
+    'changed energy publishes on the common telemetry tick');
 is($hash->{READINGS}{energySincePlugIn}{VAL}, '6800.00',
-    'energySincePlugIn updates while interval suppresses charging nrg');
-ok(!exists $hash->{READINGS}{voltageL1},
-    'recent LAST_UPDATE keeps charging nrg behind the interval gate');
+    'changed plug-in energy publishes on the common telemetry tick');
+is($hash->{READINGS}{power}{VAL}, '690.00',
+    'changed nrg publishes on the common telemetry tick');
+is($hash->{READINGS}{energyTotal}{TIME}, $hash->{READINGS}{power}{TIME},
+    'energy and nrg share one FHEM timestamp');
 
 $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;

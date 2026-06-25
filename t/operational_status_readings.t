@@ -147,7 +147,6 @@ is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
 $hash = fresh_device();
 $attr{$hash->{NAME}}{interval} = 300;
 $attr{$hash->{NAME}}{update_while_idle} = 0;
-$hash->{LAST_UPDATE} = DevIo::gettimeofday();
 main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
     status => {

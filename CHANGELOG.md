@@ -1,5 +1,17 @@
 # Changelog
 
+## [v2.1.1] - 2026-06-25
+
+### Reading publication policy and rate-limit regression
+
+- Added one authoritative policy inventory for all 53 public readings, including category, source, publication policy, idle gate, cache/history owner, formatter, and invalid-input behavior. Runtime categories and interface guards derive from that inventory.
+- Keep separate latest-value caches and dirty fields for cumulative energy, electrical `nrg`, and stationary-battery SOC/power, but publish all eligible dirty owners on one shared interval clock and in one FHEM reading transaction. Owner separation prevents cross-group starvation and stale cache republication while aligned ticks provide one common timestamp.
+- `energyTotal` and `energySincePlugIn` now obey the shared `interval` clock and become dirty only when the formatted public value changes. Identical `eto`/`wh` values renew neither timestamps nor events. `interval=0` publishes eligible dirty values immediately; missing, `null`, malformed, wrong-type, out-of-range, or incomplete input preserves readings and does not move the clock.
+- `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, both charging-decision code/text pairs, and `errorCode` are immediate-on-change. Identical values from repeated snapshots do not renew timestamps or create events; decision code/text pairs remain atomic.
+- Validated internal `car` state remains immediate and drives idle gating and charging-to-idle transitions before public publication. The bounded one-shot idle refresh/reconnect behavior remains intact, and no polling command or synthetic zero value was added.
+- FullStatus, partial fullStatus, deltaStatus, and matched response status now use the same publication policy. Regression tests inspect values, timestamps, and events, including repeated battery-before-`nrg` ordering and exact interval boundaries.
+- Updated both embedded command references, both READMEs, API, architecture, testing, protocol/evidence documents, reading-policy inventory, and release metadata. Real-device verification on a Wattpilot Flex Home 22 C6 with firmware 43.4 remains required before release.
+
 ## [v2.1.0] - 2026-06-25
 
 ### Audit corrections and simplification
@@ -62,8 +74,8 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 - Drei ausschließlich lesende Readings für den stationären PV-Speicher ergänzt: `pvBatterySoC` aus `fbuf_akkuSOC`, `pvBatteryPower` aus `fbuf_pAkku` und `pvBatteryModeCode` aus `fbuf_akkuMode`. Sie bezeichnen ausdrücklich nicht den Fahrzeugakku.
 - `pvBatterySoC` akzeptiert nur endliche Werte von 0 bis 100 Prozent und wird mit genau einer Nachkommastelle ausgegeben. `pvBatteryPower` gibt den vorzeichenbehafteten Wattwert grundsätzlich mit zwei Nachkommastellen aus; mangels kontrolliert bestätigter Vorzeichenrichtung wird Laden/Entladen nicht umgedeutet. `pvBatteryModeCode` bewahrt den nicht negativen Rohcode; mangels belastbarer Enum wird kein Klartextmodus erfunden.
 - Fehlende, `null`-, typfalsche, NaN-, unendliche oder außerhalb des belegten SOC-Bereichs liegende Batteriefelder verändern vorhandene Readings nicht.
-- Spannung, Strom, Leistung und die drei stationären Speicherreadings verwenden genau eine gemeinsame `interval`-Zeitbasis. Gültige `nrg`- und Batterieinformationen werden gemeinsam zwischengespeichert. Nach der ersten gültigen `nrg`-Initialisierung kann ein gültiges Update aus jeder der beiden Messgruppen den nächsten gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren Messreadings in derselben FHEM-Reading-Transaktion aktualisiert. Eine separate `LAST_BATTERY_UPDATE`-Historie gibt es nicht.
-- Regression im Messwert-Rate-Limit behoben: Der gemeinsame Zyklus ist nicht mehr ausschließlich von einem neuen `nrg`-Delta abhängig. Gültige Werte innerhalb des Intervalls aktualisieren nur den gemeinsamen Zwischenspeicher; Konfigurations- und ungültige Nachrichten verbrauchen `LAST_UPDATE` nicht. `update_while_idle` gilt einmalig für den gesamten Messzyklus.
+- Die damalige Version 2.0.6 verwendete für elektrische und stationäre Speicherreadings eine gemeinsame `interval`-Zeitbasis und einen gemeinsamen Zwischenspeicher. Diese historische Policy wurde in Version 2.1.1 wegen der daraus möglichen Verhungerung frischer `nrg`-Werte durch getrennte Zeitbasen ersetzt.
+- Historisch konnten gültige Batterieinformationen einen gemeinsamen Messzyklus auslösen und dabei alte elektrische Cachewerte erneut veröffentlichen. Version 2.1.1 trennt deshalb Cache- und Dirty-Eigentum strikt, verwendet für die kontrollierte Veröffentlichung aber bewusst einen gemeinsamen Takt: Ein Tick veröffentlicht nur die jeweils zulässigen geänderten Eigentümer.
 - Bewusst keine Batterie-Setter ergänzt: `fam` und die Rohschlüssel hinter den neueren Fronius-App-Einstellungen bleiben bis zur eindeutigen Semantik- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
 - Die Endnutzerdokumentation erklärt nun, dass aWATTar ein Anbieter-/Tarifname ist und dass `Fallback` in den importierten go-e-Entscheidungsnamen einen Standardausgang der Logik, nicht automatisch einen technischen Fehler bezeichnet. Der bestehende Vorbehalt zur unbestätigten Flex-Semantik bleibt ausdrücklich erhalten.
 - Dokumentation und Tests halten nun den erfolgreichen Realgerätetest von Version 2.0.5 fest: alle elf Konfigurationssetter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, bestätigt und zurückgesetzt; `set reconnect` stellte die Sitzung erfolgreich neu her.
@@ -96,7 +108,7 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ### Laufzeitkorrekturen nach dem ersten Flex-Praxistest
 
-- `energyTotal` und `energySincePlugIn` werden nicht mehr zusammen mit den hochfrequenten `nrg`-Messwerten durch `update_while_idle` beziehungsweise `interval` gesperrt. Bei vorhandenen `eto`-/`wh`-Feldern werden die Energiezähler immer aktualisiert; nur Spannung, Strom und Leistung bleiben im Idle-Zustand optional begrenzt.
+- Version 2.0.3 nahm `energyTotal` und `energySincePlugIn` historisch aus dem damaligen gemeinsamen `nrg`-/Idle-Gate heraus. Seit Version 2.1.1 behalten sie einen eigenen Latest-Value-/Dirty-Eigentümer, teilen aber den gemeinsamen Telemetrietakt und werden nur bei einer tatsächlichen Änderung ihres formatierten öffentlichen Werts veröffentlicht.
 - Das Device-Internal `VERSION` enthält die Modulversion `2.0.3`. Die vom Wattpilot gemeldete Firmware überschreibt dieses Internal nicht mehr und bleibt im Reading `firmwareVersion`. Frische Definitionen und bestehende Devices beim Modul-Reload werden berücksichtigt, ohne Verbindung, Timer, Credentials oder Readings neu zu initialisieren.
 - Nicht unterstützte JSON-Nachrichtentypen werden weiterhin ohne Payload ignoriert. Ein kurzer, streng begrenzter ASCII-Typname wird nun tatsächlich im Log genannt; ungeeignete Typwerte erscheinen als `redacted`.
 - Der reale Flex-Startablauf mit Firmware 43.4 bestätigte zusätzlich die Nachrichtentypen `clearInverters`, `updateInverter` und `clearSmips`. Sie sind als beobachtete, derzeit ungenutzte Startnachrichten dokumentiert und werden ohne Level-3-Warnung ignoriert; Payload-Aufbau und Bedeutung bleiben ausdrücklich unbekannt.

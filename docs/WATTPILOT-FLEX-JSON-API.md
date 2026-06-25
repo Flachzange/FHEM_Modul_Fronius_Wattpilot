@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.0 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.1 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.1.0; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.1.1; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.0 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.1 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -97,6 +97,7 @@ The observed wrapper carries `partial` beside `status`, not inside it. Version 2
 - Example: `{"type":"deltaStatus","status":{"amp":16}}`
 - Evidence: current implementation behavior and an explicitly synthetic existing fixture; not observed in the accepted capture.
 - Repository invariant: an omitted key is an absent partial update and must not delete or reset an existing reading.
+- Publication note: this device-side field filtering does not establish an official update frequency for any individual Flex field. No public Fronius local-WebSocket specification defining such per-field frequencies is evidenced.
 - Open questions: actual Flex 43.4 delta shapes, whether `partial` occurs, batching, and ordering.
 
 ### Observed but unused Flex startup messages
@@ -222,7 +223,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
 
 
-The names below describe the current version-2.1.0 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.1 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -239,8 +240,8 @@ The names below describe the current version-2.1.0 implementation. They describe
 | `amt` | `temperatureCurrentLimit` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
 | `mca` | `configMinimumChargingCurrent` | raw integer | current implementation plus pinned third-party current-limit candidate; unit not independently confirmed |
 | `ftt` | `configNextTripTime` / Set `nextTripTime` | seconds after midnight rendered as `HH:MM`; Set requires exact `HH:MM` and converts back to seconds | current implementation; unit/writability unverified |
-| `eto` | `energyTotal` | divides by 1000 and formats two decimals; updated immediately and independently of the volatile-telemetry gate | current implementation inference |
-| `wh` | `energySincePlugIn` | formats two decimals; updated immediately and independently of the volatile-telemetry gate | current implementation inference |
+| `eto` | `energyTotal` | divides by 1000, formats two decimals, becomes dirty only on a formatted public-value change, and uses the shared telemetry clock | current implementation inference |
+| `wh` | `energySincePlugIn` | formats two decimals, becomes dirty only on a formatted public-value change, and uses the shared telemetry clock | current implementation inference |
 | `nrg[0..2]` | `voltageL1..3` | formats two decimals; interpreted as volts | current implementation inference |
 | `nrg[4..6]` | `currentL1..3` | formats two decimals; interpreted as amperes | current implementation inference |
 | `nrg[7..9]` | `powerL1..3` | formats two decimals; interpreted as watts | current implementation inference |
@@ -250,7 +251,7 @@ The names below describe the current version-2.1.0 implementation. They describe
 
 The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` between `modelStatus` and `msi` are not confirmed for Wattpilot Flex. The documentation therefore does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, they must be treated as two device-supplied diagnostic values; no causal chain is inferred.
 
-The module applies one shared `interval` cadence to the `nrg`-derived voltage/current/power readings and the three stationary-PV-battery readings. Valid `nrg` and battery fields are cached together. Once valid `nrg` has initialized the cache, valid input from either group may trigger the next admitted cycle, which republishes all available volatile readings in the same FHEM reading transaction. The shared cycle runs while charging, or under the documented idle policy when `update_while_idle=1`. `eto` and `wh` remain immediate and independent of both attributes. `car`, `frc`, `ftt`, `amp`, `lmo`, `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca` are also immediate. Missing partial-update keys remain untouched.
+Version 2.1.1 applies the same reading policy to complete and partial `fullStatus`, `deltaStatus`, and matched response `status`. Configuration fields are immediate after valid device confirmation. `car`, `alw`, `modelStatus`, `msi`, `err`, `amt`, and `fbuf_akkuMode` are immediate-on-change, so identical public values do not renew timestamps or create events. Cumulative energy (`eto`/`wh`), electrical `nrg`, and stationary-battery SOC/power keep separate `energy`, `nrg`, and `battery` latest-value caches and dirty fields but share one interval clock and one FHEM reading transaction. Only valid input changes its own owner; unrelated owners never republish stale cache values. `update_while_idle` gates only electrical and stationary-battery telemetry. Energy is queued only when its formatted public value actually changes; this is module behavior and does not claim when the device emits `eto`/`wh`. Missing, `null`, invalid, or incomplete fields preserve readings and do not move the shared clock.
 
 ## Complete observed status-key reference
 
@@ -448,12 +449,12 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `fam` | number | `60` | Version 2.0.9 exposes `configPvBatteryChargeAboveSoC` and grouped Set `pvBattery chargeAboveSoC`; the setter sends a whole 0–100 integer. | percentage | R/W verified on one Flex 43.4; rejection/persistence/broader scope unverified | exact simultaneous app/status value on one Flex 43.4 | Minimal sanitized issue-#52 fixture, automated secured-payload tests, and maintainer write/readback/restore test. |
 | `fap` | boolean | `true` | The current module exposes `configChargingPauseAllowed` as `0`/`1` and writes a JSON boolean through secured `setValue`. | boolean | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | combined behavior/API/field evidence | Official Fronius Flex manual documents Allow charging pause; sanitized capture confirms field/type; pinned go-e and Wattpilot-specific sources supply key/R/W association. Not an official Fronius WebSocket specification. |
 | `fbuf_age` | number | `12345678` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `fbuf_akkuMode` | number | `1` | Version 2.0.6 exposes `pvBatteryModeCode` as the unchanged non-negative integer. No text enum is claimed. Updates use the shared module-side `interval` policy. | raw code | read-only compatibility implementation | observed field/type plus pinned Wattpilot-specific mode candidate | Complete initial status and matched responses use the same shared interval gate; no setter or enum is inferred. |
-| `fbuf_akkuSOC` | number | `60` | Version 2.0.6 exposes `pvBatterySoC` with exactly one decimal place when the finite value is within 0 through 100. Updates use the shared module-side `interval` policy. | % | read-only compatibility implementation | observed field/type/value plus pinned Wattpilot-specific stationary-battery SOC candidate | Complete initial status and matched responses use the same shared interval gate; missing, null, invalid, or out-of-range values leave the reading unchanged; no setter is exposed. |
+| `fbuf_akkuMode` | number | `1` | `pvBatteryModeCode` preserves the non-negative integer and publishes immediately only when the public value changes. No text enum is claimed. | raw code | read-only compatibility implementation | observed field/type plus pinned Wattpilot-specific mode candidate | Complete/partial status, deltas, and matched responses use the same immediate-on-change policy; no setter or enum is inferred. |
+| `fbuf_akkuSOC` | number | `60` | `pvBatterySoC` uses exactly one decimal place for finite values from 0 through 100, a separate `battery` cache/dirty owner, and the shared telemetry clock. | % | read-only compatibility implementation | observed field/type/value plus pinned Wattpilot-specific stationary-battery SOC candidate | All status-envelope paths use the same shared telemetry clock; missing, null, invalid, or out-of-range values preserve the reading and do not move the clock; no setter is exposed. |
 | `fbuf_ohmpilotState` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fbuf_ohmpilotTemperature` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fbuf_pAcTotal` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `fbuf_pAkku` | number | `-1525` | Version 2.0.6 exposes `pvBatteryPower` as the signed finite value formatted to two decimal places. Updates use the shared module-side `interval` policy and `update_while_idle` gate. | W candidate | read-only compatibility implementation | observed field/type/value plus pinned Wattpilot-specific power/W candidate | Complete initial status and matched responses use the same shared interval gate; the charge/discharge sign direction is not controlled-live-test confirmed and is not reinterpreted; no setter is exposed. |
+| `fbuf_pAkku` | number | `-1525` | `pvBatteryPower` preserves the signed finite value with two decimal places and uses a separate `battery` cache/dirty owner, the shared telemetry clock, and the battery idle gate. | W candidate | read-only compatibility implementation | observed field/type/value plus pinned Wattpilot-specific power/W candidate | All status-envelope paths use the shared telemetry clock; the sign direction remains unconfirmed and is not reinterpreted; invalid input does not move the clock; no setter is exposed. |
 | `fbuf_pGrid` | number | `125` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fbuf_pPv` | number | `1650` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `fcc` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
