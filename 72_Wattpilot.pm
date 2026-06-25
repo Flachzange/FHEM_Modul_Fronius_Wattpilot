@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.2';
+my $WATTPILOT_VERSION = '2.1.3';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -48,124 +48,108 @@ my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
-my %WATTPILOT_STATUS_SCHEMA = (
-    car         => { kind => 'integer' },
-    frc         => { kind => 'integer' },
-    ftt         => { kind => 'clock_seconds', allow_end_of_day => 0 },
-    amp         => { kind => 'integer' },
-    lmo         => { kind => 'integer' },
-    modelStatus => { kind => 'integer' },
-    msi         => { kind => 'integer' },
-    err         => { kind => 'integer' },
-    ama         => { kind => 'integer' },
-    amt         => { kind => 'integer' },
-    mca         => { kind => 'integer' },
-    frm         => { kind => 'integer' },
-    psm         => { kind => 'integer' },
-    fbuf_akkuMode => { kind => 'nonnegative_integer' },
-    eto         => { kind => 'number' },
-    wh          => { kind => 'number' },
-    fbuf_pAkku  => { kind => 'number' },
-    fbuf_akkuSOC => { kind => 'percentage' },
-    fam         => { kind => 'percentage' },
-    pdt         => { kind => 'percentage' },
-    fst         => { kind => 'nonnegative_number' },
-    spl3        => { kind => 'nonnegative_number' },
-    mpwst       => { kind => 'nonnegative_number' },
-    mptwt       => { kind => 'nonnegative_number' },
-    fmt         => { kind => 'nonnegative_number' },
-    mcpd        => { kind => 'nonnegative_number' },
-    mci         => { kind => 'nonnegative_number' },
-    pdls        => { kind => 'clock_seconds', allow_end_of_day => 0 },
-    pdlo        => { kind => 'clock_seconds', allow_end_of_day => 1 },
-    alw         => { kind => 'boolean' },
-    fup         => { kind => 'boolean' },
-    fzf         => { kind => 'boolean' },
-    fap         => { kind => 'boolean' },
-    pdte        => { kind => 'boolean' },
-    pdle        => { kind => 'boolean' },
-    nrg         => { kind => 'nrg' },
-);
-
-# key, public name, category, source, publication, idle gate, owner, formatter
+# key, public name, category, source, publication, idle gate, owner,
+# formatter, incoming validator, formatter detail
 my @WATTPILOT_READING_DEFINITION = (
-    [qw(state state lifecycle event:connection immediate none connection lifecycle)],
-    [qw(firmware_version firmwareVersion identity event:hello immediate none identity text)],
-    [qw(auth_hash_mode authHashMode diagnostic event:authentication immediate none authentication enum)],
-    [qw(car_state carState status status:car immediate-on-change none car enum)],
-    [qw(force_state configForceState configuration status:frc immediate none frc enum)],
-    [qw(charging_current configChargingCurrent configuration status:amp immediate none amp integer)],
-    [qw(charging_mode configChargingMode configuration status:lmo immediate none lmo enum)],
-    [qw(charging_allowed chargingAllowed status status:alw immediate-on-change none alw boolean)],
+    [qw(state state lifecycle event:connection immediate none connection lifecycle none none)],
+    [qw(firmware_version firmwareVersion identity event:hello immediate none identity text none none)],
+    [qw(auth_hash_mode authHashMode diagnostic event:authentication immediate none authentication enum none none)],
+    [qw(car_state carState status status:car immediate-on-change none car enum integer car)],
+    [qw(force_state configForceState configuration status:frc immediate none frc enum integer force)],
+    [qw(next_trip_time configNextTripTime configuration
+            status:ftt immediate none ftt clock clock_seconds strict)],
+    [qw(charging_current configChargingCurrent configuration status:amp immediate none amp integer integer none)],
+    [qw(charging_mode configChargingMode configuration status:lmo immediate none lmo enum integer charging_mode)],
+    [qw(charging_allowed chargingAllowed status status:alw immediate-on-change none alw boolean boolean none)],
     [qw(charging_decision_code chargingDecisionCode diagnostic
-        status:modelStatus immediate-on-change none modelStatus integer)],
+            status:modelStatus immediate-on-change none modelStatus integer integer none)],
     [qw(charging_decision chargingDecision diagnostic
-        status:modelStatus immediate-on-change none modelStatus enum)],
+            status:modelStatus immediate-on-change none modelStatus enum integer charging_decision)],
     [qw(charging_decision_internal_code chargingDecisionInternalCode diagnostic
-        status:msi immediate-on-change none msi integer)],
+            status:msi immediate-on-change none msi integer integer none)],
     [qw(charging_decision_internal chargingDecisionInternal diagnostic
-        status:msi immediate-on-change none msi enum)],
-    [qw(error_code errorCode diagnostic status:err immediate-on-change none err integer)],
-    [qw(maximum_current_limit configMaximumCurrentLimit configuration status:ama immediate none ama integer)],
-    [qw(temperature_current_limit temperatureCurrentLimit status
-        status:amt immediate-on-change none amt integer)],
-    [qw(minimum_charging_current configMinimumChargingCurrent configuration
-        status:mca immediate none mca integer)],
-    [qw(pv_surplus_start_power configPvSurplusStartPower configuration status:fst immediate none fst decimal2)],
-    [qw(pv_surplus_enabled configPvSurplusEnabled configuration status:fup immediate none fup boolean)],
-    [qw(zero_feed_in_enabled configZeroFeedInEnabled configuration status:fzf immediate none fzf boolean)],
-    [qw(pv_control_preference configPvControlPreference configuration status:frm immediate none frm enum)],
-    [qw(phase_switch_mode configPhaseSwitchMode configuration status:psm immediate none psm enum)],
-    [qw(three_phase_switch_power configThreePhaseSwitchPower configuration
-        status:spl3 immediate none spl3 decimal2)],
-    [qw(phase_switch_delay configPhaseSwitchDelay configuration status:mpwst immediate none mpwst seconds)],
-    [qw(minimum_phase_switch_interval configMinimumPhaseSwitchInterval configuration
-        status:mptwt immediate none mptwt seconds)],
-    [qw(minimum_charge_time configMinimumChargeTime configuration status:fmt immediate none fmt seconds)],
-    [qw(charging_pause_allowed configChargingPauseAllowed configuration status:fap immediate none fap boolean)],
-    [qw(minimum_charging_pause_duration configMinimumChargingPauseDuration configuration
-        status:mcpd immediate none mcpd seconds)],
-    [qw(minimum_charging_interval configMinimumChargingInterval configuration
-        status:mci immediate none mci seconds)],
-    [qw(pv_battery_soc pvBatterySoC telemetry status:fbuf_akkuSOC interval battery battery decimal1)],
-    [qw(pv_battery_power pvBatteryPower telemetry status:fbuf_pAkku interval battery battery decimal2)],
-    [qw(pv_battery_mode_code pvBatteryModeCode status
-        status:fbuf_akkuMode immediate-on-change none fbuf_akkuMode integer)],
-    [qw(pv_battery_charge_above_soc configPvBatteryChargeAboveSoC configuration
-        status:fam immediate none fam percentage)],
+            status:msi immediate-on-change none msi enum integer charging_decision)],
+    [qw(pv_surplus_start_power configPvSurplusStartPower configuration
+            status:fst immediate none fst decimal2 nonnegative_number none)],
+    [qw(pv_surplus_enabled configPvSurplusEnabled configuration
+            status:fup immediate none fup boolean boolean none)],
+    [qw(zero_feed_in_enabled configZeroFeedInEnabled configuration
+            status:fzf immediate none fzf boolean boolean none)],
+    [qw(charging_pause_allowed configChargingPauseAllowed configuration
+            status:fap immediate none fap boolean boolean none)],
     [qw(pv_battery_discharge_enabled configPvBatteryDischargeEnabled configuration
-        status:pdte immediate none pdte boolean)],
-    [qw(pv_battery_discharge_until_soc configPvBatteryDischargeUntilSoC configuration
-        status:pdt immediate none pdt percentage)],
+            status:pdte immediate none pdte boolean boolean none)],
     [qw(pv_battery_discharge_time_limit_enabled configPvBatteryDischargeTimeLimitEnabled configuration
-        status:pdle immediate none pdle boolean)],
+            status:pdle immediate none pdle boolean boolean none)],
+    [qw(pv_battery_charge_above_soc configPvBatteryChargeAboveSoC configuration
+            status:fam immediate none fam percentage percentage none)],
+    [qw(pv_battery_discharge_until_soc configPvBatteryDischargeUntilSoC configuration
+            status:pdt immediate none pdt percentage percentage none)],
     [qw(pv_battery_discharge_start_time configPvBatteryDischargeStartTime configuration
-        status:pdls immediate none pdls clock)],
+            status:pdls immediate none pdls clock clock_seconds strict)],
     [qw(pv_battery_discharge_stop_time configPvBatteryDischargeStopTime configuration
-        status:pdlo immediate none pdlo clock)],
-    [qw(next_trip_time configNextTripTime configuration status:ftt immediate none ftt clock)],
-    [qw(energy_total energyTotal telemetry status:eto interval none energy decimal2)],
-    [qw(energy_since_plug_in energySincePlugIn telemetry status:wh interval none energy decimal2)],
-    [qw(voltage_l1 voltageL1 telemetry status:nrg[0] interval electrical nrg decimal2)],
-    [qw(voltage_l2 voltageL2 telemetry status:nrg[1] interval electrical nrg decimal2)],
-    [qw(voltage_l3 voltageL3 telemetry status:nrg[2] interval electrical nrg decimal2)],
-    [qw(current_l1 currentL1 telemetry status:nrg[4] interval electrical nrg decimal2)],
-    [qw(current_l2 currentL2 telemetry status:nrg[5] interval electrical nrg decimal2)],
-    [qw(current_l3 currentL3 telemetry status:nrg[6] interval electrical nrg decimal2)],
-    [qw(power_l1 powerL1 telemetry status:nrg[7] interval electrical nrg decimal2)],
-    [qw(power_l2 powerL2 telemetry status:nrg[8] interval electrical nrg decimal2)],
-    [qw(power_l3 powerL3 telemetry status:nrg[9] interval electrical nrg decimal2)],
-    [qw(power power telemetry status:nrg[11] interval electrical nrg decimal2)],
+            status:pdlo immediate none pdlo clock clock_seconds end_of_day)],
+    [qw(pv_control_preference configPvControlPreference configuration
+            status:frm immediate none frm enum integer pv_control)],
+    [qw(phase_switch_mode configPhaseSwitchMode configuration
+            status:psm immediate none psm enum integer phase_switch)],
+    [qw(three_phase_switch_power configThreePhaseSwitchPower configuration
+            status:spl3 immediate none spl3 decimal2 nonnegative_number none)],
+    [qw(phase_switch_delay configPhaseSwitchDelay configuration
+            status:mpwst immediate none mpwst seconds nonnegative_number none)],
+    [qw(minimum_phase_switch_interval configMinimumPhaseSwitchInterval configuration
+            status:mptwt immediate none mptwt seconds nonnegative_number none)],
+    [qw(minimum_charge_time configMinimumChargeTime configuration
+            status:fmt immediate none fmt seconds nonnegative_number none)],
+    [qw(minimum_charging_pause_duration configMinimumChargingPauseDuration configuration
+            status:mcpd immediate none mcpd seconds nonnegative_number none)],
+    [qw(minimum_charging_interval configMinimumChargingInterval configuration
+            status:mci immediate none mci seconds nonnegative_number none)],
+    [qw(error_code errorCode diagnostic status:err immediate-on-change none err integer integer none)],
+    [qw(maximum_current_limit configMaximumCurrentLimit configuration
+            status:ama immediate none ama integer integer none)],
+    [qw(temperature_current_limit temperatureCurrentLimit status
+            status:amt immediate-on-change none amt integer integer none)],
+    [qw(minimum_charging_current configMinimumChargingCurrent configuration
+            status:mca immediate none mca integer integer none)],
+    [qw(pv_battery_mode_code pvBatteryModeCode status
+            status:fbuf_akkuMode immediate-on-change none fbuf_akkuMode integer nonnegative_integer none)],
+    [qw(pv_battery_soc pvBatterySoC telemetry
+            status:fbuf_akkuSOC interval battery battery decimal1 percentage none)],
+    [qw(pv_battery_power pvBatteryPower telemetry
+            status:fbuf_pAkku interval battery battery decimal2 number none)],
+    [qw(energy_total energyTotal telemetry
+            status:eto interval none energy decimal2 number none)],
+    [qw(energy_since_plug_in energySincePlugIn telemetry
+            status:wh interval none energy decimal2 number none)],
+    [qw(voltage_l1 voltageL1 telemetry status:nrg[0] interval electrical nrg decimal2 nrg none)],
+    [qw(voltage_l2 voltageL2 telemetry status:nrg[1] interval electrical nrg decimal2 nrg none)],
+    [qw(voltage_l3 voltageL3 telemetry status:nrg[2] interval electrical nrg decimal2 nrg none)],
+    [qw(current_l1 currentL1 telemetry status:nrg[4] interval electrical nrg decimal2 nrg none)],
+    [qw(current_l2 currentL2 telemetry status:nrg[5] interval electrical nrg decimal2 nrg none)],
+    [qw(current_l3 currentL3 telemetry status:nrg[6] interval electrical nrg decimal2 nrg none)],
+    [qw(power_l1 powerL1 telemetry status:nrg[7] interval electrical nrg decimal2 nrg none)],
+    [qw(power_l2 powerL2 telemetry status:nrg[8] interval electrical nrg decimal2 nrg none)],
+    [qw(power_l3 powerL3 telemetry status:nrg[9] interval electrical nrg decimal2 nrg none)],
+    [qw(power power telemetry status:nrg[11] interval electrical nrg decimal2 nrg none)],
     [qw(last_command_request_id lastCommandRequestId command_diagnostic
-        event:response immediate none command integer)],
-    [qw(last_command_status lastCommandStatus command_diagnostic event:response immediate none command enum)],
-    [qw(last_command_error lastCommandError command_diagnostic event:response immediate none command text)],
+            event:response immediate none command integer none none)],
+    [qw(last_command_status lastCommandStatus command_diagnostic
+            event:response immediate none command enum none none)],
+    [qw(last_command_error lastCommandError command_diagnostic
+            event:response immediate none command text none none)],
 );
 
 my @WATTPILOT_READING_POLICY_FIELD = qw(
-    category source publication idleGate owner formatter
+    category source publication idleGate owner formatter validator detail
 );
-my (%WATTPILOT_READING_NAME, %WATTPILOT_READING_POLICY);
+my (
+    %WATTPILOT_READING_NAME,
+    %WATTPILOT_READING_POLICY,
+    %WATTPILOT_STATUS_SCHEMA,
+    %WATTPILOT_STATUS_READING_KEYS,
+);
+my @WATTPILOT_IMMEDIATE_STATUS_READING;
 for my $definition (@WATTPILOT_READING_DEFINITION) {
     my ($key, $name, @values) = @$definition;
     $WATTPILOT_READING_NAME{$key} = $name;
@@ -174,6 +158,27 @@ for my $definition (@WATTPILOT_READING_DEFINITION) {
     } 0 .. $#WATTPILOT_READING_POLICY_FIELD;
     $policy{invalid} = 'preserve';
     $WATTPILOT_READING_POLICY{$key} = \%policy;
+
+    next if $policy{source} !~ /^status:([A-Za-z0-9_]+)(?:\[\d+\])?$/;
+    my $protocol_key = $1;
+    push @{$WATTPILOT_STATUS_READING_KEYS{$protocol_key}}, $key;
+    if ($policy{validator} ne 'none') {
+        my %spec = (kind => $policy{validator});
+        $spec{allow_end_of_day} = $policy{detail} eq 'end_of_day' ? 1 : 0
+            if $policy{validator} eq 'clock_seconds';
+        if (my $existing = $WATTPILOT_STATUS_SCHEMA{$protocol_key}) {
+            die "Conflicting validators for Wattpilot status field $protocol_key"
+                if $existing->{kind} ne $spec{kind}
+                || (($existing->{allow_end_of_day} // 0)
+                    != ($spec{allow_end_of_day} // 0));
+        }
+        else {
+            $WATTPILOT_STATUS_SCHEMA{$protocol_key} = \%spec;
+        }
+    }
+    push @WATTPILOT_IMMEDIATE_STATUS_READING, [$protocol_key, $key]
+        if $policy{publication} eq 'immediate'
+        || $policy{publication} eq 'immediate-on-change';
 }
 
 my %WATTPILOT_READING_CATEGORY = map {
@@ -199,27 +204,44 @@ my $WATTPILOT_NRG_OWNER = $WATTPILOT_READING_POLICY{power}{owner};
 my $WATTPILOT_BATTERY_OWNER =
     $WATTPILOT_READING_POLICY{pv_battery_power}{owner};
 
-my %WATTPILOT_COMMAND_NAME = (
-    password         => 'password',
-    force_state      => 'forceState',
-    charging_current => 'chargingCurrent',
-    charging_mode    => 'chargingMode',
-    pv_surplus_start_power => 'pvSurplusStartPower',
-    pv_surplus_enabled => 'pvSurplusEnabled',
-    zero_feed_in_enabled => 'zeroFeedInEnabled',
-    pv_control_preference => 'pvControlPreference',
-    phase_switch_mode => 'phaseSwitchMode',
-    three_phase_switch_power => 'threePhaseSwitchPower',
-    phase_switch_delay => 'phaseSwitchDelay',
-    minimum_phase_switch_interval => 'minimumPhaseSwitchInterval',
-    minimum_charge_time => 'minimumChargeTime',
-    charging_pause_allowed => 'chargingPauseAllowed',
-    minimum_charging_pause_duration => 'minimumChargingPauseDuration',
-    minimum_charging_interval => 'minimumChargingInterval',
-    reconnect => 'reconnect',
-    pv_battery => 'pvBattery',
-    next_trip_time   => 'nextTripTime',
+# key, public name, FHEMWEB widget, protocol key, parser, usage, invalid mode
+my @WATTPILOT_COMMAND_DEFINITION = (
+    ['password', 'password', 'none', 'none', 'special', '<secret>', 'usage'],
+    ['force_state', 'forceState', 'neutral,off,on', 'frc', 'force_state', '<neutral|off|on>', 'usage'],
+    ['charging_current', 'chargingCurrent', 'slider,6,1,32', 'amp', 'charging_current', '<6-32>', 'usage'],
+    ['charging_mode', 'chargingMode', 'default,eco,nextTrip', 'lmo', 'charging_mode', '<default|eco|nextTrip>', 'unknown_mode'],
+    ['pv_surplus_start_power', 'pvSurplusStartPower', 'none', 'fst', 'nonnegative_number', '<watts>', 'usage'],
+    ['pv_surplus_enabled', 'pvSurplusEnabled', '0,1', 'fup', 'boolean', '<0|1>', 'usage'],
+    ['zero_feed_in_enabled', 'zeroFeedInEnabled', '0,1', 'fzf', 'boolean', '<0|1>', 'usage'],
+    ['pv_control_preference', 'pvControlPreference', 'preferFromGrid,default,preferToGrid', 'frm', 'pv_control', '<preferFromGrid|default|preferToGrid>', 'usage'],
+    ['phase_switch_mode', 'phaseSwitchMode', 'auto,force1,force3', 'psm', 'phase_switch', '<auto|force1|force3>', 'usage'],
+    ['three_phase_switch_power', 'threePhaseSwitchPower', 'none', 'spl3', 'nonnegative_number', '<watts>', 'usage'],
+    ['phase_switch_delay', 'phaseSwitchDelay', 'none', 'mpwst', 'seconds', '<seconds>', 'usage'],
+    ['minimum_phase_switch_interval', 'minimumPhaseSwitchInterval', 'none', 'mptwt', 'seconds', '<seconds>', 'usage'],
+    ['minimum_charge_time', 'minimumChargeTime', 'none', 'fmt', 'seconds', '<seconds>', 'usage'],
+    ['charging_pause_allowed', 'chargingPauseAllowed', '0,1', 'fap', 'boolean', '<0|1>', 'usage'],
+    ['minimum_charging_pause_duration', 'minimumChargingPauseDuration', 'none', 'mcpd', 'seconds', '<seconds>', 'usage'],
+    ['minimum_charging_interval', 'minimumChargingInterval', 'none', 'mci', 'seconds', '<seconds>', 'usage'],
+    ['reconnect', 'reconnect', 'noArg', 'none', 'special', 'none', 'usage'],
+    ['pv_battery', 'pvBattery', 'none', 'none', 'special', 'none', 'usage'],
+    ['next_trip_time', 'nextTripTime', 'none', 'ftt', 'clock', '<HH:MM>', 'usage'],
 );
+
+my (%WATTPILOT_COMMAND_NAME, %WATTPILOT_COMMAND_SCHEMA, %WATTPILOT_COMMAND_BY_NAME);
+for my $definition (@WATTPILOT_COMMAND_DEFINITION) {
+    my ($key, $name, $widget, $protocol_key, $parser, $usage, $invalid) = @$definition;
+    my $schema = {
+        name => $name,
+        widget => $widget,
+        protocolKey => $protocol_key,
+        parser => $parser,
+        usage => $usage,
+        invalid => $invalid,
+    };
+    $WATTPILOT_COMMAND_NAME{$key} = $name;
+    $WATTPILOT_COMMAND_SCHEMA{$key} = $schema;
+    $WATTPILOT_COMMAND_BY_NAME{$name} = $schema;
+}
 
 my %WATTPILOT_OBSERVED_IGNORED_MESSAGE_TYPE = map { $_ => 1 } qw(
     clearInverters
@@ -310,6 +332,15 @@ my %WATTPILOT_PHASE_SWITCH_MODE = (
 
 my %WATTPILOT_PHASE_SWITCH_MODE_VALUE = reverse %WATTPILOT_PHASE_SWITCH_MODE;
 
+my %WATTPILOT_STATUS_ENUM_MAP = (
+    car => \%WATTPILOT_CAR_STATE,
+    force => \%WATTPILOT_FORCE_STATE,
+    charging_mode => \%WATTPILOT_CHARGING_MODE,
+    charging_decision => \%WATTPILOT_CHARGING_DECISION,
+    pv_control => \%WATTPILOT_PV_CONTROL_PREFERENCE,
+    phase_switch => \%WATTPILOT_PHASE_SWITCH_MODE,
+);
+
 my %WATTPILOT_LIFECYCLE_STATE = (
     disabled               => 'disabled',
     credential_error       => 'credentialError',
@@ -378,6 +409,14 @@ sub Wattpilot_InterfaceSnapshot() {
             owners => [sort keys %WATTPILOT_TELEMETRY_OWNER_IDLE_GATE],
         },
         commands       => { %WATTPILOT_COMMAND_NAME },
+        commandSchema  => { map { $_ => { %{$WATTPILOT_COMMAND_SCHEMA{$_}} } }
+            keys %WATTPILOT_COMMAND_SCHEMA },
+        statusFields   => { map {
+            $_ => {
+                %{$WATTPILOT_STATUS_SCHEMA{$_}},
+                readings => [@{$WATTPILOT_STATUS_READING_KEYS{$_} // []}],
+            }
+        } keys %WATTPILOT_STATUS_SCHEMA },
         carStates      => { %WATTPILOT_CAR_STATE },
         forceStates    => { %WATTPILOT_FORCE_STATE },
         chargingModes     => { %WATTPILOT_CHARGING_MODE },
@@ -1309,6 +1348,26 @@ sub Wattpilot_FormatReadingValue($$) {
     return $value;
 }
 
+sub Wattpilot_StatusReadingValue($$) {
+    my ($reading_key, $value) = @_;
+    my $policy = $WATTPILOT_READING_POLICY{$reading_key};
+    my $formatter = $policy->{formatter} // '';
+
+    return int($value) if $formatter eq 'integer';
+    return $value ? 1 : 0 if $formatter eq 'boolean';
+    return Wattpilot_MillisecondsToSeconds($value) if $formatter eq 'seconds';
+    return Wattpilot_SecondsSinceMidnightToTime(
+        $value, $policy->{detail} eq 'end_of_day')
+        if $formatter eq 'clock';
+    if ($formatter eq 'enum') {
+        my $map = $WATTPILOT_STATUS_ENUM_MAP{$policy->{detail}};
+        die "Missing enum map for Wattpilot reading $reading_key" if !$map;
+        my $normalized = int($value);
+        return $map->{$normalized} // 'unknown:' . $normalized;
+    }
+    return $value;
+}
+
 sub Wattpilot_PublishReading($$$) {
     my ($hash, $reading, $value) = @_;
     my $reading_key = $WATTPILOT_READING_KEY_BY_NAME{$reading};
@@ -1331,159 +1390,15 @@ sub Wattpilot_UpdateInternalStatus($$) {
 sub Wattpilot_UpdateImmediateReadings($$) {
     my ($hash, $status) = @_;
 
-    if (defined $status->{car}) {
-        my $car_value = int($status->{car});
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{car_state},
-            $WATTPILOT_CAR_STATE{$car_value} // 'unknown:' . $status->{car});
-    }
-
-    if (defined $status->{frc}) {
-        my $force_value = int($status->{frc});
-        my $force_state = exists($WATTPILOT_FORCE_STATE{$force_value})
-            ? $WATTPILOT_FORCE_STATE{$force_value}
-            : 'unknown:' . $status->{frc};
-        Wattpilot_PublishReading($hash, $WATTPILOT_READING_NAME{force_state}, $force_state);
-    }
-
-    if (defined $status->{ftt}) {
-        my $time = Wattpilot_SecondsSinceMidnightToTime($status->{ftt}, 0);
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{next_trip_time}, $time)
-            if defined $time;
-    }
-
-    Wattpilot_PublishReading($hash, $WATTPILOT_READING_NAME{charging_current}, $status->{amp})
-        if defined $status->{amp};
-
-    if (defined $status->{lmo}) {
-        my $mode_value = int($status->{lmo});
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{charging_mode},
-            $WATTPILOT_CHARGING_MODE{$mode_value} // 'unknown:' . $status->{lmo});
-    }
-
-    Wattpilot_PublishReading(
-        $hash, $WATTPILOT_READING_NAME{charging_allowed},
-        $status->{alw} ? 1 : 0)
-        if defined $status->{alw};
-
-    for my $field (
-        [modelStatus => 'charging_decision_code', 'charging_decision'],
-        [msi => 'charging_decision_internal_code', 'charging_decision_internal'],
-    ) {
-        my ($protocol_key, $code_reading_key, $text_reading_key) = @$field;
-        next if !defined $status->{$protocol_key};
-        my $value = int($status->{$protocol_key});
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$code_reading_key}, $value);
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$text_reading_key},
-            $WATTPILOT_CHARGING_DECISION{$value} // 'unknown:' . $value);
-    }
-
-    Wattpilot_PublishReading(
-        $hash, $WATTPILOT_READING_NAME{pv_surplus_start_power},
-        $status->{fst})
-        if defined $status->{fst};
-
-    for my $field (
-        [fup => 'pv_surplus_enabled'],
-        [fzf => 'zero_feed_in_enabled'],
-        [fap => 'charging_pause_allowed'],
-    ) {
-        my ($protocol_key, $reading_key) = @$field;
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key},
-            $status->{$protocol_key} ? 1 : 0)
-            if defined $status->{$protocol_key};
-    }
-
-    for my $field (
-        [pdte => 'pv_battery_discharge_enabled'],
-        [pdle => 'pv_battery_discharge_time_limit_enabled'],
-    ) {
-        my ($protocol_key, $reading_key) = @$field;
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key},
-            $status->{$protocol_key} ? 1 : 0)
-            if defined $status->{$protocol_key};
-    }
-
-    for my $field (
-        [fam => 'pv_battery_charge_above_soc'],
-        [pdt => 'pv_battery_discharge_until_soc'],
-    ) {
-        my ($protocol_key, $reading_key) = @$field;
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key},
-            $status->{$protocol_key})
-            if defined $status->{$protocol_key};
-    }
-
-    for my $field (
-        [pdls => 'pv_battery_discharge_start_time'],
-        [pdlo => 'pv_battery_discharge_stop_time'],
-    ) {
+    for my $field (@WATTPILOT_IMMEDIATE_STATUS_READING) {
         my ($protocol_key, $reading_key) = @$field;
         next if !defined $status->{$protocol_key};
-        my $time = Wattpilot_SecondsSinceMidnightToTime(
-            $status->{$protocol_key}, $protocol_key eq 'pdlo');
+        my $value = Wattpilot_StatusReadingValue(
+            $reading_key, $status->{$protocol_key});
         Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key}, $time)
-            if defined $time;
+            $hash, $WATTPILOT_READING_NAME{$reading_key}, $value)
+            if defined $value;
     }
-
-    if (defined $status->{frm}) {
-        my $value = int($status->{frm});
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{pv_control_preference},
-            $WATTPILOT_PV_CONTROL_PREFERENCE{$value} // 'unknown:' . $value);
-    }
-
-    if (defined $status->{psm}) {
-        my $value = int($status->{psm});
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{phase_switch_mode},
-            $WATTPILOT_PHASE_SWITCH_MODE{$value} // 'unknown:' . $value);
-    }
-
-    Wattpilot_PublishReading(
-        $hash, $WATTPILOT_READING_NAME{three_phase_switch_power},
-        $status->{spl3})
-        if defined $status->{spl3};
-
-    for my $field (
-        [mpwst => 'phase_switch_delay'],
-        [mptwt => 'minimum_phase_switch_interval'],
-        [fmt => 'minimum_charge_time'],
-        [mcpd => 'minimum_charging_pause_duration'],
-        [mci => 'minimum_charging_interval'],
-    ) {
-        my ($protocol_key, $reading_key) = @$field;
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key},
-            Wattpilot_MillisecondsToSeconds($status->{$protocol_key}))
-            if defined $status->{$protocol_key};
-    }
-
-    for my $field (
-        [err => 'error_code'],
-        [ama => 'maximum_current_limit'],
-        [amt => 'temperature_current_limit'],
-        [mca => 'minimum_charging_current'],
-    ) {
-        my ($protocol_key, $reading_key) = @$field;
-        Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key},
-            int($status->{$protocol_key}))
-            if defined $status->{$protocol_key};
-    }
-    Wattpilot_PublishReading(
-        $hash, $WATTPILOT_READING_NAME{pv_battery_mode_code},
-        int($status->{fbuf_akkuMode}))
-        if defined $status->{fbuf_akkuMode};
-
 }
 
 sub Wattpilot_HasValidNrg($) {
@@ -2103,28 +2018,49 @@ sub Wattpilot_SetPvBattery($@) {
     return Wattpilot_PvBatteryUsage($name);
 }
 
+sub Wattpilot_ParseSetCommandValue($$) {
+    my ($parser, $value) = @_;
+    return undef if !defined $value;
+
+    return int($WATTPILOT_FORCE_COMMAND_VALUE{$value})
+        if $parser eq 'force_state'
+        && exists $WATTPILOT_FORCE_COMMAND_VALUE{$value};
+    return int($value)
+        if $parser eq 'charging_current'
+        && $value =~ /^(?:[6-9]|[12]\d|3[0-2])$/;
+    return $WATTPILOT_CHARGING_MODE_VALUE{$value}
+        if $parser eq 'charging_mode'
+        && exists $WATTPILOT_CHARGING_MODE_VALUE{$value};
+    return Wattpilot_ParseFiniteNonNegativeNumber($value)
+        if $parser eq 'nonnegative_number';
+    return $value eq '1' ? JSON::true : JSON::false
+        if $parser eq 'boolean' && $value =~ /^(?:0|1)$/;
+    return $WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$value}
+        if $parser eq 'pv_control'
+        && exists $WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$value};
+    return $WATTPILOT_PHASE_SWITCH_MODE_VALUE{$value}
+        if $parser eq 'phase_switch'
+        && exists $WATTPILOT_PHASE_SWITCH_MODE_VALUE{$value};
+    return Wattpilot_ParseSecondsToMilliseconds($value)
+        if $parser eq 'seconds';
+    return Wattpilot_ParseClockTimeToSeconds($value, 0)
+        if $parser eq 'clock';
+    die "Unknown Wattpilot Set parser: $parser"
+        if $parser !~ /^(?:force_state|charging_current|charging_mode|nonnegative_number|boolean|pv_control|phase_switch|seconds|clock)$/;
+    return undef;
+}
+
 sub Wattpilot_SetOptions() {
-    return join(' ',
-        $WATTPILOT_COMMAND_NAME{password},
-        "$WATTPILOT_COMMAND_NAME{force_state}:neutral,off,on",
-        "$WATTPILOT_COMMAND_NAME{charging_current}:slider,6,1,32",
-        "$WATTPILOT_COMMAND_NAME{charging_mode}:default,eco,nextTrip",
-        $WATTPILOT_COMMAND_NAME{pv_surplus_start_power},
-        "$WATTPILOT_COMMAND_NAME{pv_surplus_enabled}:0,1",
-        "$WATTPILOT_COMMAND_NAME{zero_feed_in_enabled}:0,1",
-        "$WATTPILOT_COMMAND_NAME{pv_control_preference}:preferFromGrid,default,preferToGrid",
-        "$WATTPILOT_COMMAND_NAME{phase_switch_mode}:auto,force1,force3",
-        $WATTPILOT_COMMAND_NAME{three_phase_switch_power},
-        $WATTPILOT_COMMAND_NAME{phase_switch_delay},
-        $WATTPILOT_COMMAND_NAME{minimum_phase_switch_interval},
-        $WATTPILOT_COMMAND_NAME{minimum_charge_time},
-        "$WATTPILOT_COMMAND_NAME{charging_pause_allowed}:0,1",
-        $WATTPILOT_COMMAND_NAME{minimum_charging_pause_duration},
-        $WATTPILOT_COMMAND_NAME{minimum_charging_interval},
-        "$WATTPILOT_COMMAND_NAME{reconnect}:noArg",
-        $WATTPILOT_COMMAND_NAME{pv_battery},
-        $WATTPILOT_COMMAND_NAME{next_trip_time},
-    );
+    return join(' ', map {
+        my $schema = $WATTPILOT_COMMAND_SCHEMA{$_->[0]};
+        $schema->{name}
+            . ($schema->{widget} eq 'none' ? '' : ':' . $schema->{widget});
+    } @WATTPILOT_COMMAND_DEFINITION);
+}
+
+sub Wattpilot_SetUsage($$) {
+    my ($name, $schema) = @_;
+    return "Usage: set $name $schema->{name} $schema->{usage}";
 }
 
 sub Wattpilot_Set($@) {
@@ -2136,126 +2072,42 @@ sub Wattpilot_Set($@) {
 
     return "Unknown argument $cmd, choose one of $set_options"
         if $cmd eq '?';
-    return "Device is disabled" if(Wattpilot_IsDisabled($name));
+    return "Device is disabled" if Wattpilot_IsDisabled($name);
 
     if ($cmd eq $WATTPILOT_COMMAND_NAME{reconnect}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{reconnect}"
             if @a != 2;
         return Wattpilot_ManualReconnect($hash);
-    } elsif($cmd eq $WATTPILOT_COMMAND_NAME{force_state}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{force_state} <neutral|off|on>"
-            if @a != 3 || !defined($val)
-            || !exists($WATTPILOT_FORCE_COMMAND_VALUE{$val});
-        return Wattpilot_SendSecure(
-            $hash, "frc", int($WATTPILOT_FORCE_COMMAND_VALUE{$val}));
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_current}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_current} <6-32>"
-            if @a != 3 || !defined($val)
-            || $val !~ /^(?:[6-9]|[12]\d|3[0-2])$/;
-        return Wattpilot_SendSecure($hash, "amp", int($val));
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{pv_surplus_start_power}) {
-        my $watts = defined($val)
-            ? Wattpilot_ParseFiniteNonNegativeNumber($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_surplus_start_power} <watts>"
-            if @a != 3 || !defined($watts);
-        return Wattpilot_SendSecure($hash, "fst", $watts);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{pv_surplus_enabled}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_surplus_enabled} <0|1>"
-            if @a != 3 || !defined($val) || $val !~ /^(?:0|1)$/;
-        return Wattpilot_SendSecure(
-            $hash, "fup", $val eq '1' ? JSON::true : JSON::false);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{zero_feed_in_enabled}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{zero_feed_in_enabled} <0|1>"
-            if @a != 3 || !defined($val) || $val !~ /^(?:0|1)$/;
-        return Wattpilot_SendSecure(
-            $hash, "fzf", $val eq '1' ? JSON::true : JSON::false);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{pv_control_preference}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_control_preference} <preferFromGrid|default|preferToGrid>"
-            if @a != 3 || !defined($val)
-            || !exists($WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$val});
-        return Wattpilot_SendSecure(
-            $hash, "frm", $WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$val});
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{phase_switch_mode}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{phase_switch_mode} <auto|force1|force3>"
-            if @a != 3 || !defined($val)
-            || !exists($WATTPILOT_PHASE_SWITCH_MODE_VALUE{$val});
-        return Wattpilot_SendSecure(
-            $hash, "psm", $WATTPILOT_PHASE_SWITCH_MODE_VALUE{$val});
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{three_phase_switch_power}) {
-        my $watts = defined($val)
-            ? Wattpilot_ParseFiniteNonNegativeNumber($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{three_phase_switch_power} <watts>"
-            if @a != 3 || !defined($watts);
-        return Wattpilot_SendSecure($hash, "spl3", $watts);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{phase_switch_delay}) {
-        my $milliseconds = defined($val)
-            ? Wattpilot_ParseSecondsToMilliseconds($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{phase_switch_delay} <seconds>"
-            if @a != 3 || !defined($milliseconds);
-        return Wattpilot_SendSecure($hash, "mpwst", $milliseconds);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{minimum_phase_switch_interval}) {
-        my $milliseconds = defined($val)
-            ? Wattpilot_ParseSecondsToMilliseconds($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{minimum_phase_switch_interval} <seconds>"
-            if @a != 3 || !defined($milliseconds);
-        return Wattpilot_SendSecure($hash, "mptwt", $milliseconds);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{minimum_charge_time}) {
-        my $milliseconds = defined($val)
-            ? Wattpilot_ParseSecondsToMilliseconds($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{minimum_charge_time} <seconds>"
-            if @a != 3 || !defined($milliseconds);
-        return Wattpilot_SendSecure($hash, "fmt", $milliseconds);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_pause_allowed}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_pause_allowed} <0|1>"
-            if @a != 3 || !defined($val) || $val !~ /^(?:0|1)$/;
-        return Wattpilot_SendSecure(
-            $hash, "fap", $val eq '1' ? JSON::true : JSON::false);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{minimum_charging_pause_duration}) {
-        my $milliseconds = defined($val)
-            ? Wattpilot_ParseSecondsToMilliseconds($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{minimum_charging_pause_duration} <seconds>"
-            if @a != 3 || !defined($milliseconds);
-        return Wattpilot_SendSecure($hash, "mcpd", $milliseconds);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{minimum_charging_interval}) {
-        my $milliseconds = defined($val)
-            ? Wattpilot_ParseSecondsToMilliseconds($val)
-            : undef;
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{minimum_charging_interval} <seconds>"
-            if @a != 3 || !defined($milliseconds);
-        return Wattpilot_SendSecure($hash, "mci", $milliseconds);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{charging_mode}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{charging_mode} <default|eco|nextTrip>"
-            if @a != 3 || !defined $val;
-        return "Unknown mode $val"
-            if !exists $WATTPILOT_CHARGING_MODE_VALUE{$val};
-        return Wattpilot_SendSecure(
-            $hash, "lmo", $WATTPILOT_CHARGING_MODE_VALUE{$val});
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{pv_battery}) {
+    }
+    if ($cmd eq $WATTPILOT_COMMAND_NAME{pv_battery}) {
         return Wattpilot_SetPvBattery($hash, @a[2 .. $#a]);
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{next_trip_time}) {
-        return "Usage: set $name $WATTPILOT_COMMAND_NAME{next_trip_time} <HH:MM>"
-            if @a != 3 || !defined($val)
-            || $val !~ /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-        my ($h, $m) = split(':', $val);
-        my $seconds = ($h * 3600) + ($m * 60);
-        return Wattpilot_SendSecure($hash, "ftt", int($seconds));
-    } elsif ($cmd eq $WATTPILOT_COMMAND_NAME{password}) {
+    }
+    if ($cmd eq $WATTPILOT_COMMAND_NAME{password}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{password} <secret>"
-            if @a != 3 || !defined($a[2]) || $a[2] eq "";
+            if @a != 3 || !defined($val) || $val eq '';
 
-        my $password_err = Wattpilot_StoreNewPassword($hash, $a[2]);
+        my $password_err = Wattpilot_StoreNewPassword($hash, $val);
         return $password_err if defined $password_err;
 
         delete $hash->{helper}{timeoutRetryUsed};
         Wattpilot_InvalidateSession($hash);
         Wattpilot_ApplyConfiguredState($hash, 1);
         return undef;
+    }
+
+    my $schema = $WATTPILOT_COMMAND_BY_NAME{$cmd};
+    if ($schema && $schema->{parser} ne 'special') {
+        return Wattpilot_SetUsage($name, $schema)
+            if @a != 3 || !defined $val;
+        my $protocol_value = Wattpilot_ParseSetCommandValue(
+            $schema->{parser}, $val);
+        if (!defined $protocol_value) {
+            return "Unknown mode $val"
+                if $schema->{invalid} eq 'unknown_mode';
+            return Wattpilot_SetUsage($name, $schema);
+        }
+        return Wattpilot_SendSecure(
+            $hash, $schema->{protocolKey}, $protocol_value);
     }
 
     return "Unknown argument $cmd, choose one of $set_options";
@@ -2827,6 +2679,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
   <p>Version 2.1.0 fixes FHEM <code>modify</code>/<code>defmod</code> lifecycle transitions, preserves top-level <code>fullStatus.partial</code> metadata, enforces exact JSON field types and safe clock validation, and removes the no-op <code>debug</code> and <code>defaultAmp</code> attributes. Changed definitions reconnect once only after successful validation; invalid modifications leave the active session unchanged.</p>
   <p>Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and in one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish immediately only when their public value changes.</p>
+  <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
   <p>Version 2.1.2 formats public measured and calculated values with exactly two decimal places and trailing zeroes. Rounded negative zero is published as positive zero. Percentages, integral settings and codes, clocks, and durations remain explicit exceptions; <code>pvBatterySoC</code> intentionally keeps one decimal place.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
@@ -3087,6 +2940,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <p>Version 2.1.0 korrigiert die FHEM-Lebenszyklen von <code>modify</code>/<code>defmod</code>, erhält das Top-Level-Metadatum <code>fullStatus.partial</code>, erzwingt exakte JSON-Feldtypen und sichere Uhrzeitvalidierung und entfernt die wirkungslosen Attribute <code>debug</code> und <code>defaultAmp</code>. Geänderte Definitionen verbinden sich erst nach vollständiger erfolgreicher Prüfung genau einmal neu; ungültige Änderungen lassen die aktive Sitzung unverändert.</p>
   <p>Version 2.1.1 behält getrennte Latest-Value-Caches und Dirty-Felder für Energie-, elektrische und stationäre Speichertelemetrie, veröffentlicht aber alle zulässigen geänderten Gruppen über einen gemeinsamen Intervalltakt und eine FHEM-Reading-Transaktion. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts vorgemerkt; diskrete Status-/Diagnosewerte erscheinen sofort nur bei tatsächlicher Änderung.</p>
+  <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
   <p>Version 2.1.2 formatiert öffentliche Mess- und Rechenwerte mit genau zwei Nachkommastellen einschließlich nachgestellter Nullen. Gerundetes negatives Null wird als positives Null ausgegeben. Prozentwerte, ganzzahlige Einstellungen und Codes, Uhrzeiten und Dauern bleiben ausdrückliche Ausnahmen; <code>pvBatterySoC</code> behält bewusst eine Nachkommastelle.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
@@ -3331,7 +3185,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.2",
+  "version": "v2.1.3",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",
