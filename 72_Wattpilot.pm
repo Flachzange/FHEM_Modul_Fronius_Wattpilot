@@ -87,329 +87,94 @@ my %WATTPILOT_STATUS_SCHEMA = (
     nrg         => { kind => 'nrg' },
 );
 
-my %WATTPILOT_READING_NAME = (
-    state                   => 'state',
-    firmware_version        => 'firmwareVersion',
-    auth_hash_mode          => 'authHashMode',
-    car_state               => 'carState',
-    force_state             => 'configForceState',
-    charging_current        => 'configChargingCurrent',
-    charging_mode           => 'configChargingMode',
-    charging_allowed        => 'chargingAllowed',
-    charging_decision_code  => 'chargingDecisionCode',
-    charging_decision        => 'chargingDecision',
-    charging_decision_internal_code => 'chargingDecisionInternalCode',
-    charging_decision_internal => 'chargingDecisionInternal',
-    error_code              => 'errorCode',
-    maximum_current_limit   => 'configMaximumCurrentLimit',
-    temperature_current_limit => 'temperatureCurrentLimit',
-    minimum_charging_current => 'configMinimumChargingCurrent',
-    pv_surplus_start_power  => 'configPvSurplusStartPower',
-    pv_surplus_enabled      => 'configPvSurplusEnabled',
-    zero_feed_in_enabled    => 'configZeroFeedInEnabled',
-    pv_control_preference   => 'configPvControlPreference',
-    phase_switch_mode       => 'configPhaseSwitchMode',
-    three_phase_switch_power => 'configThreePhaseSwitchPower',
-    phase_switch_delay      => 'configPhaseSwitchDelay',
-    minimum_phase_switch_interval => 'configMinimumPhaseSwitchInterval',
-    minimum_charge_time     => 'configMinimumChargeTime',
-    charging_pause_allowed  => 'configChargingPauseAllowed',
-    minimum_charging_pause_duration => 'configMinimumChargingPauseDuration',
-    minimum_charging_interval => 'configMinimumChargingInterval',
-    pv_battery_soc => 'pvBatterySoC',
-    pv_battery_power        => 'pvBatteryPower',
-    pv_battery_mode_code    => 'pvBatteryModeCode',
-    pv_battery_charge_above_soc => 'configPvBatteryChargeAboveSoC',
-    pv_battery_discharge_enabled => 'configPvBatteryDischargeEnabled',
-    pv_battery_discharge_until_soc => 'configPvBatteryDischargeUntilSoC',
-    pv_battery_discharge_time_limit_enabled => 'configPvBatteryDischargeTimeLimitEnabled',
-    pv_battery_discharge_start_time => 'configPvBatteryDischargeStartTime',
-    pv_battery_discharge_stop_time => 'configPvBatteryDischargeStopTime',
-    next_trip_time          => 'configNextTripTime',
-    energy_total            => 'energyTotal',
-    energy_since_plug_in    => 'energySincePlugIn',
-    voltage_l1              => 'voltageL1',
-    voltage_l2              => 'voltageL2',
-    voltage_l3              => 'voltageL3',
-    current_l1              => 'currentL1',
-    current_l2              => 'currentL2',
-    current_l3              => 'currentL3',
-    power_l1                => 'powerL1',
-    power_l2                => 'powerL2',
-    power_l3                => 'powerL3',
-    power                   => 'power',
-    last_command_request_id => 'lastCommandRequestId',
-    last_command_status     => 'lastCommandStatus',
-    last_command_error      => 'lastCommandError',
+# key, public name, category, source, publication, idle gate, owner, formatter
+my @WATTPILOT_READING_DEFINITION = (
+    [qw(state state lifecycle event:connection immediate none connection lifecycle)],
+    [qw(firmware_version firmwareVersion identity event:hello immediate none identity text)],
+    [qw(auth_hash_mode authHashMode diagnostic event:authentication immediate none authentication enum)],
+    [qw(car_state carState status status:car immediate-on-change none car enum)],
+    [qw(force_state configForceState configuration status:frc immediate none frc enum)],
+    [qw(charging_current configChargingCurrent configuration status:amp immediate none amp integer)],
+    [qw(charging_mode configChargingMode configuration status:lmo immediate none lmo enum)],
+    [qw(charging_allowed chargingAllowed status status:alw immediate-on-change none alw boolean)],
+    [qw(charging_decision_code chargingDecisionCode diagnostic
+        status:modelStatus immediate-on-change none modelStatus integer)],
+    [qw(charging_decision chargingDecision diagnostic
+        status:modelStatus immediate-on-change none modelStatus enum)],
+    [qw(charging_decision_internal_code chargingDecisionInternalCode diagnostic
+        status:msi immediate-on-change none msi integer)],
+    [qw(charging_decision_internal chargingDecisionInternal diagnostic
+        status:msi immediate-on-change none msi enum)],
+    [qw(error_code errorCode diagnostic status:err immediate-on-change none err integer)],
+    [qw(maximum_current_limit configMaximumCurrentLimit configuration status:ama immediate none ama integer)],
+    [qw(temperature_current_limit temperatureCurrentLimit status
+        status:amt immediate-on-change none amt integer)],
+    [qw(minimum_charging_current configMinimumChargingCurrent configuration
+        status:mca immediate none mca integer)],
+    [qw(pv_surplus_start_power configPvSurplusStartPower configuration status:fst immediate none fst number)],
+    [qw(pv_surplus_enabled configPvSurplusEnabled configuration status:fup immediate none fup boolean)],
+    [qw(zero_feed_in_enabled configZeroFeedInEnabled configuration status:fzf immediate none fzf boolean)],
+    [qw(pv_control_preference configPvControlPreference configuration status:frm immediate none frm enum)],
+    [qw(phase_switch_mode configPhaseSwitchMode configuration status:psm immediate none psm enum)],
+    [qw(three_phase_switch_power configThreePhaseSwitchPower configuration
+        status:spl3 immediate none spl3 number)],
+    [qw(phase_switch_delay configPhaseSwitchDelay configuration status:mpwst immediate none mpwst seconds)],
+    [qw(minimum_phase_switch_interval configMinimumPhaseSwitchInterval configuration
+        status:mptwt immediate none mptwt seconds)],
+    [qw(minimum_charge_time configMinimumChargeTime configuration status:fmt immediate none fmt seconds)],
+    [qw(charging_pause_allowed configChargingPauseAllowed configuration status:fap immediate none fap boolean)],
+    [qw(minimum_charging_pause_duration configMinimumChargingPauseDuration configuration
+        status:mcpd immediate none mcpd seconds)],
+    [qw(minimum_charging_interval configMinimumChargingInterval configuration
+        status:mci immediate none mci seconds)],
+    [qw(pv_battery_soc pvBatterySoC telemetry status:fbuf_akkuSOC interval battery battery decimal1)],
+    [qw(pv_battery_power pvBatteryPower telemetry status:fbuf_pAkku interval battery battery decimal2)],
+    [qw(pv_battery_mode_code pvBatteryModeCode status
+        status:fbuf_akkuMode immediate-on-change none fbuf_akkuMode integer)],
+    [qw(pv_battery_charge_above_soc configPvBatteryChargeAboveSoC configuration
+        status:fam immediate none fam percentage)],
+    [qw(pv_battery_discharge_enabled configPvBatteryDischargeEnabled configuration
+        status:pdte immediate none pdte boolean)],
+    [qw(pv_battery_discharge_until_soc configPvBatteryDischargeUntilSoC configuration
+        status:pdt immediate none pdt percentage)],
+    [qw(pv_battery_discharge_time_limit_enabled configPvBatteryDischargeTimeLimitEnabled configuration
+        status:pdle immediate none pdle boolean)],
+    [qw(pv_battery_discharge_start_time configPvBatteryDischargeStartTime configuration
+        status:pdls immediate none pdls clock)],
+    [qw(pv_battery_discharge_stop_time configPvBatteryDischargeStopTime configuration
+        status:pdlo immediate none pdlo clock)],
+    [qw(next_trip_time configNextTripTime configuration status:ftt immediate none ftt clock)],
+    [qw(energy_total energyTotal telemetry status:eto interval none energy decimal2)],
+    [qw(energy_since_plug_in energySincePlugIn telemetry status:wh interval none energy decimal2)],
+    [qw(voltage_l1 voltageL1 telemetry status:nrg[0] interval electrical nrg decimal2)],
+    [qw(voltage_l2 voltageL2 telemetry status:nrg[1] interval electrical nrg decimal2)],
+    [qw(voltage_l3 voltageL3 telemetry status:nrg[2] interval electrical nrg decimal2)],
+    [qw(current_l1 currentL1 telemetry status:nrg[4] interval electrical nrg decimal2)],
+    [qw(current_l2 currentL2 telemetry status:nrg[5] interval electrical nrg decimal2)],
+    [qw(current_l3 currentL3 telemetry status:nrg[6] interval electrical nrg decimal2)],
+    [qw(power_l1 powerL1 telemetry status:nrg[7] interval electrical nrg decimal2)],
+    [qw(power_l2 powerL2 telemetry status:nrg[8] interval electrical nrg decimal2)],
+    [qw(power_l3 powerL3 telemetry status:nrg[9] interval electrical nrg decimal2)],
+    [qw(power power telemetry status:nrg[11] interval electrical nrg decimal2)],
+    [qw(last_command_request_id lastCommandRequestId command_diagnostic
+        event:response immediate none command integer)],
+    [qw(last_command_status lastCommandStatus command_diagnostic event:response immediate none command enum)],
+    [qw(last_command_error lastCommandError command_diagnostic event:response immediate none command text)],
 );
 
-my %WATTPILOT_READING_POLICY = (
-    state                                  => {
-        category => 'lifecycle', source => 'event:connection',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'connection', formatter => 'lifecycle', invalid => 'preserve',
-    },
-    firmware_version                       => {
-        category => 'identity', source => 'event:hello',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'identity', formatter => 'text', invalid => 'preserve',
-    },
-    auth_hash_mode                         => {
-        category => 'diagnostic', source => 'event:authentication',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'authentication', formatter => 'enum', invalid => 'preserve',
-    },
-    car_state                              => {
-        category => 'status', source => 'status:car',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'car', formatter => 'enum', invalid => 'preserve',
-    },
-    force_state                            => {
-        category => 'configuration', source => 'status:frc',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'frc', formatter => 'enum', invalid => 'preserve',
-    },
-    charging_current                       => {
-        category => 'configuration', source => 'status:amp',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'amp', formatter => 'integer', invalid => 'preserve',
-    },
-    charging_mode                          => {
-        category => 'configuration', source => 'status:lmo',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'lmo', formatter => 'enum', invalid => 'preserve',
-    },
-    charging_allowed                       => {
-        category => 'status', source => 'status:alw',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'alw', formatter => 'boolean', invalid => 'preserve',
-    },
-    charging_decision_code                 => {
-        category => 'diagnostic', source => 'status:modelStatus',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'modelStatus', formatter => 'integer', invalid => 'preserve',
-    },
-    charging_decision                      => {
-        category => 'diagnostic', source => 'status:modelStatus',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'modelStatus', formatter => 'enum', invalid => 'preserve',
-    },
-    charging_decision_internal_code        => {
-        category => 'diagnostic', source => 'status:msi',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'msi', formatter => 'integer', invalid => 'preserve',
-    },
-    charging_decision_internal             => {
-        category => 'diagnostic', source => 'status:msi',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'msi', formatter => 'enum', invalid => 'preserve',
-    },
-    error_code                             => {
-        category => 'diagnostic', source => 'status:err',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'err', formatter => 'integer', invalid => 'preserve',
-    },
-    maximum_current_limit                  => {
-        category => 'configuration', source => 'status:ama',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'ama', formatter => 'integer', invalid => 'preserve',
-    },
-    temperature_current_limit              => {
-        category => 'status', source => 'status:amt',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'amt', formatter => 'integer', invalid => 'preserve',
-    },
-    minimum_charging_current               => {
-        category => 'configuration', source => 'status:mca',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'mca', formatter => 'integer', invalid => 'preserve',
-    },
-    pv_surplus_start_power                 => {
-        category => 'configuration', source => 'status:fst',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'fst', formatter => 'number', invalid => 'preserve',
-    },
-    pv_surplus_enabled                     => {
-        category => 'configuration', source => 'status:fup',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'fup', formatter => 'boolean', invalid => 'preserve',
-    },
-    zero_feed_in_enabled                   => {
-        category => 'configuration', source => 'status:fzf',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'fzf', formatter => 'boolean', invalid => 'preserve',
-    },
-    pv_control_preference                  => {
-        category => 'configuration', source => 'status:frm',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'frm', formatter => 'enum', invalid => 'preserve',
-    },
-    phase_switch_mode                      => {
-        category => 'configuration', source => 'status:psm',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'psm', formatter => 'enum', invalid => 'preserve',
-    },
-    three_phase_switch_power               => {
-        category => 'configuration', source => 'status:spl3',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'spl3', formatter => 'number', invalid => 'preserve',
-    },
-    phase_switch_delay                     => {
-        category => 'configuration', source => 'status:mpwst',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'mpwst', formatter => 'seconds', invalid => 'preserve',
-    },
-    minimum_phase_switch_interval          => {
-        category => 'configuration', source => 'status:mptwt',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'mptwt', formatter => 'seconds', invalid => 'preserve',
-    },
-    minimum_charge_time                    => {
-        category => 'configuration', source => 'status:fmt',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'fmt', formatter => 'seconds', invalid => 'preserve',
-    },
-    charging_pause_allowed                 => {
-        category => 'configuration', source => 'status:fap',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'fap', formatter => 'boolean', invalid => 'preserve',
-    },
-    minimum_charging_pause_duration        => {
-        category => 'configuration', source => 'status:mcpd',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'mcpd', formatter => 'seconds', invalid => 'preserve',
-    },
-    minimum_charging_interval              => {
-        category => 'configuration', source => 'status:mci',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'mci', formatter => 'seconds', invalid => 'preserve',
-    },
-    pv_battery_soc                         => {
-        category => 'telemetry', source => 'status:fbuf_akkuSOC',
-        publication => 'interval', idleGate => 'battery',
-        owner => 'battery', formatter => 'decimal1', invalid => 'preserve',
-    },
-    pv_battery_power                       => {
-        category => 'telemetry', source => 'status:fbuf_pAkku',
-        publication => 'interval', idleGate => 'battery',
-        owner => 'battery', formatter => 'decimal2', invalid => 'preserve',
-    },
-    pv_battery_mode_code                   => {
-        category => 'status', source => 'status:fbuf_akkuMode',
-        publication => 'immediate-on-change', idleGate => 'none',
-        owner => 'fbuf_akkuMode', formatter => 'integer', invalid => 'preserve',
-    },
-    pv_battery_charge_above_soc            => {
-        category => 'configuration', source => 'status:fam',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'fam', formatter => 'percentage', invalid => 'preserve',
-    },
-    pv_battery_discharge_enabled           => {
-        category => 'configuration', source => 'status:pdte',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'pdte', formatter => 'boolean', invalid => 'preserve',
-    },
-    pv_battery_discharge_until_soc         => {
-        category => 'configuration', source => 'status:pdt',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'pdt', formatter => 'percentage', invalid => 'preserve',
-    },
-    pv_battery_discharge_time_limit_enabled => {
-        category => 'configuration', source => 'status:pdle',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'pdle', formatter => 'boolean', invalid => 'preserve',
-    },
-    pv_battery_discharge_start_time        => {
-        category => 'configuration', source => 'status:pdls',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'pdls', formatter => 'clock', invalid => 'preserve',
-    },
-    pv_battery_discharge_stop_time         => {
-        category => 'configuration', source => 'status:pdlo',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'pdlo', formatter => 'clock', invalid => 'preserve',
-    },
-    next_trip_time                         => {
-        category => 'configuration', source => 'status:ftt',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'ftt', formatter => 'clock', invalid => 'preserve',
-    },
-    energy_total                           => {
-        category => 'telemetry', source => 'status:eto',
-        publication => 'interval', idleGate => 'none',
-        owner => 'energy', formatter => 'decimal2', invalid => 'preserve',
-    },
-    energy_since_plug_in                   => {
-        category => 'telemetry', source => 'status:wh',
-        publication => 'interval', idleGate => 'none',
-        owner => 'energy', formatter => 'decimal2', invalid => 'preserve',
-    },
-    voltage_l1                             => {
-        category => 'telemetry', source => 'status:nrg[0]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    voltage_l2                             => {
-        category => 'telemetry', source => 'status:nrg[1]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    voltage_l3                             => {
-        category => 'telemetry', source => 'status:nrg[2]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    current_l1                             => {
-        category => 'telemetry', source => 'status:nrg[4]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    current_l2                             => {
-        category => 'telemetry', source => 'status:nrg[5]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    current_l3                             => {
-        category => 'telemetry', source => 'status:nrg[6]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    power_l1                               => {
-        category => 'telemetry', source => 'status:nrg[7]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    power_l2                               => {
-        category => 'telemetry', source => 'status:nrg[8]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    power_l3                               => {
-        category => 'telemetry', source => 'status:nrg[9]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    power                                  => {
-        category => 'telemetry', source => 'status:nrg[11]',
-        publication => 'interval', idleGate => 'electrical',
-        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
-    },
-    last_command_request_id                => {
-        category => 'command_diagnostic', source => 'event:response',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'command', formatter => 'integer', invalid => 'preserve',
-    },
-    last_command_status                    => {
-        category => 'command_diagnostic', source => 'event:response',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'command', formatter => 'enum', invalid => 'preserve',
-    },
-    last_command_error                     => {
-        category => 'command_diagnostic', source => 'event:response',
-        publication => 'immediate', idleGate => 'none',
-        owner => 'command', formatter => 'text', invalid => 'preserve',
-    },
+my @WATTPILOT_READING_POLICY_FIELD = qw(
+    category source publication idleGate owner formatter
 );
+my (%WATTPILOT_READING_NAME, %WATTPILOT_READING_POLICY);
+for my $definition (@WATTPILOT_READING_DEFINITION) {
+    my ($key, $name, @values) = @$definition;
+    $WATTPILOT_READING_NAME{$key} = $name;
+    my %policy = map {
+        $WATTPILOT_READING_POLICY_FIELD[$_] => $values[$_]
+    } 0 .. $#WATTPILOT_READING_POLICY_FIELD;
+    $policy{invalid} = 'preserve';
+    $WATTPILOT_READING_POLICY{$key} = \%policy;
+}
 
 my %WATTPILOT_READING_CATEGORY = map {
     $_ => $WATTPILOT_READING_POLICY{$_}{category}
