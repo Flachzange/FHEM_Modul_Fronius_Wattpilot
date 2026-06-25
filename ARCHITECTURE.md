@@ -182,3 +182,16 @@ the FHEM reference implementation and modules at `fhem/fhem-mirror` commit
 The stubs are not an FHEM simulator. Automated checks do not establish real
 FHEM, key-value backend, network, WebSocket, Wattpilot Flex, or predecessor
 Wattpilot compatibility.
+
+## Pinned FHEM core integration
+
+Issue #67 uses the bounded `t/lib/FHEMCorePinned.pm` helper with unchanged
+command-function bodies from FHEM mirror revision
+`0ae38bf79d19d8d598c065bf84b3990b33063c4b`. The pin also records the exact
+`fhem.pl` and `DevIo.pm` blob identifiers. The integration test executes the
+real core paths for define, modify/defmod, rename, delete, attribute set/delete,
+Set discovery, and reload. Only external effects such as network access,
+timers, credentials, readings, logging, and the helper-package namespace bridge
+remain controlled adapters. No runtime abstraction is added to
+`72_Wattpilot.pm`, and neither the complete FHEM server nor a second generic
+FHEM simulator is vendored.
