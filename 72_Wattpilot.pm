@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.0';
+my $WATTPILOT_VERSION = '2.1.1';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -143,61 +143,296 @@ my %WATTPILOT_READING_NAME = (
     last_command_error      => 'lastCommandError',
 );
 
-my %WATTPILOT_READING_CATEGORY = (
-    state                   => 'lifecycle',
-    firmware_version        => 'identity',
-    auth_hash_mode          => 'diagnostic',
-    car_state               => 'status',
-    force_state             => 'configuration',
-    charging_current        => 'configuration',
-    charging_mode           => 'configuration',
-    charging_allowed        => 'status',
-    charging_decision_code  => 'diagnostic',
-    charging_decision        => 'diagnostic',
-    charging_decision_internal_code => 'diagnostic',
-    charging_decision_internal => 'diagnostic',
-    error_code              => 'diagnostic',
-    maximum_current_limit   => 'configuration',
-    temperature_current_limit => 'status',
-    minimum_charging_current => 'configuration',
-    pv_surplus_start_power  => 'configuration',
-    pv_surplus_enabled      => 'configuration',
-    zero_feed_in_enabled    => 'configuration',
-    pv_control_preference   => 'configuration',
-    phase_switch_mode       => 'configuration',
-    three_phase_switch_power => 'configuration',
-    phase_switch_delay      => 'configuration',
-    minimum_phase_switch_interval => 'configuration',
-    minimum_charge_time     => 'configuration',
-    charging_pause_allowed  => 'configuration',
-    minimum_charging_pause_duration => 'configuration',
-    minimum_charging_interval => 'configuration',
-    pv_battery_soc => 'telemetry',
-    pv_battery_power        => 'telemetry',
-    pv_battery_mode_code    => 'status',
-    pv_battery_charge_above_soc => 'configuration',
-    pv_battery_discharge_enabled => 'configuration',
-    pv_battery_discharge_until_soc => 'configuration',
-    pv_battery_discharge_time_limit_enabled => 'configuration',
-    pv_battery_discharge_start_time => 'configuration',
-    pv_battery_discharge_stop_time => 'configuration',
-    next_trip_time          => 'configuration',
-    energy_total            => 'telemetry',
-    energy_since_plug_in    => 'telemetry',
-    voltage_l1              => 'telemetry',
-    voltage_l2              => 'telemetry',
-    voltage_l3              => 'telemetry',
-    current_l1              => 'telemetry',
-    current_l2              => 'telemetry',
-    current_l3              => 'telemetry',
-    power_l1                => 'telemetry',
-    power_l2                => 'telemetry',
-    power_l3                => 'telemetry',
-    power                   => 'telemetry',
-    last_command_request_id => 'command_diagnostic',
-    last_command_status     => 'command_diagnostic',
-    last_command_error      => 'command_diagnostic',
+my %WATTPILOT_READING_POLICY = (
+    state                                  => {
+        category => 'lifecycle', source => 'event:connection',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'connection', formatter => 'lifecycle', invalid => 'preserve',
+    },
+    firmware_version                       => {
+        category => 'identity', source => 'event:hello',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'identity', formatter => 'text', invalid => 'preserve',
+    },
+    auth_hash_mode                         => {
+        category => 'diagnostic', source => 'event:authentication',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'authentication', formatter => 'enum', invalid => 'preserve',
+    },
+    car_state                              => {
+        category => 'status', source => 'status:car',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'car', formatter => 'enum', invalid => 'preserve',
+    },
+    force_state                            => {
+        category => 'configuration', source => 'status:frc',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'frc', formatter => 'enum', invalid => 'preserve',
+    },
+    charging_current                       => {
+        category => 'configuration', source => 'status:amp',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'amp', formatter => 'integer', invalid => 'preserve',
+    },
+    charging_mode                          => {
+        category => 'configuration', source => 'status:lmo',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'lmo', formatter => 'enum', invalid => 'preserve',
+    },
+    charging_allowed                       => {
+        category => 'status', source => 'status:alw',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'alw', formatter => 'boolean', invalid => 'preserve',
+    },
+    charging_decision_code                 => {
+        category => 'diagnostic', source => 'status:modelStatus',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'modelStatus', formatter => 'integer', invalid => 'preserve',
+    },
+    charging_decision                      => {
+        category => 'diagnostic', source => 'status:modelStatus',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'modelStatus', formatter => 'enum', invalid => 'preserve',
+    },
+    charging_decision_internal_code        => {
+        category => 'diagnostic', source => 'status:msi',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'msi', formatter => 'integer', invalid => 'preserve',
+    },
+    charging_decision_internal             => {
+        category => 'diagnostic', source => 'status:msi',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'msi', formatter => 'enum', invalid => 'preserve',
+    },
+    error_code                             => {
+        category => 'diagnostic', source => 'status:err',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'err', formatter => 'integer', invalid => 'preserve',
+    },
+    maximum_current_limit                  => {
+        category => 'configuration', source => 'status:ama',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'ama', formatter => 'integer', invalid => 'preserve',
+    },
+    temperature_current_limit              => {
+        category => 'status', source => 'status:amt',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'amt', formatter => 'integer', invalid => 'preserve',
+    },
+    minimum_charging_current               => {
+        category => 'configuration', source => 'status:mca',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'mca', formatter => 'integer', invalid => 'preserve',
+    },
+    pv_surplus_start_power                 => {
+        category => 'configuration', source => 'status:fst',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'fst', formatter => 'number', invalid => 'preserve',
+    },
+    pv_surplus_enabled                     => {
+        category => 'configuration', source => 'status:fup',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'fup', formatter => 'boolean', invalid => 'preserve',
+    },
+    zero_feed_in_enabled                   => {
+        category => 'configuration', source => 'status:fzf',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'fzf', formatter => 'boolean', invalid => 'preserve',
+    },
+    pv_control_preference                  => {
+        category => 'configuration', source => 'status:frm',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'frm', formatter => 'enum', invalid => 'preserve',
+    },
+    phase_switch_mode                      => {
+        category => 'configuration', source => 'status:psm',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'psm', formatter => 'enum', invalid => 'preserve',
+    },
+    three_phase_switch_power               => {
+        category => 'configuration', source => 'status:spl3',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'spl3', formatter => 'number', invalid => 'preserve',
+    },
+    phase_switch_delay                     => {
+        category => 'configuration', source => 'status:mpwst',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'mpwst', formatter => 'seconds', invalid => 'preserve',
+    },
+    minimum_phase_switch_interval          => {
+        category => 'configuration', source => 'status:mptwt',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'mptwt', formatter => 'seconds', invalid => 'preserve',
+    },
+    minimum_charge_time                    => {
+        category => 'configuration', source => 'status:fmt',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'fmt', formatter => 'seconds', invalid => 'preserve',
+    },
+    charging_pause_allowed                 => {
+        category => 'configuration', source => 'status:fap',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'fap', formatter => 'boolean', invalid => 'preserve',
+    },
+    minimum_charging_pause_duration        => {
+        category => 'configuration', source => 'status:mcpd',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'mcpd', formatter => 'seconds', invalid => 'preserve',
+    },
+    minimum_charging_interval              => {
+        category => 'configuration', source => 'status:mci',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'mci', formatter => 'seconds', invalid => 'preserve',
+    },
+    pv_battery_soc                         => {
+        category => 'telemetry', source => 'status:fbuf_akkuSOC',
+        publication => 'interval', idleGate => 'battery',
+        owner => 'battery', formatter => 'decimal1', invalid => 'preserve',
+    },
+    pv_battery_power                       => {
+        category => 'telemetry', source => 'status:fbuf_pAkku',
+        publication => 'interval', idleGate => 'battery',
+        owner => 'battery', formatter => 'decimal2', invalid => 'preserve',
+    },
+    pv_battery_mode_code                   => {
+        category => 'status', source => 'status:fbuf_akkuMode',
+        publication => 'immediate-on-change', idleGate => 'none',
+        owner => 'fbuf_akkuMode', formatter => 'integer', invalid => 'preserve',
+    },
+    pv_battery_charge_above_soc            => {
+        category => 'configuration', source => 'status:fam',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'fam', formatter => 'percentage', invalid => 'preserve',
+    },
+    pv_battery_discharge_enabled           => {
+        category => 'configuration', source => 'status:pdte',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'pdte', formatter => 'boolean', invalid => 'preserve',
+    },
+    pv_battery_discharge_until_soc         => {
+        category => 'configuration', source => 'status:pdt',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'pdt', formatter => 'percentage', invalid => 'preserve',
+    },
+    pv_battery_discharge_time_limit_enabled => {
+        category => 'configuration', source => 'status:pdle',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'pdle', formatter => 'boolean', invalid => 'preserve',
+    },
+    pv_battery_discharge_start_time        => {
+        category => 'configuration', source => 'status:pdls',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'pdls', formatter => 'clock', invalid => 'preserve',
+    },
+    pv_battery_discharge_stop_time         => {
+        category => 'configuration', source => 'status:pdlo',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'pdlo', formatter => 'clock', invalid => 'preserve',
+    },
+    next_trip_time                         => {
+        category => 'configuration', source => 'status:ftt',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'ftt', formatter => 'clock', invalid => 'preserve',
+    },
+    energy_total                           => {
+        category => 'telemetry', source => 'status:eto',
+        publication => 'interval', idleGate => 'none',
+        owner => 'energy', formatter => 'decimal2', invalid => 'preserve',
+    },
+    energy_since_plug_in                   => {
+        category => 'telemetry', source => 'status:wh',
+        publication => 'interval', idleGate => 'none',
+        owner => 'energy', formatter => 'decimal2', invalid => 'preserve',
+    },
+    voltage_l1                             => {
+        category => 'telemetry', source => 'status:nrg[0]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    voltage_l2                             => {
+        category => 'telemetry', source => 'status:nrg[1]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    voltage_l3                             => {
+        category => 'telemetry', source => 'status:nrg[2]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    current_l1                             => {
+        category => 'telemetry', source => 'status:nrg[4]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    current_l2                             => {
+        category => 'telemetry', source => 'status:nrg[5]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    current_l3                             => {
+        category => 'telemetry', source => 'status:nrg[6]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    power_l1                               => {
+        category => 'telemetry', source => 'status:nrg[7]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    power_l2                               => {
+        category => 'telemetry', source => 'status:nrg[8]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    power_l3                               => {
+        category => 'telemetry', source => 'status:nrg[9]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    power                                  => {
+        category => 'telemetry', source => 'status:nrg[11]',
+        publication => 'interval', idleGate => 'electrical',
+        owner => 'nrg', formatter => 'decimal2', invalid => 'preserve',
+    },
+    last_command_request_id                => {
+        category => 'command_diagnostic', source => 'event:response',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'command', formatter => 'integer', invalid => 'preserve',
+    },
+    last_command_status                    => {
+        category => 'command_diagnostic', source => 'event:response',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'command', formatter => 'enum', invalid => 'preserve',
+    },
+    last_command_error                     => {
+        category => 'command_diagnostic', source => 'event:response',
+        publication => 'immediate', idleGate => 'none',
+        owner => 'command', formatter => 'text', invalid => 'preserve',
+    },
 );
+
+my %WATTPILOT_READING_CATEGORY = map {
+    $_ => $WATTPILOT_READING_POLICY{$_}{category}
+} keys %WATTPILOT_READING_POLICY;
+
+my %WATTPILOT_READING_KEY_BY_NAME = reverse %WATTPILOT_READING_NAME;
+
+my %WATTPILOT_TELEMETRY_OWNER_IDLE_GATE;
+for my $reading_key (keys %WATTPILOT_READING_POLICY) {
+    my $policy = $WATTPILOT_READING_POLICY{$reading_key};
+    next if $policy->{publication} ne 'interval';
+    my $owner = $policy->{owner};
+    my $idle_gate = $policy->{idleGate};
+    die "Conflicting idle gates for telemetry owner $owner"
+        if exists($WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner})
+        && $WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner} ne $idle_gate;
+    $WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner} = $idle_gate;
+}
+
+my $WATTPILOT_ENERGY_OWNER = $WATTPILOT_READING_POLICY{energy_total}{owner};
+my $WATTPILOT_NRG_OWNER = $WATTPILOT_READING_POLICY{power}{owner};
+my $WATTPILOT_BATTERY_OWNER =
+    $WATTPILOT_READING_POLICY{pv_battery_power}{owner};
 
 my %WATTPILOT_COMMAND_NAME = (
     password         => 'password',
@@ -371,6 +606,8 @@ sub Wattpilot_InterfaceSnapshot() {
     return {
         readings       => { %WATTPILOT_READING_NAME },
         readingCategories => { %WATTPILOT_READING_CATEGORY },
+        readingPolicy   => { map { $_ => { %{$WATTPILOT_READING_POLICY{$_}} } }
+            keys %WATTPILOT_READING_POLICY },
         commands       => { %WATTPILOT_COMMAND_NAME },
         carStates      => { %WATTPILOT_CAR_STATE },
         forceStates    => { %WATTPILOT_FORCE_STATE },
@@ -570,7 +807,9 @@ sub Wattpilot_ClearDefinitionSessionState($) {
     delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     delete $hash->{helper}{pendingReconnectAfterOpen};
     delete $hash->{helper}{car_state};
+    delete $hash->{helper}{telemetryPublication};
     delete $hash->{LAST_UPDATE};
+    delete $hash->{LAST_BATTERY_UPDATE};
 }
 
 sub Wattpilot_Define($$) {
@@ -1284,15 +1523,31 @@ sub Wattpilot_IdleRefreshTimeout($) {
     Wattpilot_ScheduleConnect($hash, 1);
 }
 
+sub Wattpilot_PublishReading($$$) {
+    my ($hash, $reading, $value) = @_;
+    my $reading_key = $WATTPILOT_READING_KEY_BY_NAME{$reading};
+    my $publication = defined($reading_key)
+        ? $WATTPILOT_READING_POLICY{$reading_key}{publication}
+        : 'immediate';
+    return readingsBulkUpdateIfChanged($hash, $reading, $value)
+        if $publication eq 'immediate-on-change';
+    return readingsBulkUpdate($hash, $reading, $value);
+}
+
+sub Wattpilot_UpdateInternalStatus($$) {
+    my ($hash, $status) = @_;
+    $hash->{helper}{car_state} = int($status->{car})
+        if defined $status->{car};
+}
+
 sub Wattpilot_UpdateImmediateReadings($$) {
     my ($hash, $status) = @_;
 
     if (defined $status->{car}) {
         my $car_value = int($status->{car});
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{car_state},
             $WATTPILOT_CAR_STATE{$car_value} // 'unknown:' . $status->{car});
-        $hash->{helper}{car_state} = $car_value;
     }
 
     if (defined $status->{frc}) {
@@ -1300,27 +1555,27 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my $force_state = exists($WATTPILOT_FORCE_STATE{$force_value})
             ? $WATTPILOT_FORCE_STATE{$force_value}
             : 'unknown:' . $status->{frc};
-        readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{force_state}, $force_state);
+        Wattpilot_PublishReading($hash, $WATTPILOT_READING_NAME{force_state}, $force_state);
     }
 
     if (defined $status->{ftt}) {
         my $time = Wattpilot_SecondsSinceMidnightToTime($status->{ftt}, 0);
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{next_trip_time}, $time)
             if defined $time;
     }
 
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{charging_current}, $status->{amp})
+    Wattpilot_PublishReading($hash, $WATTPILOT_READING_NAME{charging_current}, $status->{amp})
         if defined $status->{amp};
 
     if (defined $status->{lmo}) {
         my $mode_value = int($status->{lmo});
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{charging_mode},
             $WATTPILOT_CHARGING_MODE{$mode_value} // 'unknown:' . $status->{lmo});
     }
 
-    readingsBulkUpdate(
+    Wattpilot_PublishReading(
         $hash, $WATTPILOT_READING_NAME{charging_allowed},
         $status->{alw} ? 1 : 0)
         if defined $status->{alw};
@@ -1332,14 +1587,14 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         my ($protocol_key, $code_reading_key, $text_reading_key) = @$field;
         next if !defined $status->{$protocol_key};
         my $value = int($status->{$protocol_key});
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$code_reading_key}, $value);
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$text_reading_key},
             $WATTPILOT_CHARGING_DECISION{$value} // 'unknown:' . $value);
     }
 
-    readingsBulkUpdate(
+    Wattpilot_PublishReading(
         $hash, $WATTPILOT_READING_NAME{pv_surplus_start_power},
         $status->{fst})
         if defined $status->{fst};
@@ -1350,7 +1605,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         [fap => 'charging_pause_allowed'],
     ) {
         my ($protocol_key, $reading_key) = @$field;
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$reading_key},
             $status->{$protocol_key} ? 1 : 0)
             if defined $status->{$protocol_key};
@@ -1361,7 +1616,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         [pdle => 'pv_battery_discharge_time_limit_enabled'],
     ) {
         my ($protocol_key, $reading_key) = @$field;
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$reading_key},
             $status->{$protocol_key} ? 1 : 0)
             if defined $status->{$protocol_key};
@@ -1372,7 +1627,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         [pdt => 'pv_battery_discharge_until_soc'],
     ) {
         my ($protocol_key, $reading_key) = @$field;
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$reading_key},
             $status->{$protocol_key})
             if defined $status->{$protocol_key};
@@ -1386,26 +1641,26 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         next if !defined $status->{$protocol_key};
         my $time = Wattpilot_SecondsSinceMidnightToTime(
             $status->{$protocol_key}, $protocol_key eq 'pdlo');
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$reading_key}, $time)
             if defined $time;
     }
 
     if (defined $status->{frm}) {
         my $value = int($status->{frm});
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{pv_control_preference},
             $WATTPILOT_PV_CONTROL_PREFERENCE{$value} // 'unknown:' . $value);
     }
 
     if (defined $status->{psm}) {
         my $value = int($status->{psm});
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{phase_switch_mode},
             $WATTPILOT_PHASE_SWITCH_MODE{$value} // 'unknown:' . $value);
     }
 
-    readingsBulkUpdate(
+    Wattpilot_PublishReading(
         $hash, $WATTPILOT_READING_NAME{three_phase_switch_power},
         $status->{spl3})
         if defined $status->{spl3};
@@ -1418,7 +1673,7 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         [mci => 'minimum_charging_interval'],
     ) {
         my ($protocol_key, $reading_key) = @$field;
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$reading_key},
             Wattpilot_MillisecondsToSeconds($status->{$protocol_key}))
             if defined $status->{$protocol_key};
@@ -1431,11 +1686,16 @@ sub Wattpilot_UpdateImmediateReadings($$) {
         [mca => 'minimum_charging_current'],
     ) {
         my ($protocol_key, $reading_key) = @$field;
-        readingsBulkUpdate(
+        Wattpilot_PublishReading(
             $hash, $WATTPILOT_READING_NAME{$reading_key},
             int($status->{$protocol_key}))
             if defined $status->{$protocol_key};
     }
+    Wattpilot_PublishReading(
+        $hash, $WATTPILOT_READING_NAME{pv_battery_mode_code},
+        int($status->{fbuf_akkuMode}))
+        if defined $status->{fbuf_akkuMode};
+
 }
 
 sub Wattpilot_HasValidNrg($) {
@@ -1450,46 +1710,98 @@ sub Wattpilot_HasBatteryTelemetry($) {
     my ($status) = @_;
     return 1 if defined $status->{fbuf_akkuSOC};
     return 1 if defined $status->{fbuf_pAkku};
-    return 1 if defined $status->{fbuf_akkuMode};
     return 0;
 }
 
-sub Wattpilot_CacheVolatileTelemetry($$) {
+sub Wattpilot_HasEnergyTelemetry($) {
+    my ($status) = @_;
+    return 1 if defined $status->{eto};
+    return 1 if defined $status->{wh};
+    return 0;
+}
+
+sub Wattpilot_TelemetryGroupState($$) {
+    my ($hash, $owner) = @_;
+    return $hash->{helper}{telemetryPublication}{$owner} //= {
+        cache => {},
+        dirty => {},
+    };
+}
+
+sub Wattpilot_CacheTelemetry($$) {
     my ($hash, $status) = @_;
-    my $cache = $hash->{helper}{volatileTelemetryCache} //= {};
 
     if (Wattpilot_HasValidNrg($status)) {
-        $cache->{nrg} = [@{$status->{nrg}}];
+        my $state = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_NRG_OWNER);
+        $state->{cache}{nrg} = [@{$status->{nrg}}];
+        $state->{dirty}{nrg} = 1;
     }
 
-    for my $key (qw(fbuf_akkuSOC fbuf_pAkku fbuf_akkuMode)) {
-        $cache->{$key} = $status->{$key} if defined $status->{$key};
+    my $battery = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_BATTERY_OWNER);
+    for my $key (qw(fbuf_akkuSOC fbuf_pAkku)) {
+        next if !defined $status->{$key};
+        $battery->{cache}{$key} = $status->{$key};
+        $battery->{dirty}{$key} = 1;
+    }
+
+    my $energy = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_ENERGY_OWNER);
+    for my $key (qw(eto wh)) {
+        next if !defined $status->{$key};
+        $energy->{cache}{$key} = $status->{$key};
+        $energy->{dirty}{$key} = 1;
     }
 }
 
-sub Wattpilot_ShouldProcessVolatileTelemetry($) {
+sub Wattpilot_TelemetryIdleGateOpen($) {
     my ($hash) = @_;
     return 1 if ($hash->{helper}{car_state} // 0) == 2;
     return AttrVal($hash->{NAME}, 'update_while_idle', 0) eq '1';
 }
 
+sub Wattpilot_TelemetryGroupHasDirty($) {
+    my ($state) = @_;
+    return ref($state->{dirty}) eq 'HASH' && keys %{$state->{dirty}};
+}
+
+sub Wattpilot_TelemetryGroupEligible($$$;$) {
+    my ($hash, $owner, $now, $bypass) = @_;
+    $bypass //= 0;
+    my $state = Wattpilot_TelemetryGroupState($hash, $owner);
+    return 0 if !Wattpilot_TelemetryGroupHasDirty($state);
+
+    my $idle_gate = $WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner} // 'none';
+    if ($idle_gate ne 'none'
+        && !$bypass
+        && !Wattpilot_TelemetryIdleGateOpen($hash)) {
+        return 0;
+    }
+
+    my $interval = AttrVal($hash->{NAME}, 'interval', 0);
+    if (!$bypass && $interval > 0 && defined $state->{lastUpdate}
+        && $now - $state->{lastUpdate} < $interval) {
+        return 0;
+    }
+
+    $state->{lastUpdate} = $now;
+    return 1;
+}
+
 sub Wattpilot_UpdateBatteryReadings($$) {
-    my ($hash, $status) = @_;
+    my ($hash, $state) = @_;
+    my $cache = $state->{cache} // {};
+    my $dirty = $state->{dirty} // {};
 
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{pv_battery_soc},
-        sprintf("%.1f", $status->{fbuf_akkuSOC}))
-        if defined $status->{fbuf_akkuSOC};
+        sprintf('%.1f', $cache->{fbuf_akkuSOC}))
+        if $dirty->{fbuf_akkuSOC};
 
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{pv_battery_power},
-        sprintf("%.2f", $status->{fbuf_pAkku}))
-        if defined $status->{fbuf_pAkku};
+        sprintf('%.2f', $cache->{fbuf_pAkku}))
+        if $dirty->{fbuf_pAkku};
 
-    readingsBulkUpdate(
-        $hash, $WATTPILOT_READING_NAME{pv_battery_mode_code},
-        $status->{fbuf_akkuMode})
-        if defined $status->{fbuf_akkuMode};
+    $state->{dirty} = {};
 }
 
 sub Wattpilot_HandleCarTransition($$) {
@@ -1510,13 +1822,10 @@ sub Wattpilot_HandleCarTransition($$) {
     return $is_charging;
 }
 
-sub Wattpilot_ShouldProcessVolatileReadings($$$$) {
-    my ($hash, $status, $message, $now) = @_;
-    my $message_type = $message->{type};
-    my $name = $hash->{NAME};
+sub Wattpilot_NrgIdleBypass($$$) {
+    my ($hash, $status, $message) = @_;
     my $has_valid_nrg = Wattpilot_HasValidNrg($status);
-    my $has_battery_telemetry = Wattpilot_HasBatteryTelemetry($status);
-    my $has_volatile_input = $has_valid_nrg || $has_battery_telemetry;
+    my $message_type = $message->{type};
 
     if ($hash->{helper}{idleRefreshAwaitingReconnectNrg}
         && !$has_valid_nrg
@@ -1524,62 +1833,51 @@ sub Wattpilot_ShouldProcessVolatileReadings($$$$) {
         && !$message->{partial}) {
         delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     }
-    return 0 if !$has_volatile_input;
 
-    my $cache = $hash->{helper}{volatileTelemetryCache} // {};
-    return 0 if !Wattpilot_HasValidNrg($cache);
+    return 0 if !$has_valid_nrg;
+    return 0 if !$hash->{helper}{idleRefreshPending}
+        && !$hash->{helper}{idleRefreshAwaitingReconnectNrg};
 
-    my $interval = AttrVal($name, "interval", 0);
-    my $last_update = $hash->{LAST_UPDATE} // 0;
-    my $suppress_electrical =
-        $interval > 0 && ($now - $last_update < $interval);
-    my $volatile_telemetry_allowed =
-        Wattpilot_ShouldProcessVolatileTelemetry($hash);
-    my $idle_bypass = $has_valid_nrg
-        && ($hash->{helper}{idleRefreshPending}
-            || $hash->{helper}{idleRefreshAwaitingReconnectNrg});
-
-    my $process_volatile = 0;
-    if ($idle_bypass) {
-        $process_volatile = 1;
-        Wattpilot_StopIdleRefresh($hash);
-        delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
-    } elsif (!$suppress_electrical && $volatile_telemetry_allowed) {
-        $process_volatile = 1;
-    }
-
-    $hash->{LAST_UPDATE} = $now if $process_volatile;
-    return $process_volatile;
+    Wattpilot_StopIdleRefresh($hash);
+    delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
+    return 1;
 }
 
 sub Wattpilot_UpdateEnergyReadings($$) {
-    my ($hash, $status) = @_;
+    my ($hash, $state) = @_;
+    my $cache = $state->{cache} // {};
+    my $dirty = $state->{dirty} // {};
+
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{energy_total},
-        sprintf("%.2f", $status->{eto} / 1000))
-        if defined $status->{eto};
+        sprintf('%.2f', $cache->{eto} / 1000))
+        if $dirty->{eto};
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{energy_since_plug_in},
-        sprintf("%.2f", $status->{wh}))
-        if defined $status->{wh};
+        sprintf('%.2f', $cache->{wh}))
+        if $dirty->{wh};
+
+    $state->{dirty} = {};
 }
 
 sub Wattpilot_UpdateNrgReadings($$) {
-    my ($hash, $status) = @_;
-    return if ref($status->{nrg}) ne 'ARRAY';
-    my @nrg = @{$status->{nrg}};
+    my ($hash, $state) = @_;
+    return if !$state->{dirty}{nrg};
+    return if ref($state->{cache}{nrg}) ne 'ARRAY';
+    my @nrg = @{$state->{cache}{nrg}};
     return if @nrg <= 11;
 
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l1}, sprintf("%.2f", $nrg[0]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l2}, sprintf("%.2f", $nrg[1]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l3}, sprintf("%.2f", $nrg[2]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l1}, sprintf("%.2f", $nrg[4]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l2}, sprintf("%.2f", $nrg[5]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l3}, sprintf("%.2f", $nrg[6]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l1}, sprintf("%.2f", $nrg[7]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l2}, sprintf("%.2f", $nrg[8]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l3}, sprintf("%.2f", $nrg[9]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power}, sprintf("%.2f", $nrg[11]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l1}, sprintf('%.2f', $nrg[0]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l2}, sprintf('%.2f', $nrg[1]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l3}, sprintf('%.2f', $nrg[2]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l1}, sprintf('%.2f', $nrg[4]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l2}, sprintf('%.2f', $nrg[5]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l3}, sprintf('%.2f', $nrg[6]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l1}, sprintf('%.2f', $nrg[7]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l2}, sprintf('%.2f', $nrg[8]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l3}, sprintf('%.2f', $nrg[9]));
+    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power}, sprintf('%.2f', $nrg[11]));
+    $state->{dirty} = {};
 }
 
 sub Wattpilot_UpdateReadings($$;$) {
@@ -1593,20 +1891,37 @@ sub Wattpilot_UpdateReadings($$;$) {
     my $previous_car_state = $hash->{helper}{car_state};
     my $now = gettimeofday();
 
-    # Remove the obsolete per-battery cadence after a hot module reload.
+    delete $hash->{LAST_UPDATE};
     delete $hash->{LAST_BATTERY_UPDATE};
-    Wattpilot_CacheVolatileTelemetry($hash, $status);
+    delete $hash->{helper}{volatileTelemetryCache};
+
+    Wattpilot_UpdateInternalStatus($hash, $status);
+    Wattpilot_CacheTelemetry($hash, $status);
 
     readingsBeginUpdate($hash);
     Wattpilot_UpdateImmediateReadings($hash, $status);
     Wattpilot_HandleCarTransition($hash, $previous_car_state);
-    Wattpilot_UpdateEnergyReadings($hash, $status);
-    if (Wattpilot_ShouldProcessVolatileReadings(
-            $hash, $status, $message, $now)) {
-        my $cache = $hash->{helper}{volatileTelemetryCache} // {};
-        Wattpilot_UpdateNrgReadings($hash, $cache);
-        Wattpilot_UpdateBatteryReadings($hash, $cache);
+
+    my $energy = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_ENERGY_OWNER);
+    if (Wattpilot_HasEnergyTelemetry($status)
+        && Wattpilot_TelemetryGroupEligible($hash, $WATTPILOT_ENERGY_OWNER, $now)) {
+        Wattpilot_UpdateEnergyReadings($hash, $energy);
     }
+
+    my $idle_bypass = Wattpilot_NrgIdleBypass($hash, $status, $message);
+    my $nrg = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_NRG_OWNER);
+    if (Wattpilot_HasValidNrg($status)
+        && Wattpilot_TelemetryGroupEligible(
+            $hash, $WATTPILOT_NRG_OWNER, $now, $idle_bypass)) {
+        Wattpilot_UpdateNrgReadings($hash, $nrg);
+    }
+
+    my $battery = Wattpilot_TelemetryGroupState($hash, $WATTPILOT_BATTERY_OWNER);
+    if (Wattpilot_HasBatteryTelemetry($status)
+        && Wattpilot_TelemetryGroupEligible($hash, $WATTPILOT_BATTERY_OWNER, $now)) {
+        Wattpilot_UpdateBatteryReadings($hash, $battery);
+    }
+
     readingsEndUpdate($hash, 1);
 }
 
@@ -2108,6 +2423,13 @@ sub Wattpilot_ClearConnectionState($) {
     delete $hash->{helper}{protocol};
     delete $hash->{helper}{jsonBuffer};
     delete $hash->{helper}{volatileTelemetryCache};
+    if (ref($hash->{helper}{telemetryPublication}) eq 'HASH') {
+        for my $state (values %{$hash->{helper}{telemetryPublication}}) {
+            next if ref($state) ne 'HASH';
+            $state->{cache} = {};
+            $state->{dirty} = {};
+        }
+    }
 }
 
 sub Wattpilot_AbortAuthentication($$) {
@@ -2563,6 +2885,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.9 consistently abbreviates state of charge as <code>SoC</code> in public reading names and renames <code>configPvBatteryDischargeEndTime</code> to <code>configPvBatteryDischargeStopTime</code>. No old-name aliases or migration are provided.</p>
   <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
   <p>Version 2.1.0 fixes FHEM <code>modify</code>/<code>defmod</code> lifecycle transitions, preserves top-level <code>fullStatus.partial</code> metadata, enforces exact JSON field types and safe clock validation, and removes the no-op <code>debug</code> and <code>defaultAmp</code> attributes. Changed definitions reconnect once only after successful validation; invalid modifications leave the active session unchanged.</p>
+  <p>Version 2.1.1 gives energy, electrical, and stationary-battery telemetry independent interval histories, prevents cross-group starvation, and publishes discrete status/diagnostic readings immediately only when their public value changes.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2696,9 +3019,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        One shared rate limit for the voltage, current, and power readings derived from <code>nrg</code> and for <code>pvBatterySoC</code>, <code>pvBatteryPower</code>, and <code>pvBatteryModeCode</code>. <code>0</code> disables rate limiting. Valid <code>nrg</code> and stationary-battery fields are cached together. Once a valid <code>nrg</code> snapshot has initialized the cache, valid input from either group may trigger the next admitted shared cycle, which republishes all available volatile readings in one FHEM reading transaction. Values arriving inside the interval refresh only the cache; messages without valid volatile telemetry do not advance <code>LAST_UPDATE</code>. Complete initial status and matched device responses use the same shared cadence.</li>
+        Rate-limits cumulative energy, electrical <code>nrg</code>, and stationary-battery SOC/power telemetry with independent histories. <code>0</code> disables rate limiting. Only valid input from the same group can publish that group's latest cached values; unrelated groups never renew stale reading timestamps. Invalid or incomplete input consumes no interval. Configuration readings remain immediate, and discrete status/diagnostic readings are immediate-on-change. <code>deltaStatus</code> supplies device-side field filtering, but no official per-field Flex update frequency is inferred from it because no public Fronius local-WebSocket specification for such frequencies is evidenced.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps the shared voltage/current/power and stationary-PV-battery cycle passive while not charging. <code>1</code> processes real incoming idle values through that one shared <code>interval</code> history. After a charging-to-idle transition, one valid device-supplied <code>nrg</code> may bypass the rate limit. If none arrives within 30 seconds, the module performs at most one controlled reconnect for that idle episode. No unverified polling command is sent and no zero value is invented. <code>energyTotal</code> and <code>energySincePlugIn</code> update whenever their fields arrive and are not gated by this attribute.</li>
+        <code>0</code> keeps electrical <code>nrg</code> and stationary-battery SOC/power passive while not charging. <code>1</code> admits real incoming idle values through each group's own cadence. After charging-to-idle, one valid device-supplied <code>nrg</code> may bypass the electrical rate limit; otherwise at most one controlled reconnect is used. Energy remains interval-controlled in idle, discrete status remains immediate-on-change, no polling command is invented, and no zero value is synthesized.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2740,7 +3063,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App setting <code>State of charge SoC</code> from <code>pdt</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped setter accepts whole percentages only.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App switch <code>Limit discharging time</code> from <code>pdle</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App start/stop times from <code>pdls</code> and <code>pdlo</code>, converted from whole seconds after midnight to <code>HH:MM</code>. The six configuration mappings were matched to simultaneous Solar.wattpilot app values on one Flex Home 22 C6 running firmware 43.4. All six grouped setters were subsequently accepted on the same model/firmware, reflected in device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and broader firmware/model scope remain unverified.</li>
-    <li>Operational status and configuration readings, including the six stationary-battery configuration readings, update immediately and are not gated by <code>interval</code> or <code>update_while_idle</code>. The three stationary-battery telemetry readings instead belong to the shared volatile measurement cycle and follow its <code>interval</code> and <code>update_while_idle</code> rules. Valid <code>nrg</code> and stationary-battery fields are cached together. After valid <code>nrg</code> has initialized the cache, valid input from either group may trigger the next admitted shared cycle; all available high-frequency measurement readings are then updated from the latest cache in the same FHEM reading transaction. They therefore use the same <code>LAST_UPDATE</code> history and the same idle decision. Missing, <code>null</code>, or type-invalid fields leave existing readings and the latest valid cache values unchanged.</li>
+    <li>All 24 configuration readings update immediately after valid device confirmation. The nine discrete status/diagnostic readings update immediately only when their public value changes. Energy, electrical <code>nrg</code>, and stationary-battery SOC/power use separate <code>interval</code> histories and never publish stale values because another group arrived. <code>pvBatteryModeCode</code> is discrete status, not battery telemetry. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
   </ul>
   <p><b>Note on aWATTar:</b> aWATTar is a provider or tariff name associated with dynamic electricity prices, not a technical abbreviation introduced by this module. Names containing <code>Awattar</code> in the imported go-e enum refer to price-controlled charging decisions. <code>Fallback</code> denotes the default outcome of a decision branch when no more specific charging reason applies; it does not automatically indicate a technical fault. The exact trigger and full semantics of these codes are not confirmed for Wattpilot Flex. In particular, <code>notChargingBecauseFallbackAwattar</code> alone does not prove that an aWATTar tariff is enabled.</p>
   <p><b>Charging-decision compatibility mapping</b></p>
@@ -2785,7 +3108,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configNextTripTime</code><br>Protocol value rendered as <code>HH:MM</code>; interpreted as seconds after midnight.</li>
     <li><code>energyTotal</code><br>Protocol <code>eto</code> divided by 1000 and formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence, not proven by the sanitized Flex capture.</li>
     <li><code>energySincePlugIn</code><br>Protocol <code>wh</code> formatted with two decimals; interpreted as Wh.</li>
-    <li>The two energy readings update independently of <code>interval</code> and <code>update_while_idle</code>. Those controls apply to the <code>nrg</code>-derived voltage/current/power group and the three stationary-PV-battery readings.</li>
+    <li>The two energy readings are controlled by <code>interval</code> through their own energy history, remain eligible while idle, and cannot consume electrical or battery cadence.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Values from <code>nrg[0..2]</code>, interpreted as volts.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Values from <code>nrg[4..6]</code>, interpreted as amperes.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
@@ -2821,6 +3144,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.9 kürzt den Ladezustand in öffentlichen Reading-Namen einheitlich als <code>SoC</code> ab und benennt <code>configPvBatteryDischargeEndTime</code> in <code>configPvBatteryDischargeStopTime</code> um. Es gibt keine Aliase oder Migration für die alten Namen.</p>
   <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <p>Version 2.1.0 korrigiert die FHEM-Lebenszyklen von <code>modify</code>/<code>defmod</code>, erhält das Top-Level-Metadatum <code>fullStatus.partial</code>, erzwingt exakte JSON-Feldtypen und sichere Uhrzeitvalidierung und entfernt die wirkungslosen Attribute <code>debug</code> und <code>defaultAmp</code>. Geänderte Definitionen verbinden sich erst nach vollständiger erfolgreicher Prüfung genau einmal neu; ungültige Änderungen lassen die aktive Sitzung unverändert.</p>
+  <p>Version 2.1.1 trennt die Intervallhistorien für Energie-, elektrische und stationäre Speichertelemetrie, verhindert gruppenübergreifendes Verhungern und veröffentlicht diskrete Status-/Diagnosewerte sofort nur bei tatsächlicher Änderung.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2954,9 +3278,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Ein gemeinsames Rate-Limit für die aus <code>nrg</code> abgeleiteten Spannungs-, Strom- und Leistungsreadings sowie für <code>pvBatterySoC</code>, <code>pvBatteryPower</code> und <code>pvBatteryModeCode</code>. <code>0</code> deaktiviert die Begrenzung. Gültige <code>nrg</code>- und Speicherwerte werden gemeinsam zwischengespeichert. Sobald ein gültiger <code>nrg</code>-Stand den Zwischenspeicher initialisiert hat, kann ein gültiges Update aus jeder der beiden Gruppen den nächsten zugelassenen gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren volatilen Readings in einer FHEM-Reading-Transaktion aktualisiert. Innerhalb des Intervalls eintreffende Werte aktualisieren nur den Zwischenspeicher; Nachrichten ohne gültige volatile Telemetrie schreiben <code>LAST_UPDATE</code> nicht fort. Vollständige Initialstatus-Nachrichten und zugeordnete Geräteantworten verwenden denselben gemeinsamen Takt.</li>
+        Begrenzt kumulative Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie mit getrennten Historien. <code>0</code> deaktiviert das Rate-Limit. Nur ein gültiger Eingang derselben Gruppe darf deren neuesten Cache veröffentlichen; andere Gruppen erneuern keine alten Reading-Zeitstempel. Ungültige oder unvollständige Werte verbrauchen kein Intervall. Konfigurationsreadings bleiben sofort, diskrete Status-/Diagnosewerte sofort-bei-Änderung. <code>deltaStatus</code> liefert eine geräteseitige Feldfilterung; daraus wird keine offizielle Aktualisierungsfrequenz einzelner Flex-Felder abgeleitet, weil keine öffentliche Fronius-Local-WebSocket-Spezifikation dafür belegt ist.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt den gemeinsamen Zyklus für Spannung, Strom, Leistung und stationäre PV-Speichertelemetrie im nicht ladenden Zustand passiv. <code>1</code> verarbeitet echte eingehende Idle-Werte über genau eine gemeinsame <code>interval</code>-Zeitbasis. Nach einem Wechsel von Charging zu Idle darf ein gültiges, vom Gerät geliefertes <code>nrg</code> das Rate-Limit einmalig umgehen. Fehlt es 30 Sekunden lang, führt das Modul für diese Idle-Episode höchstens einen kontrollierten Reconnect aus. Es wird kein unbelegtes Polling-Kommando gesendet und kein Nullwert erfunden. <code>energyTotal</code> und <code>energySincePlugIn</code> werden bei eingehenden Feldern unabhängig von diesem Attribut aktualisiert.</li>
+        <code>0</code> belässt elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie im Idle passiv. <code>1</code> verarbeitet echte Idle-Werte über die jeweils eigene Historie. Nach Charging-zu-Idle darf ein gültiges Geräte-<code>nrg</code> das elektrische Rate-Limit einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Energie bleibt im Idle intervallgesteuert, diskreter Status sofort-bei-Änderung; kein Polling-Kommando und keine synthetischen Nullwerte.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2998,7 +3322,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App-Einstellung <code>State of charge SoC</code> aus <code>pdt</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Der gruppierte Setter akzeptiert nur ganze Prozentwerte.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App-Schalter <code>Limit discharging time</code> aus <code>pdle</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App-Start-/Stoppzeiten aus <code>pdls</code> und <code>pdlo</code>, von ganzen Sekunden seit Mitternacht nach <code>HH:MM</code> umgerechnet. Die sechs Konfigurationszuordnungen wurden auf einem Flex Home 22 C6 mit Firmware 43.4 anhand zeitgleich übereinstimmender Solar.wattpilot-App-Werte belegt. Alle sechs gruppierten Setter wurden anschließend auf demselben Modell/Firmwarestand vom Gerät angenommen, im geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
-    <li>Die operativen Status- und Konfigurationsreadings einschließlich der sechs stationären Speicher-Konfigurationsreadings werden sofort aktualisiert und unterliegen weder <code>interval</code> noch <code>update_while_idle</code>. Die drei stationären Speicher-Telemetriereadings gehören dagegen zum gemeinsamen volatilen Messzyklus und unterliegen dessen <code>interval</code>- und <code>update_while_idle</code>-Regeln. Gültige <code>nrg</code>- und Speicherwerte werden gemeinsam zwischengespeichert. Nach der ersten gültigen <code>nrg</code>-Initialisierung kann ein gültiges Update aus jeder der beiden Gruppen den nächsten zugelassenen gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren hochfrequenten Messreadings in derselben FHEM-Reading-Transaktion aus dem neuesten Zwischenspeicher aktualisiert. Dadurch verwenden sie dieselbe <code>LAST_UPDATE</code>-Zeitbasis und dieselbe Idle-Entscheidung. Fehlende, <code>null</code>- oder typfalsche Felder lassen bestehende Readings und die zuletzt gültigen Zwischenspeicherwerte unverändert.</li>
+    <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Die neun diskreten Status-/Diagnosereadings werden sofort nur bei tatsächlicher Änderung veröffentlicht. Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie besitzen getrennte <code>interval</code>-Historien und veröffentlichen nie alte Werte nur wegen einer anderen Gruppe. <code>pvBatteryModeCode</code> ist diskreter Status, keine Batterietelemetrie. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
   </ul>
   <p><b>Hinweis zu aWATTar:</b> aWATTar ist ein Anbieter- beziehungsweise Tarifname für dynamische Strompreise und kein technisches Kürzel des Moduls. Die aus der go-e-Enum übernommenen Namen mit <code>Awattar</code> bezeichnen preisabhängige Ladeentscheidungen. <code>Fallback</code> bezeichnet dabei den Standardausgang eines Entscheidungszweigs, wenn kein speziellerer Ladegrund greift, und nicht automatisch einen technischen Fehler. Für den Wattpilot Flex sind der genaue Auslöser dieser Codes und ihre vollständige Semantik nicht bestätigt; insbesondere beweist <code>notChargingBecauseFallbackAwattar</code> allein nicht, dass ein aWATTar-Tarif aktiviert ist.</p>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
@@ -3043,7 +3367,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configNextTripTime</code><br>Protokollwert als <code>HH:MM</code>; als Sekunden nach Mitternacht interpretiert.</li>
     <li><code>energyTotal</code><br>Protokollwert <code>eto</code> geteilt durch 1000 und mit zwei Nachkommastellen formatiert. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen.</li>
     <li><code>energySincePlugIn</code><br>Protokollwert <code>wh</code> mit zwei Nachkommastellen; als Wh interpretiert.</li>
-    <li>Die beiden Energie-Readings werden unabhängig von <code>interval</code> und <code>update_while_idle</code> aktualisiert. Diese Steuerungen gelten für die aus <code>nrg</code> abgeleitete Spannungs-/Strom-/Leistungsgruppe und die drei stationären PV-Speicherreadings.</li>
+    <li>Die beiden Energie-Readings werden über eine eigene Energiehistorie durch <code>interval</code> begrenzt, bleiben im Idle zulässig und verbrauchen weder elektrische noch Batterie-Cadence.</li>
     <li><code>voltageL1</code>, <code>voltageL2</code>, <code>voltageL3</code><br>Werte aus <code>nrg[0..2]</code>, als Volt interpretiert.</li>
     <li><code>currentL1</code>, <code>currentL2</code>, <code>currentL3</code><br>Werte aus <code>nrg[4..6]</code>, als Ampere interpretiert.</li>
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>
@@ -3064,7 +3388,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.0",
+  "version": "v2.1.1",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

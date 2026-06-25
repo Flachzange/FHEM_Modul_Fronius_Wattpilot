@@ -198,7 +198,7 @@ for my $key (sort keys %{$interface->{readings}}) {
     my $category = $interface->{readingCategories}{$key};
     like(
         $category_doc,
-        qr/^\| `\Q$key\E` \| `\Q$name\E` \| \Q$category\E \|/m,
+        qr/^\| `\Q$key\E` \| `\Q$name\E` \| `\Q$category\E` \|/m,
         "reading-category audit documents $key as $name/$category");
 }
 is($interface->{readings}{car_state}, 'carState',

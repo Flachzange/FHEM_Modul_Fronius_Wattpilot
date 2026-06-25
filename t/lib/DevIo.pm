@@ -11,7 +11,7 @@ our (%KEY_VALUES, %ATTR_VALUES, %GET_KEY_ERRORS, %SET_KEY_ERRORS);
 our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
 our (%READYFNLIST, %SELECTLIST);
 our ($OPEN_ERROR, $OPEN_MODE);
-our (@LOGS, @WRITES, @READS, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @RENAMES, @IGNORED_RENAME_REPLIES);
+our (@LOGS, @WRITES, @READS, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @READING_EVENTS, @RENAMES, @IGNORED_RENAME_REPLIES);
 
 sub reset_test_state {
     %KEY_VALUES = ();
@@ -37,6 +37,7 @@ sub reset_test_state {
     @REMOVED_TIMERS = ();
     @KEY_OPERATIONS = ();
     @READING_UPDATES = ();
+    @READING_EVENTS = ();
     @RENAMES = ();
     @IGNORED_RENAME_REPLIES = ();
     $NOW = undef;
@@ -98,7 +99,8 @@ sub import {
         DevIo_CloseDev DevIo_IsOpen DevIo_OpenDev DevIo_SimpleRead
         DevIo_SimpleWrite Log3 AttrVal InternalTimer RemoveInternalTimer
         gettimeofday readingsSingleUpdate readingsBeginUpdate
-        readingsBulkUpdate readingsEndUpdate getKeyValue setKeyValue
+        readingsBulkUpdate readingsBulkUpdateIfChanged readingsEndUpdate
+        getKeyValue setKeyValue
     )) {
         *{"${caller}::$name"} = \&{$name};
     }
@@ -312,21 +314,53 @@ sub run_due_timers {
     }
 }
 sub gettimeofday { return defined($NOW) ? $NOW : time }
+# Models the pinned fhem.pl reading transaction helpers. In particular,
+# readingsBulkUpdateIfChanged returns before setReadingsVal/addEvent when the
+# public value is unchanged, preserving both reading timestamp and event list.
 sub readingsSingleUpdate {
-    push @READING_UPDATES, [@_];
     my ($hash, $reading, $value) = @_;
-    $hash->{READINGS}{$reading}{VAL} = $value;
+    readingsBeginUpdate($hash);
+    readingsBulkUpdate($hash, $reading, $value);
+    readingsEndUpdate($hash, 1);
     $hash->{STATE} = $value if $reading eq 'state';
     return;
 }
-sub readingsBeginUpdate { return }
+sub readingsBeginUpdate {
+    my ($hash) = @_;
+    my $now = gettimeofday();
+    $hash->{'.updateTime'} = $now;
+    $hash->{'.updateTimestamp'} = "$now";
+    $hash->{CHANGED} = [] if !defined $hash->{CHANGED};
+    return $hash->{'.updateTimestamp'};
+}
+sub readingsBulkUpdateIfChanged {
+    my ($hash, $reading, $value, $changed) = @_;
+    return undef
+        if exists($hash->{READINGS}{$reading}{VAL})
+        && $hash->{READINGS}{$reading}{VAL} eq $value;
+    return readingsBulkUpdate($hash, $reading, $value, $changed);
+}
 sub readingsBulkUpdate {
+    my ($hash, $reading, $value, $changed) = @_;
+    die "readingsBulkUpdate without readingsBeginUpdate"
+        if !exists $hash->{'.updateTimestamp'};
     push @READING_UPDATES, [@_];
-    my ($hash, $reading, $value) = @_;
     $hash->{READINGS}{$reading}{VAL} = $value;
+    $hash->{READINGS}{$reading}{TIME} = $hash->{'.updateTimestamp'};
+    $changed = 1 if !defined $changed && substr($reading, 0, 1) ne '.';
+    if ($changed) {
+        my $event = "$reading: $value";
+        push @{$hash->{CHANGED}}, $event;
+        push @READING_EVENTS, [$hash, $reading, $value, $event];
+    }
+    return "$reading: $value";
+}
+sub readingsEndUpdate {
+    my ($hash) = @_;
+    delete $hash->{'.updateTimestamp'};
+    delete $hash->{'.updateTime'};
     return;
 }
-sub readingsEndUpdate { return }
 sub getKeyValue {
     push @KEY_OPERATIONS, [get => $_[0]];
     if (exists $GET_KEY_ERROR_QUEUE{$_[0]} && @{$GET_KEY_ERROR_QUEUE{$_[0]}}) {

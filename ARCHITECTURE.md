@@ -71,64 +71,85 @@ FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `Und
 | `jsonBuffer` | current logical JSON continuation/session |
 | `car_state` | current device-hash runtime state |
 | idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single automatic refresh reconnect, while a manual reconnect clears the episode state |
-| `LAST_UPDATE` | current device-hash rate-limit history shared by all high-frequency measurement readings |
-| `volatileTelemetryCache` | current connection/session cache for the latest valid `nrg` array and stationary-PV-battery fields; published by one admitted shared measurement cycle |
+| `telemetryPublication.energy` | cumulative-energy cache, dirty fields, and independent `interval` history; energy is not idle-gated |
+| `telemetryPublication.nrg` | electrical `nrg` cache, dirty fields, and independent `interval` history; controlled by the electrical idle gate |
+| `telemetryPublication.battery` | stationary-battery SOC/power cache, dirty fields, and independent `interval` history; controlled by the battery idle gate |
 | `msg_id` | current device-hash request sequence |
 
 ## Status and reading pipeline
 
-Incoming message-envelope metadata and status fields remain separate. In particular, `fullStatus.partial` is an exact JSON boolean at message level; it is never injected into the status namespace. Partial full-status messages apply valid fields incrementally but do not complete initialization. Omitted `partial` is treated as a non-partial full status for the observed Flex profile, while `deltaStatus` remains an incremental update and retains the established initialization fallback.
+Incoming message-envelope metadata and status fields remain separate. In
+particular, `fullStatus.partial` is an exact JSON boolean at message level; it
+is never injected into the status namespace. Partial full-status messages
+apply valid fields incrementally but do not complete initialization. Omitted
+`partial` is treated as a non-partial full status for the observed Flex
+profile, while `deltaStatus` remains an incremental update and retains the
+established initialization fallback. Matched response `status` data uses the
+same normalization and publication policy. The field omission semantics of
+`deltaStatus` provide device-side change filtering, but the repository does
+not infer an official per-field Flex update frequency from them; no public
+Fronius local-WebSocket specification for such frequencies is evidenced.
 
 Incoming status data is copied and normalized once by
-`Wattpilot_NormalizeStatus`. A small declarative schema defines the exact JSON kind and semantic validator for every consumed status field. JSON numeric strings and numeric/string boolean surrogates are rejected. Invalid known fields are removed from the copy; unknown fields are preserved, and the caller's structure is never mutated. Clock fields share range and whole-minute validation before formatting.
+`Wattpilot_NormalizeStatus`. A declarative status-field schema defines the
+exact JSON kind and semantic validator for every consumed field. Numeric
+strings and numeric/string boolean surrogates are rejected. Invalid known
+fields are removed from the copy; unknown fields are preserved, and the
+caller's structure is never mutated. Clock fields share range and whole-minute
+validation before formatting.
 
-`Wattpilot_UpdateReadings` owns one FHEM bulk-reading transaction and delegates
-to narrow helpers for immediate readings, volatile-telemetry caching, car
-transitions, energy values, shared measurement gating, and cached phase/total
-readings. Energy counters are processed independently. `update_while_idle`
-applies once to the shared high-frequency measurement cycle. Valid `nrg` and
-stationary-PV-battery fields are cached per connection. After a valid `nrg`
-array has initialized the cache, valid input from either volatile group may
-trigger the next cycle admitted by `interval`; the complete available cache is
-then published in one FHEM bulk-reading transaction. `interval` therefore has
-exactly one history, `LAST_UPDATE`, for voltage, current, power, and stationary-
-battery telemetry. Configuration-only and invalid-only messages cannot consume
-that interval. Complete `fullStatus` and matched `response` messages follow the
-same shared cadence and do not receive a separate interval bypass. Missing partial-update fields never reset readings, and only real
-device-supplied zero values create zero readings. `modelStatus` and `msi` each produce both an unmodified numeric code
-and a lowerCamelCase text reading. The text table is a compatibility mapping
-from the pinned go-e `modelStatus` enum; applying the same table to `msi` is
-based on pinned Wattpilot-specific evidence that it is the internal variant of
-the same decision. Unknown numeric values remain explicit as `unknown:<code>`. Configuration fields `fst`, `fup`, `fzf`, `frm`, `psm`, `spl3`, `mpwst`, `mptwt`, `fmt`, `fap`, `mcpd`, `mci`, `fam`, `pdte`, `pdt`, `pdle`, `pdls`, and `pdlo` are normalized independently of the electrical gate and exposed immediately through the public configuration readings. Read-only stationary-PV-battery fields use the shared cached measurement pipeline: `fbuf_akkuSOC` is accepted only as a finite percentage from 0 through 100 and formatted to one decimal place, `fbuf_pAkku` is preserved as a signed finite watt value, formatted to two decimal places, without assigning an unverified sign direction, and `fbuf_akkuMode` is preserved as a non-negative integer code without inventing an enum. Booleans retain JSON-boolean semantics, `frm` and `psm` use explicit compatibility enums with `unknown:<value>` fallbacks, power values use watts, and protocol millisecond durations are exposed as seconds. All corresponding setters use the same secured command-correlation path as the other public commands; no reading is changed optimistically, and only returned status data confirms a value. Time setters accept only finite non-negative seconds that convert exactly to whole protocol milliseconds. Version 2.0.8 exposes the six identified stationary-battery configuration fields. `fam` and `pdt` accept finite percentages from 0 through 100, `pdte` and `pdle` retain boolean semantics, and `pdls`/`pdlo` accept whole-minute clock values from 0 through 86400 seconds and render them as `HH:MM`. This public mapping is based on simultaneous app/status evidence from one Flex 43.4 device. Version 2.0.9 adds one grouped `pvBattery` command that dispatches six explicit subcommands to those keys. Percentage writes are restricted to whole 0–100 values, boolean writes use JSON booleans, and clock writes convert strict `HH:MM` values to seconds after midnight. The stop-time command additionally accepts `24:00`. The command uses the normal secured request queue and never mutates a reading before returned status confirms it. All six grouped writes were subsequently accepted on a Wattpilot Flex Home 22 C6 running firmware 43.4, confirmed through device-supplied status/readback, and restored to their original values. Deliberate rejection, reboot persistence, and broader firmware/model scope remain outside the verified evidence.
+`Wattpilot_UpdateReadings` first applies validated internal control state. In
+particular, `car` updates `car_state` immediately before charging/idle gating,
+transition detection, or public-reading publication. Internal correctness does
+not depend on a public `carState` event.
 
-The device Internal `VERSION` is module-owned. Define sets it from the central
-module version, and Initialize refreshes it for existing Wattpilot hashes during
-FHEM module reload without touching lifecycle state. Device firmware remains a
-separate `firmwareVersion` reading populated from `hello.version`.
+The function then owns one FHEM bulk-reading transaction and applies the
+runtime `%WATTPILOT_READING_POLICY`:
 
-The message dispatcher recognizes `clearInverters`, `updateInverter`, and
-`clearSmips` as empirically observed Flex startup notifications. Their payloads
-are not consumed, stored, or logged; the type remains visible in the level-4
-received-message trace, while the level-3 unsupported-type warning is reserved
-for other unknown message types. This classification records observation only
-and does not assign protocol semantics.
+- all `config...` readings are immediate after valid device-confirmed status;
+- `carState`, `chargingAllowed`, `temperatureCurrentLimit`,
+  `pvBatteryModeCode`, both charging-decision code/text pairs, and `errorCode`
+  are immediate-on-change; repeated identical public values neither renew
+  their timestamps nor create events;
+- cumulative energy, electrical `nrg`, and stationary-battery SOC/power are
+  interval-controlled by three independent owners: `energy`, `nrg`, and
+  `battery`.
 
-The clean public reading, command, enum, and lifecycle values are collected in central internal interface definitions and exposed to repository checks through `Wattpilot_InterfaceSnapshot`. This helper and `Wattpilot_Parse` are internal test/inspection hooks, not FHEM callbacks or supported user APIs. `%WATTPILOT_READING_NAME` owns the public names,
-`%WATTPILOT_READING_CATEGORY` assigns every reading exactly one semantic
-category, and `%WATTPILOT_COMMAND_NAME` remains independent so Set commands do
-not inherit the reading prefix. Every reading classified as `configuration`
-uses the exact lower-camel-case prefix `config`; lifecycle, identity, live
-status, telemetry, general diagnostics, and command diagnostics must not use
-that prefix. The complete audit is maintained in
-`docs/READING-CATEGORIES.md` and guarded by automated tests.
+Each interval owner stores only its newest valid values, a dirty-field set, and
+its own `lastUpdate`. A message can publish only telemetry supplied validly by
+that same owner; it never republishes another owner's cached values. Input from
+battery therefore cannot consume the next electrical update, energy cannot
+consume either electrical or battery cadence, and discrete status input cannot
+release cached telemetry. Invalid, incomplete, missing, or `null` input neither
+dirties a cache nor advances an interval history. At the exact interval
+boundary the latest valid dirty values are eligible; `interval=0` disables the
+rate limit.
 
-Version 2.0.7 intentionally performs a direct public-interface rename without
-compatibility aliases, duplicate old/new readings, automatic reading cleanup,
-DbLog migration, or a transition period. FHEM may retain old reading entries in
-an already existing device hash because the module does not delete unrelated
-readings during reload. Consumers and any retained stale readings must therefore
-be adapted or removed explicitly. Protocol keys and Set-command names remain
-internal/unchanged respectively.
+`update_while_idle` applies only to the `electrical` and `battery` gates. While
+charging, electrical telemetry is eligible regardless of the attribute. While
+idle with `update_while_idle=1`, electrical and stationary-battery telemetry
+remain eligible. With `update_while_idle=0`, those two groups stay passive
+except for the bounded one-time charging-to-idle refresh/reconnect path.
+Cumulative energy and discrete status/diagnostic readings remain active under
+their normal policies in every vehicle state. No polling command or synthetic
+zero value is introduced.
+
+`modelStatus` and `msi` each produce an unmodified numeric code and a
+lowerCamelCase compatibility text reading. Each code/text pair is updated
+atomically in the same reading transaction. Unknown numeric values remain
+explicit as `unknown:<code>`. `pvBatteryModeCode` preserves a non-negative raw
+integer without inventing an enum. `fbuf_akkuSOC` is accepted only as a finite
+percentage from 0 through 100 and formatted to one decimal place;
+`fbuf_pAkku` is preserved as a signed finite watt value formatted to two
+decimal places without assigning an unverified sign direction.
+
+Configuration fields are normalized independently of telemetry gates and are
+never changed optimistically by a Set command. Only device-supplied status
+confirms a value. Booleans retain JSON-boolean semantics, `frm` and `psm` use
+explicit compatibility enums with `unknown:<value>` fallbacks, public power
+uses watts, and protocol millisecond durations are exposed as seconds. Time
+setters accept only values that convert exactly to valid whole protocol
+units.
 
 ## Development infrastructure
 
