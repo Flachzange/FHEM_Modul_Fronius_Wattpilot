@@ -152,7 +152,6 @@ for my $case (
     [ 'pvControlPreference', 'preferFromGrid', 'frm', 0, 'number' ],
     [ 'pvControlPreference', 'default', 'frm', 1, 'number' ],
     [ 'pvControlPreference', 'preferToGrid', 'frm', 2, 'number' ],
-    [ 'threePhaseSwitchPower', '5200.5', 'spl3', 5200.5, 'number' ],
 ) {
     my ($command, $input, $key, $value, $kind) = @$case;
     $hash = fresh_device();
@@ -179,6 +178,7 @@ for my $case (
     [ 'phaseSwitch', 'mode', 'force3', 'psm', 2 ],
     [ 'phaseSwitch', 'delay', '1.5', 'mpwst', 1500 ],
     [ 'phaseSwitch', 'minInterval', 600, 'mptwt', 600000 ],
+    [ 'phaseSwitch', 'threePhasePower', '5200.5', 'spl3', 5200.5 ],
     [ 'minimumCharging', 'duration', 0.5, 'fmt', 500 ],
     [ 'minimumCharging', 'pauseDuration', 120, 'mcpd', 120000 ],
     [ 'minimumCharging', 'interval', 0, 'mci', 0 ],
@@ -201,7 +201,6 @@ for my $case (
     [ 'zeroFeedInEnabled', 0 ],
     [ 'chargingPauseAllowed', 1 ],
     [ 'pvControlPreference', 'default' ],
-    [ 'threePhaseSwitchPower', 5200 ],
 ) {
     my ($command, $input) = @$case;
     $hash = fresh_device();
@@ -216,6 +215,7 @@ for my $case (
     [ 'phaseSwitch', 'mode', 'auto' ],
     [ 'phaseSwitch', 'delay', 120 ],
     [ 'phaseSwitch', 'minInterval', 600 ],
+    [ 'phaseSwitch', 'threePhasePower', 5200 ],
     [ 'minimumCharging', 'duration', 300 ],
     [ 'minimumCharging', 'pauseDuration', 120 ],
     [ 'minimumCharging', 'interval', 0 ],
@@ -234,8 +234,6 @@ for my $case (
     [ 'zeroFeedInEnabled', 'true' ],
     [ 'chargingPauseAllowed', -1 ],
     [ 'pvControlPreference', 'grid' ],
-    [ 'threePhaseSwitchPower', -1 ],
-    [ 'threePhaseSwitchPower', 'NaN' ],
 ) {
     my ($command, $input) = @$case;
     $hash = fresh_device();
@@ -252,6 +250,8 @@ for my $case (
     [ 'phaseSwitch', 'delay', -1 ],
     [ 'phaseSwitch', 'delay', '0.0001' ],
     [ 'phaseSwitch', 'minInterval', 'Inf' ],
+    [ 'phaseSwitch', 'threePhasePower', -1 ],
+    [ 'phaseSwitch', 'threePhasePower', 'NaN' ],
     [ 'minimumCharging', 'duration', 'abc' ],
     [ 'minimumCharging', 'pauseDuration', '1e9999' ],
     [ 'minimumCharging', 'interval', undef ],
@@ -269,7 +269,7 @@ for my $case (
 
 $hash = fresh_device();
 main::Wattpilot_UpdateReadings($hash, { spl3 => 5200 });
-main::Wattpilot_Set($hash, 'controlWallbox', 'threePhaseSwitchPower', 6000);
+main::Wattpilot_Set($hash, 'controlWallbox', 'phaseSwitch', 'threePhasePower', 6000);
 is(reading_value($hash, 'configThreePhaseSwitchPower'), '5200.00',
     'pending setter does not fabricate a confirmed reading');
 main::Wattpilot_Parse($hash, encode_json({
@@ -296,12 +296,13 @@ $hash = fresh_device();
 my $help = main::Wattpilot_Set($hash, 'controlWallbox', '?');
 for my $command (qw(
     pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitch
-    threePhaseSwitchPower minimumCharging chargingPauseAllowed
+    minimumCharging chargingPauseAllowed
 )) {
     like($help, qr/\Q$command\E/, "Set help exposes $command");
 }
 for my $old_command (qw(
     phaseSwitchMode phaseSwitchDelay minimumPhaseSwitchInterval
+    threePhaseSwitchPower
     minimumChargeTime minimumChargingPauseDuration minimumChargingInterval
 )) {
     unlike($help, qr/\b\Q$old_command\E\b/,

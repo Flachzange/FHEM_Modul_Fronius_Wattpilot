@@ -257,7 +257,7 @@ Version 2.1.2 keeps those protocol and publication semantics unchanged while sta
 
 Version 2.1.3 keeps the same public protocol and publication behavior while deriving ordinary scalar status validation/formatting and one-value Set-command metadata from compact declarative inventories. Special handling for `nrg`, car transitions, decision pairs, stationary-battery telemetry, grouped `pvBattery`, local `password`, and lifecycle-only `reconnect` remains explicit.
 
-Version 2.1.4 groups the already verified `psm`/`mpwst`/`mptwt` writes under `phaseSwitch` and the `fmt`/`mci`/`mcpd` writes under `minimumCharging`. This is a public FHEM command-organization change only; it does not add protocol evidence or change field semantics.
+Version 2.1.4 groups the already verified `psm`/`mpwst`/`mptwt`/`spl3` writes under `phaseSwitch` and the `fmt`/`mci`/`mcpd` writes under `minimumCharging`. This is a public FHEM command-organization change only; it does not add protocol evidence or change field semantics.
 
 ## Complete observed status-key reference
 

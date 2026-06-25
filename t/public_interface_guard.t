@@ -119,7 +119,7 @@ my @public_readings = qw(
 my @public_commands = qw(
     password chargingCurrent forceState chargingMode pvSurplusStartPower
     pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitch
-    threePhaseSwitchPower minimumCharging chargingPauseAllowed reconnect
+    minimumCharging chargingPauseAllowed reconnect
     nextTripTime
 );
 
@@ -232,7 +232,7 @@ for my $entry (@active_docs) {
         "$label states that reconnect is not a fullStatus request");
     like($text, qr/minimumCharging.*interval/s,
         "$label documents the grouped public mci command path");
-    like($text, qr/phaseSwitch.*(?:mode|delay|minInterval)/s,
+    like($text, qr/phaseSwitch.*(?:mode|delay|minInterval|threePhasePower)/s,
         "$label documents the grouped phaseSwitch command path");
 }
 like($readme_en, qr/minimumCharging interval.*Forced charging interval/s,

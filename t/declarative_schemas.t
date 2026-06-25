@@ -46,8 +46,8 @@ my $reading_policy = $interface->{readingPolicy};
 
 is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
-is(scalar(keys %$command_schema), 15,
-    'command schema contains the complete 15-command public surface');
+is(scalar(keys %$command_schema), 14,
+    'command schema contains the complete 14-command public surface');
 is(scalar(keys %$status_fields), 36,
     'status schema contains all 36 consumed protocol fields');
 is_deeply(
@@ -80,7 +80,6 @@ my @ordinary_cases = (
     [pv_surplus_enabled => '1', 'fup', 1, 'boolean'],
     [zero_feed_in_enabled => '0', 'fzf', 0, 'boolean'],
     [pv_control_preference => 'default', 'frm', 1, 'number'],
-    [three_phase_switch_power => '5200.5', 'spl3', 5200.5, 'number'],
     [charging_pause_allowed => '1', 'fap', 1, 'boolean'],
     [next_trip_time => '07:30', 'ftt', 27000, 'number'],
 );
@@ -121,7 +120,7 @@ is_deeply([sort keys %{$grouped_command_schema->{minimum_charging}}],
     [qw(duration interval pauseDuration)],
     'minimumCharging exposes the requested subcommands');
 is_deeply([sort keys %{$grouped_command_schema->{phase_switch}}],
-    [qw(delay minInterval mode)],
+    [qw(delay minInterval mode threePhasePower)],
     'phaseSwitch exposes the requested subcommands');
 
 my @grouped_cases = (
@@ -131,6 +130,7 @@ my @grouped_cases = (
     [phase_switch => delay => '1.5', 'mpwst', 1500],
     [phase_switch => mode => 'force3', 'psm', 2],
     [phase_switch => minInterval => '2.5', 'mptwt', 2500],
+    [phase_switch => threePhasePower => '5200.5', 'spl3', 5200.5],
 );
 for my $case (@grouped_cases) {
     my ($group_key, $setting, $input, $protocol_key, $expected) = @$case;
@@ -158,6 +158,7 @@ for my $case (
     [minimum_charging => 'unknown', '1'],
     [phase_switch => 'mode', 'force2'],
     [phase_switch => 'delay', '-1'],
+    [phase_switch => 'threePhasePower', '-1'],
 ) {
     my ($group_key, $setting, $input) = @$case;
     my $group_name = $commands->{$group_key};

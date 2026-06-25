@@ -45,7 +45,6 @@ is_deeply(
         zero_feed_in_enabled => 'zeroFeedInEnabled',
         pv_control_preference => 'pvControlPreference',
         phase_switch => 'phaseSwitch',
-        three_phase_switch_power => 'threePhaseSwitchPower',
         minimum_charging => 'minimumCharging',
         charging_pause_allowed => 'chargingPauseAllowed',
         reconnect => 'reconnect',

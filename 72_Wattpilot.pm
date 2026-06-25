@@ -215,7 +215,6 @@ my @WATTPILOT_COMMAND_DEFINITION = (
     ['zero_feed_in_enabled', 'zeroFeedInEnabled', '0,1', 'fzf', 'boolean', '<0|1>', 'usage'],
     ['pv_control_preference', 'pvControlPreference', 'preferFromGrid,default,preferToGrid', 'frm', 'pv_control', '<preferFromGrid|default|preferToGrid>', 'usage'],
     ['phase_switch', 'phaseSwitch', 'none', 'none', 'special', 'none', 'usage'],
-    ['three_phase_switch_power', 'threePhaseSwitchPower', 'none', 'spl3', 'nonnegative_number', '<watts>', 'usage'],
     ['minimum_charging', 'minimumCharging', 'none', 'none', 'special', 'none', 'usage'],
     ['charging_pause_allowed', 'chargingPauseAllowed', '0,1', 'fap', 'boolean', '<0|1>', 'usage'],
     ['reconnect', 'reconnect', 'noArg', 'none', 'special', 'none', 'usage'],
@@ -250,6 +249,7 @@ my %WATTPILOT_GROUPED_COMMAND_DEFINITION = (
         ['delay', 'mpwst', 'seconds', '<seconds>'],
         ['mode', 'psm', 'phase_switch', '<auto|force1|force3>'],
         ['minInterval', 'mptwt', 'seconds', '<seconds>'],
+        ['threePhasePower', 'spl3', 'nonnegative_number', '<watts>'],
     ],
 );
 
@@ -2748,7 +2748,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and in one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish immediately only when their public value changes.</p>
   <p>Version 2.1.2 formats public measured and calculated values with exactly two decimal places and trailing zeroes. Rounded negative zero is published as positive zero. Percentages, integral settings and codes, clocks, and durations remain explicit exceptions; <code>pvBatterySoC</code> intentionally keeps one decimal place.</p>
   <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
-  <p>Version 2.1.4 replaces the six individual phase-switch and minimum-charging timing Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
+  <p>Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2842,9 +2842,8 @@ sub Wattpilot_WriteJson($$) {
         Groups the phase-switch settings under one top-level command:<br>
         <code>mode &lt;auto|force1|force3&gt;</code> &rarr; <code>psm=0|1|2</code>;<br>
         <code>delay &lt;seconds&gt;</code> &rarr; <code>mpwst</code> as exact whole milliseconds;<br>
-        <code>minInterval &lt;seconds&gt;</code> &rarr; <code>mptwt</code> as exact whole milliseconds.</li>
-    <li><code>set &lt;name&gt; threePhaseSwitchPower &lt;watts&gt;</code><br>
-        Sends a non-negative finite numeric value through <code>spl3</code>. The public unit is watts.</li>
+        <code>minInterval &lt;seconds&gt;</code> &rarr; <code>mptwt</code> as exact whole milliseconds;<br>
+        <code>threePhasePower &lt;watts&gt;</code> &rarr; the non-negative finite value through <code>spl3</code>.</li>
     <li><code>set &lt;name&gt; minimumCharging &lt;setting&gt; &lt;seconds&gt;</code><br>
         Groups the minimum-charging timing settings under one top-level command:<br>
         <code>duration</code> &rarr; <code>fmt</code>;<br>
@@ -3009,7 +3008,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.1 behält getrennte Latest-Value-Caches und Dirty-Felder für Energie-, elektrische und stationäre Speichertelemetrie, veröffentlicht aber alle zulässigen geänderten Gruppen über einen gemeinsamen Intervalltakt und eine FHEM-Reading-Transaktion. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts vorgemerkt; diskrete Status-/Diagnosewerte erscheinen sofort nur bei tatsächlicher Änderung.</p>
   <p>Version 2.1.2 formatiert öffentliche Mess- und Rechenwerte mit genau zwei Nachkommastellen einschließlich nachgestellter Nullen. Gerundetes negatives Null wird als positives Null ausgegeben. Prozentwerte, ganzzahlige Einstellungen und Codes, Uhrzeiten und Dauern bleiben ausdrückliche Ausnahmen; <code>pvBatterySoC</code> behält bewusst eine Nachkommastelle.</p>
   <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
-  <p>Version 2.1.4 ersetzt die sechs einzelnen Setter für Phasenumschaltung und Mindestladezeiten durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
+  <p>Version 2.1.4 ersetzt die sieben einzelnen Setter für Phasenumschaltung und Mindestladen durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3103,9 +3102,8 @@ sub Wattpilot_WriteJson($$) {
         Bündelt die Einstellungen der Phasenumschaltung unter einem Top-Level-Befehl:<br>
         <code>mode &lt;auto|force1|force3&gt;</code> &rarr; <code>psm=0|1|2</code>;<br>
         <code>delay &lt;Sekunden&gt;</code> &rarr; <code>mpwst</code> als exakte ganze Millisekunden;<br>
-        <code>minInterval &lt;Sekunden&gt;</code> &rarr; <code>mptwt</code> als exakte ganze Millisekunden.</li>
-    <li><code>set &lt;name&gt; threePhaseSwitchPower &lt;Watt&gt;</code><br>
-        Sendet einen nicht negativen, endlichen Zahlenwert über <code>spl3</code>. Die öffentliche Einheit ist Watt.</li>
+        <code>minInterval &lt;Sekunden&gt;</code> &rarr; <code>mptwt</code> als exakte ganze Millisekunden;<br>
+        <code>threePhasePower &lt;Watt&gt;</code> &rarr; den nicht negativen, endlichen Wert über <code>spl3</code>.</li>
     <li><code>set &lt;name&gt; minimumCharging &lt;Einstellung&gt; &lt;Sekunden&gt;</code><br>
         Bündelt die Mindestladezeiten unter einem Top-Level-Befehl:<br>
         <code>duration</code> &rarr; <code>fmt</code>;<br>

@@ -104,7 +104,7 @@ protocol-key, JSON-type, and exact-arity behavior; special handlers remain
 explicit negative boundaries. Version 2.1.4 extends the same test with the two
 ordered grouped-command schemas. It verifies the six exact subcommands,
 protocol keys, millisecond conversion, enum mapping, strict arity, invalid-input
-rejection, Set discovery, and removal of the six former individual Set names.
+rejection, Set discovery, and removal of the seven former individual Set names.
 No real device is required to establish the grouping itself because protocol
 keys, payload values, and secured request handling are unchanged; a real-device
 smoke test remains useful before release. The complete local suite passes with
