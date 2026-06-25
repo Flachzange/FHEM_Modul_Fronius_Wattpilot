@@ -111,6 +111,17 @@ smoke test remains useful before release. The complete local suite passes with
 26 test files and 3,060 tests. Complete CI and release checks remain required
 before merge.
 
+A documentation-only cleanup after the 2.1.4 implementation removes the
+version-by-version changelog and the two migration matrices from the German and
+English READMEs. The commandref retains the explicit historical migration
+matrix. `t/public_interface_guard.t` now verifies the compact original-module
+comparison, the legacy/Flex authentication distinction, the cryptographic role
+of the serial number, and the absence of unescaped pipe characters inside code
+spans in Markdown table rows. Both READMEs were additionally parsed with a GFM
+table parser; all four tables in each file have consistent column counts. The
+complete local suite passes with 26 test files and 3,006 tests. This is
+documentation and test-guard work only; the module version remains 2.1.4.
+
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 
 For the version-2.0.6 development run after the issue-#51 correction, the complete suite passed with 20 test files and 2,650 tests. The isolated container again used temporary external compatibility modules for `JSON`, `Crypt::PBKDF2`, and `Crypt::URandom`; the fixed PBKDF2 vector passed. `Crypt::Bcrypt` was unavailable in this local environment, so the test suite skipped its one optional fixed bcrypt vector. The external modules are not repository or release files, and GitHub CI with the declared real dependencies remains required before release.
