@@ -56,6 +56,8 @@ Current FHEM DevIo marks a successful asynchronous open as `opened` before invok
 from an invalidated asynchronous DevIo open callback to exactly one subsequent
 module reconnect.
 
+FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `UndefFn` first. The module therefore validates the complete candidate definition before any destructive action. An unchanged definition preserves the active connection and session. A valid endpoint or serial change explicitly aborts pending requests, clears connection-scoped state, invalidates the old lifecycle generation, closes the old DevIo identity, installs the new definition, and schedules at most one reconnect. A rejected modification leaves endpoint, serial, connection, timers, credentials, readings, and helper state unchanged while FHEM restores `DEF`.
+
 | State | Lifetime |
 | --- | --- |
 | `lifecycleGeneration` | current device-hash lifetime |
@@ -75,9 +77,10 @@ module reconnect.
 
 ## Status and reading pipeline
 
+Incoming message-envelope metadata and status fields remain separate. In particular, `fullStatus.partial` is an exact JSON boolean at message level; it is never injected into the status namespace. Partial full-status messages apply valid fields incrementally but do not complete initialization. Omitted `partial` is treated as a non-partial full status for the observed Flex profile, while `deltaStatus` remains an incremental update and retains the established initialization fallback.
+
 Incoming status data is copied and normalized once by
-`Wattpilot_NormalizeStatus`. Invalid known fields are removed from the copy;
-unknown fields are preserved, and the caller's structure is never mutated.
+`Wattpilot_NormalizeStatus`. A small declarative schema defines the exact JSON kind and semantic validator for every consumed status field. JSON numeric strings and numeric/string boolean surrogates are rejected. Invalid known fields are removed from the copy; unknown fields are preserved, and the caller's structure is never mutated. Clock fields share range and whole-minute validation before formatting.
 
 `Wattpilot_UpdateReadings` owns one FHEM bulk-reading transaction and delegates
 to narrow helpers for immediate readings, volatile-telemetry caching, car
@@ -110,9 +113,7 @@ received-message trace, while the level-3 unsupported-type warning is reserved
 for other unknown message types. This classification records observation only
 and does not assign protocol semantics.
 
-The clean public 2.0 reading, command, enum, and lifecycle values are collected
-in central internal interface definitions and exposed to tests through
-`Wattpilot_InterfaceSnapshot`. `%WATTPILOT_READING_NAME` owns the public names,
+The clean public reading, command, enum, and lifecycle values are collected in central internal interface definitions and exposed to repository checks through `Wattpilot_InterfaceSnapshot`. This helper and `Wattpilot_Parse` are internal test/inspection hooks, not FHEM callbacks or supported user APIs. `%WATTPILOT_READING_NAME` owns the public names,
 `%WATTPILOT_READING_CATEGORY` assigns every reading exactly one semantic
 category, and `%WATTPILOT_COMMAND_NAME` remains independent so Set commands do
 not inherit the reading prefix. Every reading classified as `configuration`

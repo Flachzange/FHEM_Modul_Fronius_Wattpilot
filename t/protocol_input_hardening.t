@@ -16,7 +16,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'syntheticWallbox', TYPE => 'Wattpilot',
         FUUID => '00000000-0000-0000-0000-000000000010',
@@ -24,7 +23,6 @@ sub fresh_device {
         SERIAL => '10000001', TEST_OPEN => 1,
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     return $hash;
 }
 
@@ -174,6 +172,80 @@ main::Wattpilot_Parse($hash, encode_json({
     }
 }));
 is($hash->{READINGS}{configChargingCurrent}{VAL}, 17, 'invalid known scalar values leave prior readings unchanged');
+
+main::Wattpilot_Parse($hash,
+    '{"type":"deltaStatus","status":{"amp":"16"}}');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 17,
+    'numeric JSON string is not accepted as an integer status field');
+
+$hash->{READINGS}{chargingAllowed}{VAL} = 0;
+for my $invalid_boolean ('1', '"1"') {
+    main::Wattpilot_Parse($hash,
+        '{"type":"deltaStatus","status":{"alw":' . $invalid_boolean . '}}');
+    is($hash->{READINGS}{chargingAllowed}{VAL}, 0,
+        'numeric or string surrogate is not accepted as a JSON boolean');
+}
+main::Wattpilot_Parse($hash,
+    '{"type":"deltaStatus","status":{"alw":true}}');
+is($hash->{READINGS}{chargingAllowed}{VAL}, 1,
+    'actual JSON boolean remains accepted');
+
+$hash->{READINGS}{power}{VAL} = '123.00';
+main::Wattpilot_Parse($hash,
+    '{"type":"deltaStatus","status":{"nrg":[230,231,232,0,1,2,"3",230,462,696,0,1388]}}');
+is($hash->{READINGS}{power}{VAL}, '123.00',
+    'numeric JSON string inside nrg invalidates the nrg update');
+
+$hash->{READINGS}{configNextTripTime}{VAL} = '12:34';
+for my $invalid_ftt (-60, 61, 86400, 90000, '"3600"', 'null') {
+    main::Wattpilot_Parse($hash,
+        '{"type":"deltaStatus","status":{"ftt":' . $invalid_ftt . '}}');
+    is($hash->{READINGS}{configNextTripTime}{VAL}, '12:34',
+        "invalid ftt value $invalid_ftt preserves the previous clock reading");
+}
+main::Wattpilot_Parse($hash,
+    '{"type":"deltaStatus","status":{"ftt":86340}}');
+is($hash->{READINGS}{configNextTripTime}{VAL}, '23:59',
+    'minute-aligned in-day ftt is rendered through the shared clock helper');
+
+my $hello_hash = fresh_device();
+main::Wattpilot_Parse($hello_hash, encode_json({
+    type => 'hello', devicetype => 7, protocol => '2', version => 43.4,
+}));
+ok(!exists $hello_hash->{helper}{deviceType}
+    && !exists $hello_hash->{helper}{protocol}
+    && !exists $hello_hash->{READINGS}{firmwareVersion},
+    'hello fields with wrong JSON types are ignored');
+
+my $auth_hash = fresh_device();
+$DevIo::KEY_VALUES{'Wattpilot_' . $auth_hash->{FUUID} . '_password'} = 'example-password';
+main::Wattpilot_Parse($auth_hash,
+    '{"type":"authRequired","hash":"pbkdf2","token1":1,"token2":"b"}');
+is($auth_hash->{STATE}, 'authChallengeInvalid',
+    'authentication tokens must be actual JSON strings');
+
+my $response_hash = fresh_device();
+$response_hash->{helper}{pendingRequests}{1} = {
+    key => 'amp', value => 16, sentAt => DevIo::gettimeofday(),
+};
+$response_hash->{READINGS}{lastCommandStatus}{VAL} = 'pending';
+main::Wattpilot_Parse($response_hash,
+    '{"type":"response","requestId":1,"success":1,"status":{"amp":16}}');
+ok(exists $response_hash->{helper}{pendingRequests}{1},
+    'response with non-boolean success does not consume the pending request');
+is($response_hash->{READINGS}{lastCommandStatus}{VAL}, 'pending',
+    'response with non-boolean success does not fabricate a command result');
+
+my $partial_hash = fresh_device();
+$partial_hash->{helper}{authenticated} = 1;
+$partial_hash->{STATE} = 'initializing';
+$partial_hash->{READINGS}{configChargingCurrent}{VAL} = 16;
+main::Wattpilot_Parse($partial_hash,
+    '{"type":"fullStatus","partial":1,"status":{"amp":20}}');
+is($partial_hash->{READINGS}{configChargingCurrent}{VAL}, 16,
+    'fullStatus with non-boolean partial is rejected before applying status');
+is($partial_hash->{STATE}, 'initializing',
+    'invalid partial metadata cannot complete initialization');
 
 my $tricky = encode_json({
     type => 'deltaStatus', status => { amp => 18 },

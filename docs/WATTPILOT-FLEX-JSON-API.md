@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.0.10 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.0 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.0.10; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.1.0; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.0.10 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.0 uses the exact `config` prefix for every configuration reading while Set-command names and protocol keys remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -82,11 +82,13 @@ Examples in this section are minimal synthetic documentation values unless expli
 
 ### `fullStatus`
 
+The observed wrapper carries `partial` beside `status`, not inside it. Version 2.1.0 preserves that envelope boolean separately. `partial:true` applies valid status members incrementally and does not complete initialization; a non-partial full status completes the sequence. Missing fields never reset existing readings.
+
 - Direction: device → client.
 - Observed fields: `type:"fullStatus"`, `partial:false`, and `status` with 558 direct keys.
 - Example: the complete observed example is the fixture linked above; it is not duplicated inline to avoid two independently editable copies.
 - Evidence: direct empirical structure/value observation.
-- Open questions: `partial:true` behavior is described historically but was not observed here; chunk ordering, completion rules, omissions, and behavior under other configurations are unknown.
+- Open questions: `partial:true` was not observed on this Flex capture. The current completion rule follows pinned predecessor-protocol evidence; Flex-specific chunk ordering, omissions, and behavior under other configurations remain unknown.
 
 ### `deltaStatus`
 
@@ -215,9 +217,12 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 - **Pinned older Wattpilot-specific evidence:** `joscha82/wattpilot` commit `4712ba3b8409fda55303870c047038b1b221d7ff` describes R/W amperes with range 6–16. Its older and incompletely established device/firmware scope conflicts with the observed Flex value 32.
 - **Remaining uncertainty:** actual Flex 43.4 device-side write validation and error behavior still require applicable documentation or a reproducible device test.
 
-## Current FHEM 2.0 mapping
+## Current FHEM mapping
 
-The names below describe the current version-2.0.10 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
+
+
+The names below describe the current version-2.1.0 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |

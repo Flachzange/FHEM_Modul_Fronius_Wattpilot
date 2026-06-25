@@ -16,7 +16,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     $DevIo::NOW = 1000;
     my $hash = {
         NAME => 'lifeWallbox',
@@ -27,7 +26,6 @@ sub fresh_device {
         SERIAL => '10000009',
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     return $hash;
 }
 
@@ -169,8 +167,8 @@ due_in(1);
 $hash->{helper}{authPending} = 1;
 main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
 main::Wattpilot_Parse($hash, encode_json({
-    type => 'fullStatus',
-    status => { partial => JSON::false, car => 1, nrg => nrg(0) },
+    type => 'fullStatus', partial => JSON::false,
+    status => { car => 1, nrg => nrg(0) },
 }));
 is($hash->{READINGS}{power}{VAL}, '0.00',
     'first authoritative nrg after idle refresh reconnect bypasses interval=300');
@@ -188,8 +186,8 @@ main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
 due_in(31);
 due_in(1);
 main::Wattpilot_Parse($hash, encode_json({
-    type => 'fullStatus',
-    status => { partial => JSON::true, car => 1, amp => 6 },
+    type => 'fullStatus', partial => JSON::true,
+    status => { car => 1, amp => 6 },
 }));
 main::Wattpilot_Parse($hash, status_msg({ nrg => nrg(0) }));
 is($hash->{READINGS}{power}{VAL}, '0.00',
@@ -207,8 +205,8 @@ $hash->{READINGS}{power}{VAL} = '1388.00';
 main::Wattpilot_Parse($hash, status_msg({ car => 1 }));
 due_in(31);
 main::Wattpilot_Parse($hash, encode_json({
-    type => 'fullStatus',
-    status => { partial => JSON::false, car => 1, amp => 16 },
+    type => 'fullStatus', partial => JSON::false,
+    status => { car => 1, amp => 16 },
 }));
 ok(!exists $hash->{helper}{idleRefreshAwaitingReconnectNrg},
     'refresh reconnect without nrg ends the one-shot wait without looping');
@@ -254,10 +252,22 @@ $hash = fresh_device();
 main::Wattpilot_Connect($hash);
 $hash->{helper}{authPending} = 1;
 main::Wattpilot_Parse($hash, encode_json({ type => 'authSuccess' }));
-main::Wattpilot_Parse($hash, encode_json({ type => 'fullStatus', status => { partial => JSON::true, amp => 16 } }));
-is($hash->{STATE}, 'connected', 'partial fullStatus completes initialization');
-is($hash->{READINGS}{configChargingCurrent}{VAL}, 16, 'partial fullStatus is still applied incrementally');
-is(timer_count('lifecycle_timeout'), 0, 'initialization timeout is cancelled after status');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'fullStatus', partial => JSON::true, status => { amp => 16 },
+}));
+is($hash->{STATE}, 'initializing',
+    'partial fullStatus keeps initialization open');
+is($hash->{READINGS}{configChargingCurrent}{VAL}, 16,
+    'partial fullStatus is still applied incrementally');
+is(timer_count('lifecycle_timeout'), 1,
+    'partial fullStatus retains the initialization timeout');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'fullStatus', partial => JSON::false, status => { car => 1 },
+}));
+is($hash->{STATE}, 'connected',
+    'non-partial fullStatus completes initialization');
+is(timer_count('lifecycle_timeout'), 0,
+    'initialization timeout is cancelled after completion');
 
 $hash = fresh_device();
 main::Wattpilot_ScheduleConnect($hash, 10);

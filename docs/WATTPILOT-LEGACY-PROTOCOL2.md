@@ -30,6 +30,8 @@ These are reproducible implementation statements, not official documentation. Th
 
 ## Regression contract for the current module
 
+A legacy `fullStatus` may be split across messages with top-level `partial:true`. Such messages update supplied fields but do not by themselves complete initialization. Completion requires the final non-partial full status; `deltaStatus` retains the established compatibility fallback. The `partial` member is envelope metadata and is not a status field.
+
 Version 1.5.0 hardens authentication and input validation while the following behavior remains protected by automated tests:
 
 1. `authHash=auto` continues to select PBKDF2 when the legacy `authRequired` message omits `hash`.

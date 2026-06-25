@@ -109,3 +109,7 @@ For every proposed protocol-field change, record the source revision, applicable
 - Stored or user-selectable configuration values use the exact `config` prefix. Their protocol keys and Set-command names are unchanged.
 - Effective runtime values such as `temperatureCurrentLimit`, current status such as `pvBatteryModeCode`, telemetry, identity, lifecycle, and diagnostics remain unprefixed.
 - No compatibility aliases, duplicate readings, automatic reading cleanup, or DbLog migration are implemented.
+
+## Runtime validation boundary in 2.1.0
+
+Version 2.1.0 distinguishes observed JSON kinds from Perl scalar text. Known numeric fields require decoded JSON numbers, known booleans require decoded JSON booleans, and string fields require decoded JSON strings. This is a defensive implementation contract, not a claim about undocumented device ranges. The top-level `fullStatus.partial` shape is preserved from the pinned legacy evidence and committed fixtures.

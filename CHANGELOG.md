@@ -1,5 +1,16 @@
 # Changelog
 
+## [v2.1.0] - 2026-06-25
+
+### Audit corrections and simplification
+
+- FHEM `modify` and `defmod` now validate the complete new definition before changing runtime state. A valid endpoint or serial change terminates pending commands, invalidates the old session, closes the old DevIo context, and schedules exactly one reconnect; a rejected modification is side-effect free.
+- Message-envelope metadata is preserved separately from status fields. A `partial:true` `fullStatus` applies incremental fields without completing initialization or prematurely ending the one-shot idle-refresh wait.
+- Consumed JSON fields now use exact string, number, integer, boolean, array, and object contracts. Numeric strings and boolean surrogates are rejected. `ftt`, `pdls`, and `pdlo` use shared range- and minute-aligned clock validation.
+- The ineffective public attributes `debug` and `defaultAmp`, the empty attribute branch, and unused `defptr` bookkeeping were removed without aliases or migration.
+- English and German command-reference inventories are checked against the runtime interface. Current API and release documentation was aligned.
+- Release contents now come from one manifest. CI, build, verification, and reproducibility no longer rerun the full source suite recursively, and every maintained packaged file is byte-compared between source, package directory, and ZIP.
+
 ## [v2.0.10] - 2026-06-25
 
 - Enforce exact argument counts for the single-value Set commands `password`, `forceState`, `chargingCurrent`, `chargingMode`, and `nextTripTime`; surplus arguments now return the documented Usage error without sending a frame or changing credential storage.

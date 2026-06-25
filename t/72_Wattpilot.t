@@ -30,7 +30,6 @@ ok(!exists $registration{GetFn}, 'no GetFn is registered when no get commands ex
 sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME       => 'testWallbox',
         TYPE       => 'Wattpilot',
@@ -39,7 +38,6 @@ sub fresh_device {
         STATE      => 'disconnected',
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     return $hash;
 }
 
@@ -143,15 +141,11 @@ $DevIo::SET_KEY_ERRORS{$stable_password} = 'synthetic delete failure';
 DevIo::InternalTimer(time + 30, 'Wattpilot_Connect', $hash, 0);
 $hash->{TEST_OPEN} = 1;
 main::Wattpilot_Undefine($hash, $hash->{NAME});
-ok(!exists $modules{Wattpilot}{defptr}{$hash->{NAME}},
-    'UndefFn removes defptr before the real FHEM delete callback');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'UndefFn removes the active reconnect timer before DeleteFn');
 ok(!DevIo::DevIo_IsOpen($hash), 'UndefFn closes the connection before DeleteFn');
 like(main::Wattpilot_Delete($hash, $hash->{NAME}), qr/credential deletion failed/,
     'DeleteFn reports failure after UndefFn');
-is($modules{Wattpilot}{defptr}{$hash->{NAME}}, $hash,
-    'failed DeleteFn restores defptr for the retained device');
 is($hash->{STATE}, 'disconnected',
     'failed DeleteFn restores an honest disconnected state');
 is(scalar @DevIo::ACTIVE_TIMERS, 1,

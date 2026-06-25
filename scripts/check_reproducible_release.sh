@@ -5,16 +5,20 @@ script_dir=${0%/*}
 [ "$script_dir" = "$0" ] && script_dir=.
 cd "$script_dir/.."
 
-version=$(sed -n "s/^my \\\$WATTPILOT_VERSION = '\([^']*\)';/\1/p" 72_Wattpilot.pm)
+version=$(awk -F"'" '/^my \$WATTPILOT_VERSION = / { print $2; exit }' 72_Wattpilot.pm)
 [ -n "$version" ] || { echo "Cannot determine module version" >&2; exit 1; }
 
 epoch=${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}
 archive="dist/Wattpilot_v$version.zip"
 
-SOURCE_DATE_EPOCH=$epoch sh scripts/build-release.sh
+if [ "${WATTPILOT_SKIP_SOURCE_CI:-0}" != 1 ]; then
+    sh scripts/ci.sh
+fi
+
+SOURCE_DATE_EPOCH=$epoch WATTPILOT_SKIP_SOURCE_CI=1 sh scripts/build-release.sh
 first=$(sha256sum "$archive" | awk '{print $1}')
 
-SOURCE_DATE_EPOCH=$epoch sh scripts/build-release.sh
+SOURCE_DATE_EPOCH=$epoch WATTPILOT_SKIP_SOURCE_CI=1 sh scripts/build-release.sh
 second=$(sha256sum "$archive" | awk '{print $1}')
 
 if [ "$first" != "$second" ]; then

@@ -16,7 +16,6 @@ sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
     %attr = ();
-    $modules{Wattpilot}{defptr} = {};
     my $hash = {
         NAME => 'pvStartWallbox',
         TYPE => 'Wattpilot',
@@ -27,7 +26,6 @@ sub fresh_device {
         helper => { authenticated => 1 },
     };
     $defs{$hash->{NAME}} = $hash;
-    $modules{Wattpilot}{defptr}{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} =
         'synthetic-pv-start-key';
     return $hash;
