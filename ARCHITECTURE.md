@@ -182,3 +182,7 @@ the FHEM reference implementation and modules at `fhem/fhem-mirror` commit
 The stubs are not an FHEM simulator. Automated checks do not establish real
 FHEM, key-value backend, network, WebSocket, Wattpilot Flex, or predecessor
 Wattpilot compatibility.
+
+## Pinned FHEM core integration
+
+Issue #67 uses a bounded helper with unchanged command-function bodies from FHEM mirror revision `0ae38bf79d19d8d598c065bf84b3990b33063c4b`. External effects remain controlled adapters; no runtime abstraction is added to `72_Wattpilot.pm`, and the complete FHEM server is not vendored.
