@@ -2,80 +2,54 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.4**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
+Current module version: **2.1.4**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
-## Breaking change in 2.0
+## Differences from the original module
 
-Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Version 2.0.8 adds six configuration readings for the stationary-PV-battery settings visible in the Solar.wattpilot app. Version 2.0.9 consistently abbreviates state of charge as `SoC`, renames `configPvBatteryDischargeEndTime` to `configPvBatteryDischargeStopTime`, and adds the grouped `pvBattery` Set command. Version 2.0.10 advertises `reconnect` to FHEMWEB as a true no-argument command, returns the regular Set list even with `disable=1`, and strictly rejects surplus arguments for single-value Set commands; actual Set operations remain blocked. Version 2.1.0 fixes `modify`/`defmod` as complete session transitions, preserves message-level `fullStatus.partial`, validates incoming JSON types and clock values strictly, and removes the no-op `debug` and `defaultAmp` attributes. Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish only on actual change. Version 2.1.2 standardizes public measured and calculated values to exactly two decimal places; percentages, integers, clocks, and durations remain explicitly documented exceptions. Rounded negative zero is published as positive zero. Version 2.1.3 consolidates the existing reading and Set inventories into small declarative status and command schemas. Ordinary scalar fields and Set commands are validated, formatted, and dispatched from those schemas, while lifecycle, authentication, telemetry, car-transition, `password`, `reconnect`, and grouped `pvBattery` behavior stays explicit. Public names, payloads, and cadence remain unchanged. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped `phaseSwitch` and `minimumCharging` commands. The protocol keys, units, validation, and confirmed `config...` readings remain unchanged; the removed individual Set names have no aliases. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
+Version 2.x is a substantial redesign rather than a small extension of the original module.
 
-| Reading through 2.0.6 | Reading from 2.0.7 |
-| :--- | :--- |
-| `forceState` | `configForceState` |
-| `chargingCurrent` | `configChargingCurrent` |
-| `chargingMode` | `configChargingMode` |
-| `maximumCurrentLimit` | `configMaximumCurrentLimit` |
-| `minimumChargingCurrent` | `configMinimumChargingCurrent` |
-| `pvSurplusStartPower` | `configPvSurplusStartPower` |
-| `pvSurplusEnabled` | `configPvSurplusEnabled` |
-| `zeroFeedInEnabled` | `configZeroFeedInEnabled` |
-| `pvControlPreference` | `configPvControlPreference` |
-| `phaseSwitchMode` | `configPhaseSwitchMode` |
-| `threePhaseSwitchPower` | `configThreePhaseSwitchPower` |
-| `phaseSwitchDelay` | `configPhaseSwitchDelay` |
-| `minimumPhaseSwitchInterval` | `configMinimumPhaseSwitchInterval` |
-| `minimumChargeTime` | `configMinimumChargeTime` |
-| `chargingPauseAllowed` | `configChargingPauseAllowed` |
-| `minimumChargingPauseDuration` | `configMinimumChargingPauseDuration` |
-| `minimumChargingInterval` | `configMinimumChargingInterval` |
-| `nextTripTime` | `configNextTripTime` |
-
-<!-- BEGIN 2.0 migration names -->
-
-| Type | 1.x | 2.0 |
+| Area | Original module state | Current version 2.x |
 | :--- | :--- | :--- |
-| Reading | `state` | `state` |
-| Reading | `version` | `firmwareVersion` |
-| Reading | `authHashMode` | `authHashMode` |
-| Reading | `CarState` | `carState` |
-| Reading | `Laden_starten` | `configForceState` |
-| Reading | `Strom` | `configChargingCurrent` |
-| Reading | `Modus` | `configChargingMode` |
-| Reading | `Zeit_NextTrip` | `configNextTripTime` |
-| Reading | `EnergyTotal` | `energyTotal` |
-| Reading | `Energie_seit_Anstecken` | `energySincePlugIn` |
-| Reading | `Voltage_L1` | `voltageL1` |
-| Reading | `Voltage_L2` | `voltageL2` |
-| Reading | `Voltage_L3` | `voltageL3` |
-| Reading | `Current_L1` | `currentL1` |
-| Reading | `Current_L2` | `currentL2` |
-| Reading | `Current_L3` | `currentL3` |
-| Reading | `Power_L1` | `powerL1` |
-| Reading | `Power_L2` | `powerL2` |
-| Reading | `Power_L3` | `powerL3` |
-| Reading | `power` | `power` |
-| Reading | `lastCommandRequestId` | `lastCommandRequestId` |
-| Reading | `lastCommandStatus` | `lastCommandStatus` |
-| Reading | `lastCommandError` | `lastCommandError` |
-| Set | `Password <secret>` | `password <secret>` |
-| Set | `Strom <6..32>` | `chargingCurrent <6..32>` |
-| Set | `Laden_starten Start|Stop` | `forceState neutral|off|on` |
-| Set | `Modus Default|Eco|NextTrip` | `chargingMode default|eco|nextTrip` |
-| Set | `Zeit_NextTrip HH:MM` | `nextTripTime HH:MM` |
+| Definition and password | Password included in the FHEM definition | Definition without password; storage through `set <Name> password <secret>` under stable FUUID-based keys |
+| Devices and authentication | Predecessor Wattpilot with PBKDF2 | Legacy profile retained; Wattpilot Flex authenticates exclusively with bcrypt |
+| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 53 readings, confirmed configuration readings, and grouped Set commands |
+| Protocol handling | Basic `hello`, authentication, and status handling | Strict JSON type validation, partial status handling, robust message continuation, secured commands, and response correlation |
+| Runtime behavior | Basic interval and idle filtering | Controlled lifecycle behavior for reload, rename, `modify`, disable, reconnect, and delete, plus separate telemetry caches on one publication clock |
+| Quality assurance | Original functional scope | Extensive regression tests, pinned FHEM-core integration, documentation checks, and reproducible release verification |
 
-<!-- END 2.0 migration names -->
+Version 2.x is not a drop-in replacement for existing definitions of the original module. It provides no aliases, automatic reading cleanup, or migration of automations and database queries. A migration should use a fresh FHEM device and deliberately adapt dependent configuration.
+
+## Supported device generations
+
+| Feature | Legacy Wattpilot | Wattpilot Flex |
+| :--- | :--- | :--- |
+| Evidenced device scope | Wattpilot Home 11/22 J 2.0 and Wattpilot Go 11/22 J 2.0 as the original device scope | Real-device tested with Wattpilot Flex Home 22 C6, firmware 43.4 |
+| Authentication | PBKDF2; in the evidenced legacy profile with `devicetype=wattpilot` and `hello.protocol=2`, `authRequired.hash` may be absent | bcrypt only; `Crypt::Bcrypt` is mandatory for Wattpilot Flex |
+| `authHash=auto` | Selects PBKDF2 for the evidenced missing-hash legacy profile | Expects and selects bcrypt; PBKDF2 is not a supported Flex profile |
+| Extended fields | Core charging, energy, and electrical values are protected by regression tests | Additional configuration, diagnostic, and stationary-PV-battery fields are documented or real-device tested for Flex 43.4 |
+| Verification status | Automated compatibility test based on a pinned Wattpilot implementation; no current real-device test | Multiple real FHEM, authentication, reading, and Set-command tests on one Flex 43.4; other Flex models and firmware versions are not fully verified |
+
+The module does not claim generic compatibility with arbitrary go-eChargers. Fields not sent by a device do not create or change readings. For combinations without real-device testing, support remains limited to the documented compatibility contract.
 
 ## 1. Prerequisites (System & Perl Modules)
 
-For the module to work, some additional Perl modules must be installed on the server (Raspberry Pi, PC, etc.) running FHEM. The module uses modern encryption (PBKDF2), which is not always installed by default.
+For the module to work, some additional Perl modules must be installed on the FHEM server.
 
-### Required Perl Packages
+### Perl packages required for all devices
 
 * `JSON`
 * `Crypt::PBKDF2`
 * `Crypt::URandom`
-* `Crypt::Bcrypt`
 * `Digest::SHA`
 * `MIME::Base64`
+
+`Crypt::PBKDF2` is loaded when the module starts and is therefore required even when a Wattpilot Flex later selects bcrypt.
+
+### Additional package required for Wattpilot Flex
+
+* `Crypt::Bcrypt`
+
+`Crypt::Bcrypt` is mandatory for Wattpilot Flex because Flex uses bcrypt exclusively. The evidenced legacy Wattpilot profile uses PBKDF2 instead.
 
 ### Installing Packages (Debian/Raspbian/Ubuntu)
 
@@ -86,11 +60,17 @@ sudo apt-get update
 sudo apt-get install libjson-perl libdigest-sha-perl libmime-base64-perl
 ```
 
-For `Crypt::PBKDF2`, `Crypt::URandom`, and `Crypt::Bcrypt` (often not available as an apt package), it is best to use cpanminus:
+Use cpanminus for the additional cryptography modules:
 
 ```bash
 sudo apt-get install cpanminus
-sudo cpanm Crypt::PBKDF2 Crypt::URandom Crypt::Bcrypt
+sudo cpanm Crypt::PBKDF2 Crypt::URandom
+```
+
+For Wattpilot Flex, also install this mandatory package:
+
+```bash
+sudo cpanm Crypt::Bcrypt
 ```
 
 ## 2. Installing the Module
@@ -120,9 +100,15 @@ define <Name> Wattpilot <IP-Address> [Serial]
 
 * **<Name>**: A name for the device in FHEM (e.g., `wallbox` or `myWattpilot`).
 * **<IP-Address>**: The local IP address of the Wattpilot on the network (e.g., `192.0.2.10`, reserved for documentation).
-* **[Serial]** (Optional): The serial number of the box. If omitted, the module attempts to read it automatically.
+* **[Serial]** (Optional): A digits-only serial number. It is normally omitted and obtained from the device `hello` message.
 
-**Note:** Version 2.0 requires a fresh definition. Set the password separately with `set <Name> password <secret>`.
+### Why is the serial number needed?
+
+The serial is not another FHEM device identifier. It is a cryptographic input: both PBKDF2 and bcrypt derive the device-specific password hash using the serial number. This applies to legacy Wattpilot devices and Wattpilot Flex.
+
+Normally the Wattpilot sends its serial in the `hello` message before authentication, so it does not need to be part of the definition. Supplying it explicitly pins the value and is useful only when automatic acquisition does not work. A wrong serial produces the wrong derived hash and causes authentication to fail. If neither the definition nor `hello` provides a valid numeric serial, authentication ends with `authConfigMissing`.
+
+Set the password separately with `set <Name> password <secret>`; it is not stored in the definition.
 
 **Version display:** The Internal `VERSION` reports the module version. Firmware reported by the Wattpilot remains separate in the `firmwareVersion` reading.
 
@@ -131,7 +117,7 @@ define <Name> Wattpilot <IP-Address> [Serial]
 Enter this into the FHEM command line:
 
 ```text
-define testWallbox Wattpilot 192.0.2.10 10000001
+define testWallbox Wattpilot 192.0.2.10
 set testWallbox password documentation-value-only
 ```
 
@@ -215,15 +201,15 @@ set wallbox minimumCharging interval 0
 
 The grouped `minimumCharging` command converts the public seconds to exact whole milliseconds and writes `duration` through `fmt`, `pauseDuration` through `mcpd`, and `interval` through `mci`. `chargingPauseAllowed` remains a separate command and writes the boolean field `fap`. The `minimumCharging interval` setting follows the pinned API alias for `mci`; the current Fronius Flex operating instructions label the vehicle setting “Forced charging interval”.
 
-These additional setters use the existing secured `setValue` path. No reading is changed optimistically; only a device response or later status confirms the value. Field assignments use the documented combination of current Fronius operating documentation, pinned API sources, and the sanitized Flex 43.4 observation. All eleven setters were changed individually on a Wattpilot Flex Home 22 C6 with firmware 43.4, confirmed through device readback, and restored to their original values.
+These additional setters use the existing secured `setValue` path. No reading is changed optimistically; only a device response or later status confirms the value. Field assignments use the documented combination of current Fronius operating documentation, pinned API sources, and the sanitized Flex 43.4 observation. The extended energy and phase parameters described here were changed individually on a Wattpilot Flex Home 22 C6 with firmware 43.4, confirmed through device readback, and restored to their original values.
 
 ### PV battery telemetry
 
 The readings `pvBatterySoC`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not the vehicle traction battery. They are read from `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. `pvBatterySoC` and `pvBatteryPower` use a separate latest-value cache and dirty fields while sharing the common telemetry clock with `nrg` and energy; battery input never republishes stale electrical values. `pvBatteryModeCode` is a discrete status and publishes immediately only on actual change. `pvBatterySoC` is formatted with exactly one decimal place. The module deliberately provides no setters and invents neither an unverified mode enum nor an unverified power-sign meaning.
 
-Version 2.0.8 also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`: `fam` as `configPvBatteryChargeAboveSoC`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilSoC`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeStopTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status.
+The module also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`: `fam` as `configPvBatteryChargeAboveSoC`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilSoC`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeStopTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status.
 
-Version 2.0.9 adds one grouped top-level setter for those fields:
+One grouped top-level setter is available for those fields:
 
 ```text
 set wallbox pvBattery chargeAboveSoC 60
@@ -309,9 +295,9 @@ At this revision, `DevIo_DecodeWS` owns incomplete raw WebSocket-frame buffering
 
 Selects the password hashing method.
 
-* `auto` (Default): Accepts only an explicitly announced `pbkdf2` or `bcrypt`. For the evidenced legacy profile `devicetype=wattpilot`, protocol 2, a missing `authRequired.hash` remains compatible and selects PBKDF2. An explicitly unknown mode, or a missing mode outside that profile, is rejected.
-* `pbkdf2`: Forces PBKDF2 (older models).
-* `bcrypt`: Forces bcrypt (newer Wattpilot Flex models).
+* `auto` (Default and recommended): Uses the method explicitly announced by the device. For the evidenced legacy profile `devicetype=wattpilot`, protocol 2, a missing `authRequired.hash` remains compatible and selects PBKDF2. Wattpilot Flex is supported exclusively with bcrypt. An unknown mode, or a missing mode outside the legacy profile, is rejected.
+* `pbkdf2`: Forces PBKDF2. This is intended only for the evidenced legacy Wattpilot profile and is not a supported Flex method.
+* `bcrypt`: Forces bcrypt. This method is mandatory for Wattpilot Flex.
 
 ## 6. Readings (Values)
 
@@ -351,11 +337,11 @@ The module exposes exactly these 53 public readings:
 | `pvBatteryPower` | Signed numeric value from `fbuf_pAkku`, exposed in watts and always formatted to two decimal places. The charge/discharge sign direction has not yet been confirmed by a controlled Flex live test, so the module does not reinterpret the sign. |
 | `pvBatteryModeCode` | Unmodified non-negative integer code from `fbuf_akkuMode`. No text mode is invented because no reliable enum is available. |
 | `configPvBatteryChargeAboveSoC` | App setting “Charge above” from `fam`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery chargeAboveSoC <0-100>`. |
-| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeEnabled <0|1>`. |
+| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeEnabled` with `0` or `1`. |
 | `configPvBatteryDischargeUntilSoC` | Associated app setting “State of charge SoC” from `pdt`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery dischargeUntilSoC <0-100>`. |
-| `configPvBatteryDischargeTimeLimitEnabled` | App switch “Limit discharging time” from `pdle`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeTimeLimitEnabled <0|1>`. |
+| `configPvBatteryDischargeTimeLimitEnabled` | App switch “Limit discharging time” from `pdle`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeTimeLimitEnabled` with `0` or `1`. |
 | `configPvBatteryDischargeStartTime` | App start time from `pdls`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStartTime <HH:MM>`. |
-| `configPvBatteryDischargeStopTime` | App stop time from `pdlo`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStopTime <HH:MM|24:00>`. |
+| `configPvBatteryDischargeStopTime` | App stop time from `pdlo`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStopTime` with `HH:MM` or `24:00`. |
 | `configNextTripTime` | Protocol value rendered as `HH:MM`, interpreted as seconds after midnight. |
 | `energyTotal` | `eto / 1000`, formatted with two decimals. The Wh-to-kWh interpretation is implementation evidence and is not proven by the sanitized Flex capture. |
 | `energySincePlugIn` | `wh`, formatted with two decimals and interpreted as Wh. |
@@ -419,6 +405,6 @@ The meanings and units assigned to the used `nrg` positions and to `eto`/`wh` re
   * Are FHEM and Wattpilot on the same network? (Often issues with Guest networks).
 * **Log shows "Authentication Failed"**:
   * Check the password with `set <Name> password ...`.
-  * If necessary, try setting the `authHash` attribute explicitly to `pbkdf2` or `bcrypt`.
+  * Check the device generation: legacy Wattpilot uses PBKDF2, while Wattpilot Flex uses bcrypt exclusively. Any manual override must match the device generation.
 * **Perl Error in Log (`Can't locate Crypt/PBKDF2.pm`)**:
   * The prerequisites (Step 1) were not met. Install the missing Perl module.

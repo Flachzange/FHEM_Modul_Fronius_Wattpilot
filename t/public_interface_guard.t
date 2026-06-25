@@ -154,7 +154,7 @@ my @migration_pairs = (
     [ 'Zeit_NextTrip HH:MM', 'nextTripTime HH:MM' ],
 );
 
-my @active_docs = (
+my @readme_docs = (
     [ 'README.md', read_utf8(File::Spec->catfile($root, 'README.md')) ],
     [ 'README_en.md', read_utf8(File::Spec->catfile($root, 'README_en.md')) ],
 );
@@ -162,13 +162,33 @@ my ($commandref_en) = $source =~ /=begin\s+html\s+(.*?)=end\s+html/s;
 my ($commandref_de) = $source =~ /=begin\s+html_DE\s+(.*?)=end\s+html_DE/s;
 ok(defined($commandref_en), 'English commandref is extractable for interface guard');
 ok(defined($commandref_de), 'German commandref is extractable for interface guard');
-push @active_docs,
+my @commandref_docs = (
     [ 'English commandref', $commandref_en // '' ],
-    [ 'German commandref', $commandref_de // '' ];
+    [ 'German commandref', $commandref_de // '' ],
+);
+my @active_docs = (@readme_docs, @commandref_docs);
 
 my $markdown_old = qr/`(?:$old_pattern)`/;
 my $html_old = qr/<code>(?:$old_pattern)<\/code>/;
-for my $entry (@active_docs) {
+
+for my $entry (@readme_docs) {
+    my ($label, $original) = @$entry;
+    unlike($original, qr/<!-- (?:BEGIN|END) 2\.0 migration names -->/,
+        "$label contains no embedded migration matrix");
+    unlike($original, $markdown_old,
+        "$label contains no exact old Markdown public-interface token");
+    my @bad_table_code_spans;
+    for my $line (split /\n/, $original) {
+        next if $line !~ /^\|/;
+        while ($line =~ /`([^`]*)`/g) {
+            push @bad_table_code_spans, $line if $1 =~ /(?<!\\)\|/;
+        }
+    }
+    is_deeply(\@bad_table_code_spans, [],
+        "$label contains no unescaped pipe inside a code span in a Markdown table row");
+}
+
+for my $entry (@commandref_docs) {
     my ($label, $original) = @$entry;
     my $begin_count = () = $original =~ /<!-- BEGIN 2\.0 migration names -->/g;
     my $end_count = () = $original =~ /<!-- END 2\.0 migration names -->/g;
@@ -191,7 +211,11 @@ for my $entry (@active_docs) {
         "$label contains no exact old Markdown code token outside migration section");
     unlike($active, $html_old,
         "$label contains no exact old HTML code token outside migration section");
+}
 
+for my $entry (@active_docs) {
+    my ($label, $original) = @$entry;
+    my $active = strip_migration_names($original);
     for my $reading (@public_readings) {
         like($active, qr/\b\Q$reading\E\b/,
             "$label documents public reading $reading");
@@ -204,6 +228,22 @@ for my $entry (@active_docs) {
 
 my $readme_de = $active_docs[0][1];
 my $readme_en = $active_docs[1][1];
+unlike($readme_de, qr/Version 2\.\d+\.\d+|Reading bis 2\.0\.6/,
+    'German README contains no embedded version-by-version changelog or migration table');
+unlike($readme_en, qr/Version 2\.\d+\.\d+|Reading through 2\.0\.6/i,
+    'English README contains no embedded version-by-version changelog or migration table');
+like($readme_de, qr/Seriennummer.*kryptografischer Eingabewert.*PBKDF2.*bcrypt/s,
+    'German README explains the serial-number role in both authentication modes');
+like($readme_en, qr/serial.*cryptographic input.*PBKDF2.*bcrypt/s,
+    'English README explains the serial-number role in both authentication modes');
+like($readme_de, qr/\| Authentifizierung \| PBKDF2;.*\| Ausschlie\x{00DF}lich bcrypt;/s,
+    'German README distinguishes legacy PBKDF2 from Flex bcrypt-only authentication');
+like($readme_en, qr/\| Authentication \| PBKDF2;.*\| bcrypt only;/s,
+    'English README distinguishes legacy PBKDF2 from Flex bcrypt-only authentication');
+unlike($readme_de, qr/Wattpilot Flex.*(?:PBKDF2 oder bcrypt|bcrypt oder PBKDF2)/s,
+    'German README does not present PBKDF2 as a supported Flex authentication mode');
+unlike($readme_en, qr/Wattpilot Flex.*(?:PBKDF2 or bcrypt|bcrypt or PBKDF2)/s,
+    'English README does not present PBKDF2 as a supported Flex authentication mode');
 like($commandref_en, qr/exact relationship, evaluation order, precedence, and any role of <code>cpDisabledRequest<\/code> are not confirmed/s,
     'English commandref documents the unconfirmed modelStatus/msi relationship');
 like($commandref_en, qr/does not claim that <code>modelStatus<\/code> is necessarily the final\/effective decision/s,
