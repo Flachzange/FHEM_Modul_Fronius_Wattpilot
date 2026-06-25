@@ -40,20 +40,21 @@ sub inner_payload {
 my $interface = main::Wattpilot_InterfaceSnapshot();
 my $commands = $interface->{commands};
 my $command_schema = $interface->{commandSchema};
+my $grouped_command_schema = $interface->{groupedCommandSchema};
 my $status_fields = $interface->{statusFields};
 my $reading_policy = $interface->{readingPolicy};
 
 is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
-is(scalar(keys %$command_schema), 19,
-    'command schema contains the complete 19-command public surface');
+is(scalar(keys %$command_schema), 14,
+    'command schema contains the complete 14-command public surface');
 is(scalar(keys %$status_fields), 36,
     'status schema contains all 36 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
-    [qw(password pv_battery reconnect)],
-    'only password, pvBattery, and reconnect remain explicit Set handlers');
+    [qw(minimum_charging password phase_switch pv_battery reconnect)],
+    'only grouped commands, password, pvBattery, and reconnect remain explicit Set handlers');
 
 my (@command_schema_errors, %seen_public_name);
 for my $key (sort keys %$command_schema) {
@@ -79,14 +80,7 @@ my @ordinary_cases = (
     [pv_surplus_enabled => '1', 'fup', 1, 'boolean'],
     [zero_feed_in_enabled => '0', 'fzf', 0, 'boolean'],
     [pv_control_preference => 'default', 'frm', 1, 'number'],
-    [phase_switch_mode => 'force3', 'psm', 2, 'number'],
-    [three_phase_switch_power => '5200.5', 'spl3', 5200.5, 'number'],
-    [phase_switch_delay => '1.5', 'mpwst', 1500, 'number'],
-    [minimum_phase_switch_interval => '2.5', 'mptwt', 2500, 'number'],
-    [minimum_charge_time => '0.5', 'fmt', 500, 'number'],
     [charging_pause_allowed => '1', 'fap', 1, 'boolean'],
-    [minimum_charging_pause_duration => '1.25', 'mcpd', 1250, 'number'],
-    [minimum_charging_interval => '0', 'mci', 0, 'number'],
     [next_trip_time => '07:30', 'ftt', 27000, 'number'],
 );
 
@@ -117,6 +111,63 @@ for my $case (@ordinary_cases) {
         qr/^Usage:/, "$schema->{name} rejects an extra argument");
     is(scalar @DevIo::WRITES, 0,
         "$schema->{name} arity failure sends no frame");
+}
+
+is_deeply([sort keys %$grouped_command_schema],
+    [qw(minimum_charging phase_switch)],
+    'exactly the two requested grouped Set schemas are public');
+is_deeply([sort keys %{$grouped_command_schema->{minimum_charging}}],
+    [qw(duration interval pauseDuration)],
+    'minimumCharging exposes the requested subcommands');
+is_deeply([sort keys %{$grouped_command_schema->{phase_switch}}],
+    [qw(delay minInterval mode threePhasePower)],
+    'phaseSwitch exposes the requested subcommands');
+
+my @grouped_cases = (
+    [minimum_charging => duration => '0.5', 'fmt', 500],
+    [minimum_charging => interval => '0', 'mci', 0],
+    [minimum_charging => pauseDuration => '1.25', 'mcpd', 1250],
+    [phase_switch => delay => '1.5', 'mpwst', 1500],
+    [phase_switch => mode => 'force3', 'psm', 2],
+    [phase_switch => minInterval => '2.5', 'mptwt', 2500],
+    [phase_switch => threePhasePower => '5200.5', 'spl3', 5200.5],
+);
+for my $case (@grouped_cases) {
+    my ($group_key, $setting, $input, $protocol_key, $expected) = @$case;
+    my $group_name = $commands->{$group_key};
+    my $hash = fresh_device();
+    is(main::Wattpilot_Set(
+            $hash, $hash->{NAME}, $group_name, $setting, $input),
+        undef, "$group_name $setting accepts its schema-defined value");
+    my $payload = inner_payload($DevIo::WRITES[0]);
+    is($payload->{key}, $protocol_key,
+        "$group_name $setting sends its schema-defined protocol key");
+    is($payload->{value}, $expected,
+        "$group_name $setting sends the expected protocol value");
+
+    $hash = fresh_device();
+    like(main::Wattpilot_Set(
+            $hash, $hash->{NAME}, $group_name, $setting, $input, 'extra'),
+        qr/^Usage:/, "$group_name $setting rejects an extra argument");
+    is(scalar @DevIo::WRITES, 0,
+        "$group_name $setting arity failure sends no frame");
+}
+
+for my $case (
+    [minimum_charging => 'duration', 'invalid'],
+    [minimum_charging => 'unknown', '1'],
+    [phase_switch => 'mode', 'force2'],
+    [phase_switch => 'delay', '-1'],
+    [phase_switch => 'threePhasePower', '-1'],
+) {
+    my ($group_key, $setting, $input) = @$case;
+    my $group_name = $commands->{$group_key};
+    my $hash = fresh_device();
+    like(main::Wattpilot_Set(
+            $hash, $hash->{NAME}, $group_name, $setting, $input),
+        qr/^Usage:/, "$group_name rejects invalid $setting input");
+    is(scalar @DevIo::WRITES, 0,
+        "$group_name invalid input sends no frame");
 }
 
 my @actual_options = sort split / /, main::Wattpilot_SetOptions();

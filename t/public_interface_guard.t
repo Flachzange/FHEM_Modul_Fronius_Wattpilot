@@ -118,10 +118,9 @@ my @public_readings = qw(
 );
 my @public_commands = qw(
     password chargingCurrent forceState chargingMode pvSurplusStartPower
-    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
-    threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
-    minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
-    minimumChargingInterval reconnect nextTripTime
+    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitch
+    minimumCharging chargingPauseAllowed reconnect
+    nextTripTime
 );
 
 my @migration_pairs = (
@@ -231,13 +230,15 @@ for my $entry (@active_docs) {
         "$label documents the manual reconnect command");
     like($text, qr/(?:not|kein).*fullStatus.*request|fullStatus.*(?:not|kein).*request/is,
         "$label states that reconnect is not a fullStatus request");
-    like($text, qr/minimumChargingInterval/s,
-        "$label documents the public mci alias");
+    like($text, qr/minimumCharging.*interval/s,
+        "$label documents the grouped public mci command path");
+    like($text, qr/phaseSwitch.*(?:mode|delay|minInterval|threePhasePower)/s,
+        "$label documents the grouped phaseSwitch command path");
 }
-like($readme_en, qr/minimumChargingInterval.*Forced charging interval/s,
-    'English README distinguishes API alias from Fronius UI terminology');
-like($readme_de, qr/minimumChargingInterval.*Forced charging interval|configMinimumChargingInterval.*Zwangsladeintervall/s,
-    'German README distinguishes API alias from Fronius UI terminology');
+like($readme_en, qr/minimumCharging interval.*Forced charging interval/s,
+    'English README distinguishes grouped mci command from Fronius UI terminology');
+like($readme_de, qr/minimumCharging interval.*Forced charging interval|configMinimumChargingInterval.*Zwangsladeintervall/s,
+    'German README distinguishes grouped mci command from Fronius UI terminology');
 like($commandref_en, qr/reconnect.*not a <code>fullStatus<\/code> request/s,
     'English commandref does not misrepresent reconnect as polling');
 like($commandref_de, qr/reconnect.*kein <code>fullStatus<\/code>-Request/s,

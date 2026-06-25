@@ -167,10 +167,12 @@ Ordinary one-value Set commands use one compact command inventory for the
 public name, FHEMWEB widget metadata, exact arity, parser, protocol key, JSON
 conversion, Usage text, and the established `chargingMode` invalid-value
 message. `Wattpilot_SetOptions` and ordinary dispatch derive from this
-inventory. The grouped `pvBattery` command, local `password` storage, and
-lifecycle-only `reconnect` remain explicit handlers. Authentication, request
-correlation, response handling, lifecycle changes, telemetry caches, and car
-transitions are not hidden behind a generic command engine.
+inventory. The grouped `phaseSwitch` and `minimumCharging` commands use one
+small ordered subcommand inventory and the same proven value parsers, including the `phaseSwitch threePhasePower` watt threshold; grouped
+`pvBattery`, local `password` storage, and lifecycle-only `reconnect` remain
+explicit handlers. Authentication, request correlation, response handling,
+lifecycle changes, telemetry caches, and car transitions are not hidden behind
+a generic command engine.
 
 ## Development infrastructure
 

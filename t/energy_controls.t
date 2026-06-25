@@ -152,15 +152,6 @@ for my $case (
     [ 'pvControlPreference', 'preferFromGrid', 'frm', 0, 'number' ],
     [ 'pvControlPreference', 'default', 'frm', 1, 'number' ],
     [ 'pvControlPreference', 'preferToGrid', 'frm', 2, 'number' ],
-    [ 'phaseSwitchMode', 'auto', 'psm', 0, 'number' ],
-    [ 'phaseSwitchMode', 'force1', 'psm', 1, 'number' ],
-    [ 'phaseSwitchMode', 'force3', 'psm', 2, 'number' ],
-    [ 'threePhaseSwitchPower', '5200.5', 'spl3', 5200.5, 'number' ],
-    [ 'phaseSwitchDelay', '1.5', 'mpwst', 1500, 'number' ],
-    [ 'minimumPhaseSwitchInterval', 600, 'mptwt', 600000, 'number' ],
-    [ 'minimumChargeTime', 0.5, 'fmt', 500, 'number' ],
-    [ 'minimumChargingPauseDuration', 120, 'mcpd', 120000, 'number' ],
-    [ 'minimumChargingInterval', 0, 'mci', 0, 'number' ],
 ) {
     my ($command, $input, $key, $value, $kind) = @$case;
     $hash = fresh_device();
@@ -182,17 +173,34 @@ for my $case (
 }
 
 for my $case (
+    [ 'phaseSwitch', 'mode', 'auto', 'psm', 0 ],
+    [ 'phaseSwitch', 'mode', 'force1', 'psm', 1 ],
+    [ 'phaseSwitch', 'mode', 'force3', 'psm', 2 ],
+    [ 'phaseSwitch', 'delay', '1.5', 'mpwst', 1500 ],
+    [ 'phaseSwitch', 'minInterval', 600, 'mptwt', 600000 ],
+    [ 'phaseSwitch', 'threePhasePower', '5200.5', 'spl3', 5200.5 ],
+    [ 'minimumCharging', 'duration', 0.5, 'fmt', 500 ],
+    [ 'minimumCharging', 'pauseDuration', 120, 'mcpd', 120000 ],
+    [ 'minimumCharging', 'interval', 0, 'mci', 0 ],
+) {
+    my ($command, $setting, $input, $key, $value) = @$case;
+    $hash = fresh_device();
+    is(main::Wattpilot_Set(
+            $hash, 'controlWallbox', $command, $setting, $input),
+        undef, "$command $setting accepts $input");
+    my ($outer, $inner) = inner_payload($DevIo::WRITES[0]);
+    is($inner->{key}, $key, "$command $setting writes $key");
+    is($inner->{value}, $value,
+        "$command $setting sends the expected protocol value");
+    is($outer->{requestId}, '1sm',
+        "$command $setting uses the normal secured request correlation");
+}
+
+for my $case (
     [ 'pvSurplusEnabled', 1 ],
     [ 'zeroFeedInEnabled', 0 ],
     [ 'chargingPauseAllowed', 1 ],
     [ 'pvControlPreference', 'default' ],
-    [ 'phaseSwitchMode', 'auto' ],
-    [ 'threePhaseSwitchPower', 5200 ],
-    [ 'phaseSwitchDelay', 120 ],
-    [ 'minimumPhaseSwitchInterval', 600 ],
-    [ 'minimumChargeTime', 300 ],
-    [ 'minimumChargingPauseDuration', 120 ],
-    [ 'minimumChargingInterval', 0 ],
 ) {
     my ($command, $input) = @$case;
     $hash = fresh_device();
@@ -204,19 +212,28 @@ for my $case (
 }
 
 for my $case (
+    [ 'phaseSwitch', 'mode', 'auto' ],
+    [ 'phaseSwitch', 'delay', 120 ],
+    [ 'phaseSwitch', 'minInterval', 600 ],
+    [ 'phaseSwitch', 'threePhasePower', 5200 ],
+    [ 'minimumCharging', 'duration', 300 ],
+    [ 'minimumCharging', 'pauseDuration', 120 ],
+    [ 'minimumCharging', 'interval', 0 ],
+) {
+    my ($command, $setting, $input) = @$case;
+    $hash = fresh_device();
+    like(main::Wattpilot_Set(
+            $hash, 'controlWallbox', $command, $setting, $input, 'extra'),
+        qr/^Usage:/, "$command $setting rejects an extra argument");
+    is(scalar @DevIo::WRITES, 0,
+        "$command $setting extra argument sends no frame");
+}
+
+for my $case (
     [ 'pvSurplusEnabled', 2 ],
     [ 'zeroFeedInEnabled', 'true' ],
     [ 'chargingPauseAllowed', -1 ],
     [ 'pvControlPreference', 'grid' ],
-    [ 'phaseSwitchMode', 'force2' ],
-    [ 'threePhaseSwitchPower', -1 ],
-    [ 'threePhaseSwitchPower', 'NaN' ],
-    [ 'phaseSwitchDelay', -1 ],
-    [ 'phaseSwitchDelay', '0.0001' ],
-    [ 'minimumPhaseSwitchInterval', 'Inf' ],
-    [ 'minimumChargeTime', 'abc' ],
-    [ 'minimumChargingPauseDuration', '1e9999' ],
-    [ 'minimumChargingInterval', undef ],
 ) {
     my ($command, $input) = @$case;
     $hash = fresh_device();
@@ -228,9 +245,31 @@ for my $case (
         "$command invalid input sends no frame");
 }
 
+for my $case (
+    [ 'phaseSwitch', 'mode', 'force2' ],
+    [ 'phaseSwitch', 'delay', -1 ],
+    [ 'phaseSwitch', 'delay', '0.0001' ],
+    [ 'phaseSwitch', 'minInterval', 'Inf' ],
+    [ 'phaseSwitch', 'threePhasePower', -1 ],
+    [ 'phaseSwitch', 'threePhasePower', 'NaN' ],
+    [ 'minimumCharging', 'duration', 'abc' ],
+    [ 'minimumCharging', 'pauseDuration', '1e9999' ],
+    [ 'minimumCharging', 'interval', undef ],
+    [ 'minimumCharging', 'unknown', 1 ],
+) {
+    my ($command, $setting, $input) = @$case;
+    $hash = fresh_device();
+    my @args = ('controlWallbox', $command, $setting);
+    push @args, $input if defined $input;
+    like(main::Wattpilot_Set($hash, @args), qr/^Usage:/,
+        "$command $setting rejects invalid input");
+    is(scalar @DevIo::WRITES, 0,
+        "$command $setting invalid input sends no frame");
+}
+
 $hash = fresh_device();
 main::Wattpilot_UpdateReadings($hash, { spl3 => 5200 });
-main::Wattpilot_Set($hash, 'controlWallbox', 'threePhaseSwitchPower', 6000);
+main::Wattpilot_Set($hash, 'controlWallbox', 'phaseSwitch', 'threePhasePower', 6000);
 is(reading_value($hash, 'configThreePhaseSwitchPower'), '5200.00',
     'pending setter does not fabricate a confirmed reading');
 main::Wattpilot_Parse($hash, encode_json({
@@ -256,12 +295,24 @@ is(reading_value($hash, 'lastCommandStatus'), 'failed',
 $hash = fresh_device();
 my $help = main::Wattpilot_Set($hash, 'controlWallbox', '?');
 for my $command (qw(
-    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitchMode
-    threePhaseSwitchPower phaseSwitchDelay minimumPhaseSwitchInterval
-    minimumChargeTime chargingPauseAllowed minimumChargingPauseDuration
-    minimumChargingInterval
+    pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitch
+    minimumCharging chargingPauseAllowed
 )) {
     like($help, qr/\Q$command\E/, "Set help exposes $command");
+}
+for my $old_command (qw(
+    phaseSwitchMode phaseSwitchDelay minimumPhaseSwitchInterval
+    threePhaseSwitchPower
+    minimumChargeTime minimumChargingPauseDuration minimumChargingInterval
+)) {
+    unlike($help, qr/\b\Q$old_command\E\b/,
+        "Set help no longer exposes $old_command");
+    $hash = fresh_device();
+    like(main::Wattpilot_Set($hash, 'controlWallbox', $old_command, 1),
+        qr/^Unknown argument /,
+        "$old_command is rejected rather than retained as an alias");
+    is(scalar @DevIo::WRITES, 0,
+        "$old_command alias rejection sends no frame");
 }
 
 done_testing;

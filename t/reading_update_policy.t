@@ -521,7 +521,7 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
 
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.3',
+    is($hash->{VERSION}, '2.1.4',
         'reload-style Initialize refreshes the module version');
     is($hash->{FD}, 69,
         'reload-style Initialize preserves the open transport');

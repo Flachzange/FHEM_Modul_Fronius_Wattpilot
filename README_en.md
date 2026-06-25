@@ -2,11 +2,11 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.3**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
+Current module version: **2.1.4**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. Protocol-source provenance and confidence are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md). The complete sanitized observation of the Wattpilot Flex JSON structure is in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). The exhaustive reading-category audit and `config` naming policy are in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
 
 ## Breaking change in 2.0
 
-Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Version 2.0.8 adds six configuration readings for the stationary-PV-battery settings visible in the Solar.wattpilot app. Version 2.0.9 consistently abbreviates state of charge as `SoC`, renames `configPvBatteryDischargeEndTime` to `configPvBatteryDischargeStopTime`, and adds the grouped `pvBattery` Set command. Version 2.0.10 advertises `reconnect` to FHEMWEB as a true no-argument command, returns the regular Set list even with `disable=1`, and strictly rejects surplus arguments for single-value Set commands; actual Set operations remain blocked. Version 2.1.0 fixes `modify`/`defmod` as complete session transitions, preserves message-level `fullStatus.partial`, validates incoming JSON types and clock values strictly, and removes the no-op `debug` and `defaultAmp` attributes. Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish only on actual change. Version 2.1.2 standardizes public measured and calculated values to exactly two decimal places; percentages, integers, clocks, and durations remain explicitly documented exceptions. Rounded negative zero is published as positive zero. Version 2.1.3 consolidates the existing reading and Set inventories into small declarative status and command schemas. Ordinary scalar fields and Set commands are validated, formatted, and dispatched from those schemas, while lifecycle, authentication, telemetry, car-transition, `password`, `reconnect`, and grouped `pvBattery` behavior stays explicit. Public names, payloads, and cadence remain unchanged. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
+Version 2.0 supports only a fresh definition. Version 2.0.7 additionally renames every configuration reading to the `config...` scheme. Version 2.0.8 adds six configuration readings for the stationary-PV-battery settings visible in the Solar.wattpilot app. Version 2.0.9 consistently abbreviates state of charge as `SoC`, renames `configPvBatteryDischargeEndTime` to `configPvBatteryDischargeStopTime`, and adds the grouped `pvBattery` Set command. Version 2.0.10 advertises `reconnect` to FHEMWEB as a true no-argument command, returns the regular Set list even with `disable=1`, and strictly rejects surplus arguments for single-value Set commands; actual Set operations remain blocked. Version 2.1.0 fixes `modify`/`defmod` as complete session transitions, preserves message-level `fullStatus.partial`, validates incoming JSON types and clock values strictly, and removes the no-op `debug` and `defaultAmp` attributes. Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish only on actual change. Version 2.1.2 standardizes public measured and calculated values to exactly two decimal places; percentages, integers, clocks, and durations remain explicitly documented exceptions. Rounded negative zero is published as positive zero. Version 2.1.3 consolidates the existing reading and Set inventories into small declarative status and command schemas. Ordinary scalar fields and Set commands are validated, formatted, and dispatched from those schemas, while lifecycle, authentication, telemetry, car-transition, `password`, `reconnect`, and grouped `pvBattery` behavior stays explicit. Public names, payloads, and cadence remain unchanged. There are no compatibility readings, aliases, automatic reading cleanup, or DbLog migration. Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped `phaseSwitch` and `minimumCharging` commands. The protocol keys, units, validation, and confirmed `config...` readings remain unchanged; the removed individual Set names have no aliases. After a reload, old reading entries may remain in an existing device as stale values; consumers and any such entries must be adapted or removed manually.
 
 | Reading through 2.0.6 | Reading from 2.0.7 |
 | :--- | :--- |
@@ -196,24 +196,24 @@ These commands write `fup`, `fzf`, and `frm`. `pvControlPreference` accepts `pre
 ### Phase switching
 
 ```text
-set wallbox phaseSwitchMode auto
-set wallbox threePhaseSwitchPower 5200
-set wallbox phaseSwitchDelay 120
-set wallbox minimumPhaseSwitchInterval 600
+set wallbox phaseSwitch mode auto
+set wallbox phaseSwitch threePhasePower 5200
+set wallbox phaseSwitch delay 120
+set wallbox phaseSwitch minInterval 600
 ```
 
-`phaseSwitchMode` writes `psm` with `auto=0`, `force1=1`, or `force3=2`. The threshold is sent through `spl3` in watts; the confirmed reading is formatted with exactly two decimal places. The two public time values use seconds and are converted to milliseconds for `mpwst` and `mptwt`.
+The grouped `phaseSwitch` command writes `psm` with `auto=0`, `force1=1`, or `force3=2`, converts `delay` to `mpwst`, converts `minInterval` to `mptwt`, and writes `threePhasePower` through `spl3`. The two public time values use seconds and are sent as exact whole milliseconds. The threshold uses watts; its confirmed reading is formatted with exactly two decimal places.
 
 ### Charging and pause behavior
 
 ```text
-set wallbox minimumChargeTime 300
+set wallbox minimumCharging duration 300
 set wallbox chargingPauseAllowed 1
-set wallbox minimumChargingPauseDuration 120
-set wallbox minimumChargingInterval 0
+set wallbox minimumCharging pauseDuration 120
+set wallbox minimumCharging interval 0
 ```
 
-The public time values use seconds and are converted to milliseconds for `fmt`, `mcpd`, and `mci`. `chargingPauseAllowed` writes the boolean field `fap`. The public name `minimumChargingInterval` follows the pinned API alias for `mci`; the current Fronius Flex operating instructions label the vehicle setting “Forced charging interval”.
+The grouped `minimumCharging` command converts the public seconds to exact whole milliseconds and writes `duration` through `fmt`, `pauseDuration` through `mcpd`, and `interval` through `mci`. `chargingPauseAllowed` remains a separate command and writes the boolean field `fap`. The `minimumCharging interval` setting follows the pinned API alias for `mci`; the current Fronius Flex operating instructions label the vehicle setting “Forced charging interval”.
 
 These additional setters use the existing secured `setValue` path. No reading is changed optimistically; only a device response or later status confirms the value. Field assignments use the documented combination of current Fronius operating documentation, pinned API sources, and the sanitized Flex 43.4 observation. All eleven setters were changed individually on a Wattpilot Flex Home 22 C6 with firmware 43.4, confirmed through device readback, and restored to their original values.
 
