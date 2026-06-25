@@ -263,6 +263,24 @@ like($protocol_doc, qr/no causal chain is inferred/s,
 my $protocol_sources = read_utf8(File::Spec->catfile($root, 'docs', 'PROTOCOL-SOURCES.md'));
 like($protocol_sources, qr/differing values are retained as independent device-supplied diagnostics without inferring a causal chain/s,
     'protocol provenance records the modelStatus/msi evidence limit');
+like($commandref_en,
+    qr/chargingCurrent.*min\(32, configMaximumCurrentLimit\).*dynamic slider maximum/s,
+    'English commandref documents the dynamic charging-current upper bound');
+like($commandref_de,
+    qr/chargingCurrent.*min\(32, configMaximumCurrentLimit\).*dynamische Slider-Obergrenze/s,
+    'German commandref documents the dynamic charging-current upper bound');
+like($readme_en,
+    qr/configMaximumCurrentLimit.*dynamic upper bound.*capped at 32 A/s,
+    'English README documents the device-confirmed charging-current bound');
+like($readme_de,
+    qr/configMaximumCurrentLimit.*dynamische Obergrenze.*maximal 32 A/s,
+    'German README documents the device-confirmed charging-current bound');
+like($protocol_doc,
+    qr/local FHEM upper bound.*does not add an `ama` setter/s,
+    'Flex protocol documentation keeps the ama evidence boundary explicit');
+like($protocol_sources,
+    qr/local FHEM safety\/UX constraint.*adds no `ama` setter/s,
+    'protocol provenance records the local-only ama use');
 
 for my $entry (@active_docs) {
     my ($label, $text) = @$entry;

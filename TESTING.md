@@ -122,6 +122,19 @@ table parser; all four tables in each file have consistent column counts. The
 complete local suite passes with 26 test files and 3,006 tests. This is
 documentation and test-guard work only; the module version remains 2.1.4.
 
+Version 2.1.5 adds `t/charging_current_limit.t`. It verifies the dynamic
+`chargingCurrent` upper bound from a device-confirmed
+`configMaximumCurrentLimit`: 16 A accepts 16 and rejects 17/32 without an
+outgoing frame, 32 A preserves the established range, and missing,
+not-yet-confirmed, malformed, non-integer, below-range, and above-range values
+fall back to 32. The test also checks the FHEMWEB slider, exact dynamic Usage
+text, definition-session invalidation, and the absence of optimistic
+`configChargingCurrent` updates. The complete local suite passes with 27 test
+files and 3,070 tests. No running-FHEM or real-device test was
+performed for this change; the implementation reuses the already evidenced
+`ama` reading and `amp` write path without adding a new protocol field or
+writability claim.
+
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 
 For the version-2.0.6 development run after the issue-#51 correction, the complete suite passed with 20 test files and 2,650 tests. The isolated container again used temporary external compatibility modules for `JSON`, `Crypt::PBKDF2`, and `Crypt::URandom`; the fixed PBKDF2 vector passed. `Crypt::Bcrypt` was unavailable in this local environment, so the test suite skipped its one optional fixed bcrypt vector. The external modules are not repository or release files, and GitHub CI with the declared real dependencies remains required before release.

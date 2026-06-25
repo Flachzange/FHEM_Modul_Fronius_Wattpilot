@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.1.5] - 2026-06-25
+
+### Dynamic charging-current upper bound
+
+- `chargingCurrent` now uses a device-confirmed `configMaximumCurrentLimit` as its local upper bound when that reading contains an integer from 6 through 32. The effective accepted range is `6..min(32, configMaximumCurrentLimit)`.
+- Values above the effective limit are rejected before request creation and WebSocket output. The Usage response includes the accepted range, and FHEMWEB receives a matching dynamic slider maximum.
+- Missing, not-yet-confirmed, malformed, non-integer, or out-of-range maximum-current readings retain the established compatibility range `6..32`; persisted readings are not trusted until `ama` has been received for the current device hash.
+- The setter still sends only protocol key `amp` and never changes `configChargingCurrent` optimistically. The change adds no `ama` setter and does not promote third-party field evidence to an official Fronius Flex API claim.
+- Added focused regression coverage for 16 A and 32 A limits, stale/missing/invalid/out-of-range fallback, dynamic Set discovery, exact error ranges, suppressed output on rejection, and device-confirmed reading ownership.
+
 ## [v2.1.4] - 2026-06-25
 
 ### Grouped phase-switch and minimum-charging setters

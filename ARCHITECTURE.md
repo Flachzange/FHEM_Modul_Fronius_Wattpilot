@@ -174,6 +174,16 @@ explicit handlers. Authentication, request correlation, response handling,
 lifecycle changes, telemetry caches, and car transitions are not hidden behind
 a generic command engine.
 
+`chargingCurrent` has one deliberate device-dependent refinement. After the
+current device hash has received `ama`, a usable integer
+`configMaximumCurrentLimit` from 6 through 32 becomes the upper bound for both
+the local parser and the FHEMWEB slider. The fallback remains 32 when the
+reading is absent, not yet confirmed for the current hash, malformed, or
+outside the usable range. Definition-session replacement clears the
+confirmation marker while preserving the public reading, so a reading from a
+different endpoint cannot silently constrain the new session. This helper is
+process-local transient state; no new persistence or protocol write is added.
+
 ## Development infrastructure
 
 - `t/` contains deterministic module-level tests, minimal FHEM/DevIo stubs, and

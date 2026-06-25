@@ -21,7 +21,7 @@ my @required = qw(
     t/fixtures/pv-battery-settings-flex-43.4.json t/public_interface_2_0.t
     t/public_interface_guard.t t/fhem_interface_validation.t
     t/operational_status_readings.t t/runtime_fixes_2_0_3.t
-    t/declarative_schemas.t
+    t/declarative_schemas.t t/charging_current_limit.t
     scripts/check_commandref.pl scripts/check_repository.pl
     scripts/check_meta.pl scripts/build-release.sh scripts/verify-release.sh
     scripts/create_zip.pl scripts/check_reproducible_release.sh scripts/release-files.txt

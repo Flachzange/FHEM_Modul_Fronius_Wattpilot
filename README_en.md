@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.4**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.5**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -139,7 +139,7 @@ Once `state` is `connected`, the following commands are available:
 set wallbox chargingCurrent 16
 ```
 
-Only integer values from 6 through 32 are accepted. Internally the module sends `amp`.
+Only integer values from 6 A upward are accepted. Once the device has confirmed a usable `configMaximumCurrentLimit`, that value becomes the dynamic upper bound, capped at 32 A; FHEMWEB adjusts the slider accordingly. Before the first confirmation, or when the reading is missing or unusable, the compatibility range remains 6 through 32 A. Internally the module sends `amp`. The `configChargingCurrent` reading changes only after device confirmation.
 
 ### Set force state
 

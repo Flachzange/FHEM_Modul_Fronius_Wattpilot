@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.4 retains the authoritative publication policy for every public
+Version 2.1.5 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -53,7 +53,7 @@ queries must be adapted explicitly.
 | `charging_decision_internal_code` | `chargingDecisionInternalCode` | `diagnostic` | `status:msi` | `immediate-on-change` | `none` | `msi` | `integer` | `preserve` | Raw internal charging-decision code. |
 | `charging_decision_internal` | `chargingDecisionInternal` | `diagnostic` | `status:msi` | `immediate-on-change` | `none` | `msi` | `enum` | `preserve` | Compatibility text for the internal decision code. |
 | `error_code` | `errorCode` | `diagnostic` | `status:err` | `immediate-on-change` | `none` | `err` | `integer` | `preserve` | Current raw device error code. |
-| `maximum_current_limit` | `configMaximumCurrentLimit` | `configuration` | `status:ama` | `immediate` | `none` | `ama` | `integer` | `preserve` | Stored maximum-current limit exposed read-only by the module. |
+| `maximum_current_limit` | `configMaximumCurrentLimit` | `configuration` | `status:ama` | `immediate` | `none` | `ama` | `integer` | `preserve` | Stored maximum-current limit exposed read-only by the module. From 2.1.5, a device-confirmed usable value from 6 through 32 is also the local upper bound for `chargingCurrent`; missing, stale, malformed, or out-of-range values fall back to 32. |
 | `temperature_current_limit` | `temperatureCurrentLimit` | `status` | `status:amt` | `immediate-on-change` | `none` | `amt` | `integer` | `preserve` | Effective temperature-dependent current limit. |
 | `minimum_charging_current` | `configMinimumChargingCurrent` | `configuration` | `status:mca` | `immediate` | `none` | `mca` | `integer` | `preserve` | Stored minimum charging-current setting exposed read-only. |
 | `pv_surplus_start_power` | `configPvSurplusStartPower` | `configuration` | `status:fst` | `immediate` | `none` | `fst` | `decimal2` | `preserve` | PV-surplus start-power setting; Set command remains `pvSurplusStartPower`. |

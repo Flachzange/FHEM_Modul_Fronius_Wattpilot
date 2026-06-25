@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.4';
+my $WATTPILOT_VERSION = '2.1.5';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -48,6 +48,8 @@ my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
+my $WATTPILOT_CHARGING_CURRENT_MINIMUM = 6;
+my $WATTPILOT_CHARGING_CURRENT_MAXIMUM = 32;
 # key, public name, category, source, publication, idle gate, owner,
 # formatter, incoming validator, formatter detail
 my @WATTPILOT_READING_DEFINITION = (
@@ -645,6 +647,7 @@ sub Wattpilot_ClearDefinitionSessionState($) {
     delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     delete $hash->{helper}{pendingReconnectAfterOpen};
     delete $hash->{helper}{car_state};
+    delete $hash->{helper}{maximumCurrentLimitReceived};
     delete $hash->{helper}{telemetryPublication};
     delete $hash->{helper}{telemetryClock};
     delete $hash->{LAST_UPDATE};
@@ -1415,6 +1418,8 @@ sub Wattpilot_UpdateInternalStatus($$) {
     my ($hash, $status) = @_;
     $hash->{helper}{car_state} = int($status->{car})
         if defined $status->{car};
+    $hash->{helper}{maximumCurrentLimitReceived} = 1
+        if defined $status->{ama};
 }
 
 sub Wattpilot_UpdateImmediateReadings($$) {
@@ -2081,16 +2086,42 @@ sub Wattpilot_SetGroupedCommand($$@) {
         $hash, $schema->{protocolKey}, $protocol_value);
 }
 
-sub Wattpilot_ParseSetCommandValue($$) {
-    my ($parser, $value) = @_;
+sub Wattpilot_EffectiveChargingCurrentMaximum($) {
+    my ($hash) = @_;
+    return $WATTPILOT_CHARGING_CURRENT_MAXIMUM
+        if ref($hash) ne 'HASH'
+        || ref($hash->{helper}) ne 'HASH'
+        || !$hash->{helper}{maximumCurrentLimitReceived};
+
+    my $reading = $WATTPILOT_READING_NAME{maximum_current_limit};
+    return $WATTPILOT_CHARGING_CURRENT_MAXIMUM
+        if ref($hash->{READINGS}) ne 'HASH'
+        || ref($hash->{READINGS}{$reading}) ne 'HASH';
+    my $value = $hash->{READINGS}{$reading}{VAL};
+    return $WATTPILOT_CHARGING_CURRENT_MAXIMUM
+        if !defined($value)
+        || ref($value)
+        || $value !~ /^\d+$/
+        || $value < $WATTPILOT_CHARGING_CURRENT_MINIMUM
+        || $value > $WATTPILOT_CHARGING_CURRENT_MAXIMUM;
+    return int($value);
+}
+
+sub Wattpilot_ParseSetCommandValue($$;$) {
+    my ($parser, $value, $hash) = @_;
     return undef if !defined $value;
 
     return int($WATTPILOT_FORCE_COMMAND_VALUE{$value})
         if $parser eq 'force_state'
         && exists $WATTPILOT_FORCE_COMMAND_VALUE{$value};
-    return int($value)
-        if $parser eq 'charging_current'
-        && $value =~ /^(?:[6-9]|[12]\d|3[0-2])$/;
+    if ($parser eq 'charging_current') {
+        my $maximum = Wattpilot_EffectiveChargingCurrentMaximum($hash);
+        return int($value)
+            if $value =~ /^\d+$/
+            && $value >= $WATTPILOT_CHARGING_CURRENT_MINIMUM
+            && $value <= $maximum;
+        return undef;
+    }
     return $WATTPILOT_CHARGING_MODE_VALUE{$value}
         if $parser eq 'charging_mode'
         && exists $WATTPILOT_CHARGING_MODE_VALUE{$value};
@@ -2113,17 +2144,26 @@ sub Wattpilot_ParseSetCommandValue($$) {
     return undef;
 }
 
-sub Wattpilot_SetOptions() {
+sub Wattpilot_SetOptions(;$) {
+    my ($hash) = @_;
     return join(' ', map {
         my $schema = $WATTPILOT_COMMAND_SCHEMA{$_->[0]};
+        my $widget = $schema->{widget};
+        $widget = 'slider,' . $WATTPILOT_CHARGING_CURRENT_MINIMUM
+            . ',1,' . Wattpilot_EffectiveChargingCurrentMaximum($hash)
+            if $_->[0] eq 'charging_current';
         $schema->{name}
-            . ($schema->{widget} eq 'none' ? '' : ':' . $schema->{widget});
+            . ($widget eq 'none' ? '' : ':' . $widget);
     } @WATTPILOT_COMMAND_DEFINITION);
 }
 
-sub Wattpilot_SetUsage($$) {
-    my ($name, $schema) = @_;
-    return "Usage: set $name $schema->{name} $schema->{usage}";
+sub Wattpilot_SetUsage($$$) {
+    my ($hash, $name, $schema) = @_;
+    my $usage = $schema->{usage};
+    $usage = '<' . $WATTPILOT_CHARGING_CURRENT_MINIMUM . '-'
+        . Wattpilot_EffectiveChargingCurrentMaximum($hash) . '>'
+        if $schema->{parser} eq 'charging_current';
+    return "Usage: set $name $schema->{name} $usage";
 }
 
 sub Wattpilot_Set($@) {
@@ -2131,7 +2171,7 @@ sub Wattpilot_Set($@) {
     my $name = $hash->{NAME};
     my $cmd = $a[1] // '';
     my $val = $a[2];
-    my $set_options = Wattpilot_SetOptions();
+    my $set_options = Wattpilot_SetOptions($hash);
 
     return "Unknown argument $cmd, choose one of $set_options"
         if $cmd eq '?';
@@ -2164,14 +2204,14 @@ sub Wattpilot_Set($@) {
 
     my $schema = $WATTPILOT_COMMAND_BY_NAME{$cmd};
     if ($schema && $schema->{parser} ne 'special') {
-        return Wattpilot_SetUsage($name, $schema)
+        return Wattpilot_SetUsage($hash, $name, $schema)
             if @a != 3 || !defined $val;
         my $protocol_value = Wattpilot_ParseSetCommandValue(
-            $schema->{parser}, $val);
+            $schema->{parser}, $val, $hash);
         if (!defined $protocol_value) {
             return "Unknown mode $val"
                 if $schema->{invalid} eq 'unknown_mode';
-            return Wattpilot_SetUsage($name, $schema);
+            return Wattpilot_SetUsage($hash, $name, $schema);
         }
         return Wattpilot_SendSecure(
             $hash, $schema->{protocolKey}, $protocol_value);
@@ -2749,6 +2789,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.2 formats public measured and calculated values with exactly two decimal places and trailing zeroes. Rounded negative zero is published as positive zero. Percentages, integral settings and codes, clocks, and durations remain explicit exceptions; <code>pvBatterySoC</code> intentionally keeps one decimal place.</p>
   <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
   <p>Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
+  <p>Version 2.1.5 limits <code>chargingCurrent</code> to <code>6..min(32, configMaximumCurrentLimit)</code> after a usable <code>ama</code> value has been received for the current device hash. Missing, stale, malformed, non-integer, or out-of-range values keep the compatibility range <code>6..32</code>. FHEMWEB receives the same dynamic upper bound; rejected commands are not sent and <code>configChargingCurrent</code> remains device-confirmed.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2824,8 +2865,8 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>set &lt;name&gt; password &lt;secret&gt;</code><br>
         Stores the password under stable FUUID-based keys and starts a controlled reconnect. Rename does not rewrite credentials. Password replacement and deletion use two-key transactions with rollback. Storage errors remain distinguishable from a missing password.</li>
-    <li><code>set &lt;name&gt; chargingCurrent &lt;6-32&gt;</code><br>
-        Sends protocol key <code>amp</code>. Only integer values from 6 through 32 are accepted.</li>
+    <li><code>set &lt;name&gt; chargingCurrent &lt;6-effectiveMaximum&gt;</code><br>
+        Sends protocol key <code>amp</code>. The effective upper bound is <code>min(32, configMaximumCurrentLimit)</code> after the current device hash has received a usable integer <code>ama</code> value from 6 through 32. Until then, or when the reading is missing, malformed, non-integer, or outside that range, the compatibility range remains 6 through 32. FHEMWEB uses the same dynamic slider maximum. Rejected values produce no protocol command, and the setter does not update <code>configChargingCurrent</code> optimistically.</li>
     <li><code>set &lt;name&gt; forceState &lt;neutral|off|on&gt;</code><br>
         Sends <code>frc=0</code>, <code>frc=1</code>, or <code>frc=2</code>.</li>
     <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
@@ -3009,6 +3050,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.2 formatiert öffentliche Mess- und Rechenwerte mit genau zwei Nachkommastellen einschließlich nachgestellter Nullen. Gerundetes negatives Null wird als positives Null ausgegeben. Prozentwerte, ganzzahlige Einstellungen und Codes, Uhrzeiten und Dauern bleiben ausdrückliche Ausnahmen; <code>pvBatterySoC</code> behält bewusst eine Nachkommastelle.</p>
   <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
   <p>Version 2.1.4 ersetzt die sieben einzelnen Setter für Phasenumschaltung und Mindestladen durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
+  <p>Version 2.1.5 begrenzt <code>chargingCurrent</code> nach Empfang eines nutzbaren <code>ama</code>-Werts für den aktuellen Device-Hash auf <code>6..min(32, configMaximumCurrentLimit)</code>. Fehlende, noch nicht bestätigte, fehlerhafte, nicht ganzzahlige oder außerhalb des nutzbaren Bereichs liegende Werte behalten den Kompatibilitätsbereich <code>6..32</code>. FHEMWEB erhält dieselbe dynamische Obergrenze; abgelehnte Befehle werden nicht gesendet und <code>configChargingCurrent</code> bleibt gerätebestätigt.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3084,8 +3126,8 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>set &lt;name&gt; password &lt;secret&gt;</code><br>
         Speichert das Passwort unter stabilen FUUID-basierten Schlüsseln und startet einen kontrollierten Reconnect. Rename schreibt Credentials nicht um. Passwortänderung und Löschung verwenden Zwei-Schlüssel-Transaktionen mit Rollback. Speicherfehler bleiben von einem fehlenden Passwort unterscheidbar.</li>
-    <li><code>set &lt;name&gt; chargingCurrent &lt;6-32&gt;</code><br>
-        Sendet den Protokollschlüssel <code>amp</code>. Akzeptiert werden nur ganze Werte von 6 bis 32.</li>
+    <li><code>set &lt;name&gt; chargingCurrent &lt;6-effektivesMaximum&gt;</code><br>
+        Sendet den Protokollschlüssel <code>amp</code>. Die effektive Obergrenze ist <code>min(32, configMaximumCurrentLimit)</code>, nachdem der aktuelle Device-Hash einen nutzbaren ganzzahligen <code>ama</code>-Wert von 6 bis 32 empfangen hat. Bis dahin sowie bei fehlendem, fehlerhaftem, nicht ganzzahligem oder außerhalb dieses Bereichs liegendem Reading bleibt der Kompatibilitätsbereich 6 bis 32 bestehen. FHEMWEB verwendet dieselbe dynamische Slider-Obergrenze. Abgelehnte Werte erzeugen keinen Protokollbefehl, und der Setter aktualisiert <code>configChargingCurrent</code> nicht optimistisch.</li>
     <li><code>set &lt;name&gt; forceState &lt;neutral|off|on&gt;</code><br>
         Sendet <code>frc=0</code>, <code>frc=1</code> oder <code>frc=2</code>.</li>
     <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
@@ -3250,7 +3292,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.4",
+  "version": "v2.1.5",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",
