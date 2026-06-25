@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.1.4] - 2026-06-25
+
+### Grouped phase-switch and minimum-charging setters
+
+- Replaced the six individual top-level Set commands `phaseSwitchMode`, `phaseSwitchDelay`, `minimumPhaseSwitchInterval`, `minimumChargeTime`, `minimumChargingPauseDuration`, and `minimumChargingInterval` with two grouped commands: `phaseSwitch mode|delay|minInterval` and `minimumCharging duration|interval|pauseDuration`.
+- Preserved the exact protocol mappings and value contracts: `psm`, `mpwst`, `mptwt`, `fmt`, `mci`, and `mcpd`; phase-switch mode keeps the existing enum mapping and all public durations remain seconds converted exactly to whole protocol milliseconds.
+- Kept `threePhaseSwitchPower` and `chargingPauseAllowed` as separate top-level commands. Confirmed `config...` readings, secured request correlation, device-response handling, cadence, and protocol semantics are unchanged.
+- Added no compatibility aliases. FHEMWEB discovery now exposes each grouped command exactly once and no longer advertises the six former individual names.
+- Extended declarative-schema, energy-control, public-interface, documentation, and exact-arity tests for all grouped subcommands and invalid-input paths.
+
 ## [v2.1.3] - 2026-06-25
 
 ### Declarative status and command schemas

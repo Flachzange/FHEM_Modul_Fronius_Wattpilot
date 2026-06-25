@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.3 defines one authoritative publication policy for every public
+Version 2.1.4 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -60,14 +60,14 @@ queries must be adapted explicitly.
 | `pv_surplus_enabled` | `configPvSurplusEnabled` | `configuration` | `status:fup` | `immediate` | `none` | `fup` | `boolean` | `preserve` | PV-surplus enable setting; Set command remains `pvSurplusEnabled`. |
 | `zero_feed_in_enabled` | `configZeroFeedInEnabled` | `configuration` | `status:fzf` | `immediate` | `none` | `fzf` | `boolean` | `preserve` | Zero-feed-in setting; Set command remains `zeroFeedInEnabled`. |
 | `pv_control_preference` | `configPvControlPreference` | `configuration` | `status:frm` | `immediate` | `none` | `frm` | `enum` | `preserve` | PV/grid control preference; Set command remains `pvControlPreference`. |
-| `phase_switch_mode` | `configPhaseSwitchMode` | `configuration` | `status:psm` | `immediate` | `none` | `psm` | `enum` | `preserve` | Phase-switch mode setting; Set command remains `phaseSwitchMode`. |
+| `phase_switch_mode` | `configPhaseSwitchMode` | `configuration` | `status:psm` | `immediate` | `none` | `psm` | `enum` | `preserve` | Phase-switch mode setting; writable through `phaseSwitch mode`. |
 | `three_phase_switch_power` | `configThreePhaseSwitchPower` | `configuration` | `status:spl3` | `immediate` | `none` | `spl3` | `decimal2` | `preserve` | Three-phase switching threshold; Set command remains `threePhaseSwitchPower`. |
-| `phase_switch_delay` | `configPhaseSwitchDelay` | `configuration` | `status:mpwst` | `immediate` | `none` | `mpwst` | `seconds` | `preserve` | Phase-switch delay; Set command remains `phaseSwitchDelay`. |
-| `minimum_phase_switch_interval` | `configMinimumPhaseSwitchInterval` | `configuration` | `status:mptwt` | `immediate` | `none` | `mptwt` | `seconds` | `preserve` | Minimum phase-switch interval; Set command remains `minimumPhaseSwitchInterval`. |
-| `minimum_charge_time` | `configMinimumChargeTime` | `configuration` | `status:fmt` | `immediate` | `none` | `fmt` | `seconds` | `preserve` | Minimum charging time; Set command remains `minimumChargeTime`. |
+| `phase_switch_delay` | `configPhaseSwitchDelay` | `configuration` | `status:mpwst` | `immediate` | `none` | `mpwst` | `seconds` | `preserve` | Phase-switch delay; writable through `phaseSwitch delay`. |
+| `minimum_phase_switch_interval` | `configMinimumPhaseSwitchInterval` | `configuration` | `status:mptwt` | `immediate` | `none` | `mptwt` | `seconds` | `preserve` | Minimum phase-switch interval; writable through `phaseSwitch minInterval`. |
+| `minimum_charge_time` | `configMinimumChargeTime` | `configuration` | `status:fmt` | `immediate` | `none` | `fmt` | `seconds` | `preserve` | Minimum charging time; writable through `minimumCharging duration`. |
 | `charging_pause_allowed` | `configChargingPauseAllowed` | `configuration` | `status:fap` | `immediate` | `none` | `fap` | `boolean` | `preserve` | Charging-pause setting; Set command remains `chargingPauseAllowed`. |
-| `minimum_charging_pause_duration` | `configMinimumChargingPauseDuration` | `configuration` | `status:mcpd` | `immediate` | `none` | `mcpd` | `seconds` | `preserve` | Minimum charging-pause duration; Set command remains `minimumChargingPauseDuration`. |
-| `minimum_charging_interval` | `configMinimumChargingInterval` | `configuration` | `status:mci` | `immediate` | `none` | `mci` | `seconds` | `preserve` | Forced/minimum charging interval; Set command remains `minimumChargingInterval`. |
+| `minimum_charging_pause_duration` | `configMinimumChargingPauseDuration` | `configuration` | `status:mcpd` | `immediate` | `none` | `mcpd` | `seconds` | `preserve` | Minimum charging-pause duration; writable through `minimumCharging pauseDuration`. |
+| `minimum_charging_interval` | `configMinimumChargingInterval` | `configuration` | `status:mci` | `immediate` | `none` | `mci` | `seconds` | `preserve` | Forced/minimum charging interval; writable through `minimumCharging interval`. |
 | `pv_battery_soc` | `pvBatterySoC` | `telemetry` | `status:fbuf_akkuSOC` | `interval` | `battery` | `battery` | `decimal1` | `preserve` | Current stationary PV-battery SOC. |
 | `pv_battery_power` | `pvBatteryPower` | `telemetry` | `status:fbuf_pAkku` | `interval` | `battery` | `battery` | `decimal2` | `preserve` | Current stationary PV-battery power. |
 | `pv_battery_mode_code` | `pvBatteryModeCode` | `status` | `status:fbuf_akkuMode` | `immediate-on-change` | `none` | `fbuf_akkuMode` | `integer` | `preserve` | Current raw stationary-battery mode code. |

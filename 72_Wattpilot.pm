@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.3';
+my $WATTPILOT_VERSION = '2.1.4';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -214,14 +214,10 @@ my @WATTPILOT_COMMAND_DEFINITION = (
     ['pv_surplus_enabled', 'pvSurplusEnabled', '0,1', 'fup', 'boolean', '<0|1>', 'usage'],
     ['zero_feed_in_enabled', 'zeroFeedInEnabled', '0,1', 'fzf', 'boolean', '<0|1>', 'usage'],
     ['pv_control_preference', 'pvControlPreference', 'preferFromGrid,default,preferToGrid', 'frm', 'pv_control', '<preferFromGrid|default|preferToGrid>', 'usage'],
-    ['phase_switch_mode', 'phaseSwitchMode', 'auto,force1,force3', 'psm', 'phase_switch', '<auto|force1|force3>', 'usage'],
+    ['phase_switch', 'phaseSwitch', 'none', 'none', 'special', 'none', 'usage'],
     ['three_phase_switch_power', 'threePhaseSwitchPower', 'none', 'spl3', 'nonnegative_number', '<watts>', 'usage'],
-    ['phase_switch_delay', 'phaseSwitchDelay', 'none', 'mpwst', 'seconds', '<seconds>', 'usage'],
-    ['minimum_phase_switch_interval', 'minimumPhaseSwitchInterval', 'none', 'mptwt', 'seconds', '<seconds>', 'usage'],
-    ['minimum_charge_time', 'minimumChargeTime', 'none', 'fmt', 'seconds', '<seconds>', 'usage'],
+    ['minimum_charging', 'minimumCharging', 'none', 'none', 'special', 'none', 'usage'],
     ['charging_pause_allowed', 'chargingPauseAllowed', '0,1', 'fap', 'boolean', '<0|1>', 'usage'],
-    ['minimum_charging_pause_duration', 'minimumChargingPauseDuration', 'none', 'mcpd', 'seconds', '<seconds>', 'usage'],
-    ['minimum_charging_interval', 'minimumChargingInterval', 'none', 'mci', 'seconds', '<seconds>', 'usage'],
     ['reconnect', 'reconnect', 'noArg', 'none', 'special', 'none', 'usage'],
     ['pv_battery', 'pvBattery', 'none', 'none', 'special', 'none', 'usage'],
     ['next_trip_time', 'nextTripTime', 'none', 'ftt', 'clock', '<HH:MM>', 'usage'],
@@ -241,6 +237,34 @@ for my $definition (@WATTPILOT_COMMAND_DEFINITION) {
     $WATTPILOT_COMMAND_NAME{$key} = $name;
     $WATTPILOT_COMMAND_SCHEMA{$key} = $schema;
     $WATTPILOT_COMMAND_BY_NAME{$name} = $schema;
+}
+
+# group key => ordered [subcommand, protocol key, parser, usage]
+my %WATTPILOT_GROUPED_COMMAND_DEFINITION = (
+    minimum_charging => [
+        ['duration', 'fmt', 'seconds', '<seconds>'],
+        ['interval', 'mci', 'seconds', '<seconds>'],
+        ['pauseDuration', 'mcpd', 'seconds', '<seconds>'],
+    ],
+    phase_switch => [
+        ['delay', 'mpwst', 'seconds', '<seconds>'],
+        ['mode', 'psm', 'phase_switch', '<auto|force1|force3>'],
+        ['minInterval', 'mptwt', 'seconds', '<seconds>'],
+    ],
+);
+
+my (%WATTPILOT_GROUPED_COMMAND_SCHEMA, %WATTPILOT_GROUPED_COMMAND_BY_NAME);
+for my $group_key (keys %WATTPILOT_GROUPED_COMMAND_DEFINITION) {
+    my $group_name = $WATTPILOT_COMMAND_NAME{$group_key};
+    $WATTPILOT_GROUPED_COMMAND_BY_NAME{$group_name} = $group_key;
+    for my $definition (@{$WATTPILOT_GROUPED_COMMAND_DEFINITION{$group_key}}) {
+        my ($setting, $protocol_key, $parser, $usage) = @$definition;
+        $WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}{$setting} = {
+            protocolKey => $protocol_key,
+            parser => $parser,
+            usage => $usage,
+        };
+    }
 }
 
 my %WATTPILOT_OBSERVED_IGNORED_MESSAGE_TYPE = map { $_ => 1 } qw(
@@ -411,6 +435,12 @@ sub Wattpilot_InterfaceSnapshot() {
         commands       => { %WATTPILOT_COMMAND_NAME },
         commandSchema  => { map { $_ => { %{$WATTPILOT_COMMAND_SCHEMA{$_}} } }
             keys %WATTPILOT_COMMAND_SCHEMA },
+        groupedCommandSchema => { map {
+            my $group_key = $_;
+            $group_key => { map {
+                $_ => { %{$WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}{$_}} }
+            } keys %{$WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}} }
+        } keys %WATTPILOT_GROUPED_COMMAND_SCHEMA },
         statusFields   => { map {
             $_ => {
                 %{$WATTPILOT_STATUS_SCHEMA{$_}},
@@ -2018,6 +2048,39 @@ sub Wattpilot_SetPvBattery($@) {
     return Wattpilot_PvBatteryUsage($name);
 }
 
+sub Wattpilot_GroupedCommandUsage($$;$) {
+    my ($name, $group_key, $setting) = @_;
+    my $group_name = $WATTPILOT_COMMAND_NAME{$group_key};
+    if (defined $setting
+        && exists $WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}{$setting}) {
+        my $usage = $WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}{$setting}{usage};
+        return "Usage: set $name $group_name $setting $usage";
+    }
+    my $settings = join('|', map { $_->[0] }
+        @{$WATTPILOT_GROUPED_COMMAND_DEFINITION{$group_key}});
+    return "Usage: set $name $group_name <$settings> <value>";
+}
+
+sub Wattpilot_SetGroupedCommand($$@) {
+    my ($hash, $group_key, @args) = @_;
+    my $name = $hash->{NAME};
+    return Wattpilot_GroupedCommandUsage($name, $group_key)
+        if @args != 2;
+
+    my ($setting, $value) = @args;
+    return Wattpilot_GroupedCommandUsage($name, $group_key)
+        if !defined($setting) || !defined($value)
+        || !exists $WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}{$setting};
+
+    my $schema = $WATTPILOT_GROUPED_COMMAND_SCHEMA{$group_key}{$setting};
+    my $protocol_value = Wattpilot_ParseSetCommandValue(
+        $schema->{parser}, $value);
+    return Wattpilot_GroupedCommandUsage($name, $group_key, $setting)
+        if !defined $protocol_value;
+    return Wattpilot_SendSecure(
+        $hash, $schema->{protocolKey}, $protocol_value);
+}
+
 sub Wattpilot_ParseSetCommandValue($$) {
     my ($parser, $value) = @_;
     return undef if !defined $value;
@@ -2078,6 +2141,10 @@ sub Wattpilot_Set($@) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{reconnect}"
             if @a != 2;
         return Wattpilot_ManualReconnect($hash);
+    }
+    if (exists $WATTPILOT_GROUPED_COMMAND_BY_NAME{$cmd}) {
+        return Wattpilot_SetGroupedCommand(
+            $hash, $WATTPILOT_GROUPED_COMMAND_BY_NAME{$cmd}, @a[2 .. $#a]);
     }
     if ($cmd eq $WATTPILOT_COMMAND_NAME{pv_battery}) {
         return Wattpilot_SetPvBattery($hash, @a[2 .. $#a]);
@@ -2679,8 +2746,9 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
   <p>Version 2.1.0 fixes FHEM <code>modify</code>/<code>defmod</code> lifecycle transitions, preserves top-level <code>fullStatus.partial</code> metadata, enforces exact JSON field types and safe clock validation, and removes the no-op <code>debug</code> and <code>defaultAmp</code> attributes. Changed definitions reconnect once only after successful validation; invalid modifications leave the active session unchanged.</p>
   <p>Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and in one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish immediately only when their public value changes.</p>
-  <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
   <p>Version 2.1.2 formats public measured and calculated values with exactly two decimal places and trailing zeroes. Rounded negative zero is published as positive zero. Percentages, integral settings and codes, clocks, and durations remain explicit exceptions; <code>pvBatterySoC</code> intentionally keeps one decimal place.</p>
+  <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
+  <p>Version 2.1.4 replaces the six individual phase-switch and minimum-charging timing Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2770,22 +2838,21 @@ sub Wattpilot_WriteJson($$) {
         Sends the JSON boolean protocol field <code>fzf</code>.</li>
     <li><code>set &lt;name&gt; pvControlPreference &lt;preferFromGrid|default|preferToGrid&gt;</code><br>
         Sends <code>frm=0</code>, <code>frm=1</code>, or <code>frm=2</code>.</li>
-    <li><code>set &lt;name&gt; phaseSwitchMode &lt;auto|force1|force3&gt;</code><br>
-        Sends <code>psm=0</code>, <code>psm=1</code>, or <code>psm=2</code>.</li>
+    <li><code>set &lt;name&gt; phaseSwitch &lt;setting&gt; &lt;value&gt;</code><br>
+        Groups the phase-switch settings under one top-level command:<br>
+        <code>mode &lt;auto|force1|force3&gt;</code> &rarr; <code>psm=0|1|2</code>;<br>
+        <code>delay &lt;seconds&gt;</code> &rarr; <code>mpwst</code> as exact whole milliseconds;<br>
+        <code>minInterval &lt;seconds&gt;</code> &rarr; <code>mptwt</code> as exact whole milliseconds.</li>
     <li><code>set &lt;name&gt; threePhaseSwitchPower &lt;watts&gt;</code><br>
         Sends a non-negative finite numeric value through <code>spl3</code>. The public unit is watts.</li>
-    <li><code>set &lt;name&gt; phaseSwitchDelay &lt;seconds&gt;</code><br>
-        Converts the non-negative finite value exactly to whole milliseconds and sends <code>mpwst</code>.</li>
-    <li><code>set &lt;name&gt; minimumPhaseSwitchInterval &lt;seconds&gt;</code><br>
-        Converts the non-negative finite value exactly to whole milliseconds and sends <code>mptwt</code>.</li>
-    <li><code>set &lt;name&gt; minimumChargeTime &lt;seconds&gt;</code><br>
-        Converts the non-negative finite value exactly to whole milliseconds and sends <code>fmt</code>.</li>
+    <li><code>set &lt;name&gt; minimumCharging &lt;setting&gt; &lt;seconds&gt;</code><br>
+        Groups the minimum-charging timing settings under one top-level command:<br>
+        <code>duration</code> &rarr; <code>fmt</code>;<br>
+        <code>interval</code> &rarr; <code>mci</code>;<br>
+        <code>pauseDuration</code> &rarr; <code>mcpd</code>.<br>
+        Each public value is converted exactly to whole protocol milliseconds.</li>
     <li><code>set &lt;name&gt; chargingPauseAllowed &lt;0|1&gt;</code><br>
         Sends the JSON boolean protocol field <code>fap</code>.</li>
-    <li><code>set &lt;name&gt; minimumChargingPauseDuration &lt;seconds&gt;</code><br>
-        Converts the non-negative finite value exactly to whole milliseconds and sends <code>mcpd</code>.</li>
-    <li><code>set &lt;name&gt; minimumChargingInterval &lt;seconds&gt;</code><br>
-        Converts the non-negative finite value exactly to whole milliseconds and sends <code>mci</code>.</li>
     <li><code>set &lt;name&gt; pvBattery &lt;setting&gt; &lt;value&gt;</code><br>
         Groups all stationary-PV-battery configuration writes under one top-level command. Supported subcommands are:<br>
         <code>chargeAboveSoC &lt;0-100&gt;</code> &rarr; <code>fam</code> as an integer percentage;<br>
@@ -2940,8 +3007,9 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <p>Version 2.1.0 korrigiert die FHEM-Lebenszyklen von <code>modify</code>/<code>defmod</code>, erhält das Top-Level-Metadatum <code>fullStatus.partial</code>, erzwingt exakte JSON-Feldtypen und sichere Uhrzeitvalidierung und entfernt die wirkungslosen Attribute <code>debug</code> und <code>defaultAmp</code>. Geänderte Definitionen verbinden sich erst nach vollständiger erfolgreicher Prüfung genau einmal neu; ungültige Änderungen lassen die aktive Sitzung unverändert.</p>
   <p>Version 2.1.1 behält getrennte Latest-Value-Caches und Dirty-Felder für Energie-, elektrische und stationäre Speichertelemetrie, veröffentlicht aber alle zulässigen geänderten Gruppen über einen gemeinsamen Intervalltakt und eine FHEM-Reading-Transaktion. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts vorgemerkt; diskrete Status-/Diagnosewerte erscheinen sofort nur bei tatsächlicher Änderung.</p>
-  <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
   <p>Version 2.1.2 formatiert öffentliche Mess- und Rechenwerte mit genau zwei Nachkommastellen einschließlich nachgestellter Nullen. Gerundetes negatives Null wird als positives Null ausgegeben. Prozentwerte, ganzzahlige Einstellungen und Codes, Uhrzeiten und Dauern bleiben ausdrückliche Ausnahmen; <code>pvBatterySoC</code> behält bewusst eine Nachkommastelle.</p>
+  <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
+  <p>Version 2.1.4 ersetzt die sechs einzelnen Setter für Phasenumschaltung und Mindestladezeiten durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3031,22 +3099,21 @@ sub Wattpilot_WriteJson($$) {
         Sendet das boolesche JSON-Protokollfeld <code>fzf</code>.</li>
     <li><code>set &lt;name&gt; pvControlPreference &lt;preferFromGrid|default|preferToGrid&gt;</code><br>
         Sendet <code>frm=0</code>, <code>frm=1</code> oder <code>frm=2</code>.</li>
-    <li><code>set &lt;name&gt; phaseSwitchMode &lt;auto|force1|force3&gt;</code><br>
-        Sendet <code>psm=0</code>, <code>psm=1</code> oder <code>psm=2</code>.</li>
+    <li><code>set &lt;name&gt; phaseSwitch &lt;Einstellung&gt; &lt;Wert&gt;</code><br>
+        Bündelt die Einstellungen der Phasenumschaltung unter einem Top-Level-Befehl:<br>
+        <code>mode &lt;auto|force1|force3&gt;</code> &rarr; <code>psm=0|1|2</code>;<br>
+        <code>delay &lt;Sekunden&gt;</code> &rarr; <code>mpwst</code> als exakte ganze Millisekunden;<br>
+        <code>minInterval &lt;Sekunden&gt;</code> &rarr; <code>mptwt</code> als exakte ganze Millisekunden.</li>
     <li><code>set &lt;name&gt; threePhaseSwitchPower &lt;Watt&gt;</code><br>
         Sendet einen nicht negativen, endlichen Zahlenwert über <code>spl3</code>. Die öffentliche Einheit ist Watt.</li>
-    <li><code>set &lt;name&gt; phaseSwitchDelay &lt;Sekunden&gt;</code><br>
-        Rechnet den nicht negativen, endlichen Wert exakt in ganze Millisekunden um und sendet <code>mpwst</code>.</li>
-    <li><code>set &lt;name&gt; minimumPhaseSwitchInterval &lt;Sekunden&gt;</code><br>
-        Rechnet den nicht negativen, endlichen Wert exakt in ganze Millisekunden um und sendet <code>mptwt</code>.</li>
-    <li><code>set &lt;name&gt; minimumChargeTime &lt;Sekunden&gt;</code><br>
-        Rechnet den nicht negativen, endlichen Wert exakt in ganze Millisekunden um und sendet <code>fmt</code>.</li>
+    <li><code>set &lt;name&gt; minimumCharging &lt;Einstellung&gt; &lt;Sekunden&gt;</code><br>
+        Bündelt die Mindestladezeiten unter einem Top-Level-Befehl:<br>
+        <code>duration</code> &rarr; <code>fmt</code>;<br>
+        <code>interval</code> &rarr; <code>mci</code>;<br>
+        <code>pauseDuration</code> &rarr; <code>mcpd</code>.<br>
+        Jeder öffentliche Wert wird exakt in ganze Protokoll-Millisekunden umgerechnet.</li>
     <li><code>set &lt;name&gt; chargingPauseAllowed &lt;0|1&gt;</code><br>
         Sendet das boolesche JSON-Protokollfeld <code>fap</code>.</li>
-    <li><code>set &lt;name&gt; minimumChargingPauseDuration &lt;Sekunden&gt;</code><br>
-        Rechnet den nicht negativen, endlichen Wert exakt in ganze Millisekunden um und sendet <code>mcpd</code>.</li>
-    <li><code>set &lt;name&gt; minimumChargingInterval &lt;Sekunden&gt;</code><br>
-        Rechnet den nicht negativen, endlichen Wert exakt in ganze Millisekunden um und sendet <code>mci</code>.</li>
     <li><code>set &lt;name&gt; pvBattery &lt;Einstellung&gt; &lt;Wert&gt;</code><br>
         Bündelt alle Schreibzugriffe auf die Konfiguration des stationären PV-Speichers unter einem Top-Level-Befehl. Unterstützte Unterbefehle sind:<br>
         <code>chargeAboveSoC &lt;0-100&gt;</code> &rarr; <code>fam</code> als ganzzahliger Prozentwert;<br>
@@ -3185,7 +3252,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.3",
+  "version": "v2.1.4",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

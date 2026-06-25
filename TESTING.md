@@ -14,7 +14,7 @@ It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, valida
 
 `t/protocol_input_hardening.t` adds deterministic synthetic PBKDF2, bcrypt serial-salt, authentication-response, canonical secured-JSON, and HMAC vectors. It rejects scalar/array top levels, missing or invalid message fields, wrong decoded JSON kinds, numeric-string and boolean-surrogate coercion, unsafe clock values, malformed status data, invalid electrical arrays, malformed/oversized decoded input, and mixed valid/malformed batches. It verifies bounded completion of syntactically incomplete JSON across decoded returns, strings containing braces, `}{`, escapes, and newlines, multiple concatenated JSON objects, redacted unknown messages, persistence failures, and transient-auth cleanup across disconnect, partial raw-frame returns, disable, password change, authentication error, undefine, delete, and reconnect. `t/pr29_review_fixes.t` additionally enforces the 256-document batch limit with atomic rejection, distinguishes actual JSON strings from numbers, booleans, nulls, arrays, and objects, requires explicit hash-mode selection before derivation, and verifies that changing or deleting `authHash` closes and invalidates the old session, removes stale timers, leaves exactly one controlled reconnect, and blocks stale secured commands.
 
-`t/public_interface_2_0.t` exercises one complete runtime reading scenario and requires exactly the 53 public 2.x readings, no old reading events, every known enum mapping, and explicit `unknown:<raw-value>` fallbacks. `t/public_interface_guard.t` rejects exact old public reading, command, enum, and lifecycle strings in executable runtime, active tests, both READMEs, and both embedded commandref languages. Historical 1.x names are permitted only inside balanced, explicitly marked migration blocks or the marked negative-control block that proves the old Set commands are rejected. The same guard requires every active user document to contain all 53 readings and all 19 set commands, and requires each marked migration matrix to contain exactly the 23 historical reading mappings and five Set-command mappings.
+`t/public_interface_2_0.t` exercises one complete runtime reading scenario and requires exactly the 53 public 2.x readings, no old reading events, every known enum mapping, and explicit `unknown:<raw-value>` fallbacks. `t/public_interface_guard.t` rejects exact old public reading, command, enum, and lifecycle strings in executable runtime, active tests, both READMEs, and both embedded commandref languages. Historical 1.x names are permitted only inside balanced, explicitly marked migration blocks or the marked negative-control block that proves the old Set commands are rejected. The same guard requires every active user document to contain all 53 readings and all 15 set commands, and requires each marked migration matrix to contain exactly the 23 historical reading mappings and five Set-command mappings.
 
 `t/architecture_characterization.t` also guards the version-2.0.7 reading classification. It requires every public reading to have exactly one category, every `configuration` reading to use `^config[A-Z]`, every non-configuration reading to remain outside that prefix, and the Set-command surface to retain its unprefixed names. `docs/READING-CATEGORIES.md` is the human-readable audit corresponding to that executable contract.
 
@@ -98,15 +98,18 @@ physical Wattpilot test.
 Version 2.1.3 adds `t/declarative_schemas.t`. It checks that all 36 consumed
 status fields derive their validators and reading mappings from the authoritative
 reading inventory, that every immediate status reading executes its declared
-formatter, and that all 19 public Set commands have one schema entry. All 16
-ordinary one-value commands are exercised through schema-derived parser,
-protocol-key, JSON-type, and exact-arity behavior; `password`, `reconnect`, and
-grouped `pvBattery` remain explicit negative boundaries. The refactor does not
-require a real device because public protocol payloads and behavior are intended
-to remain equivalent; complete CI and release checks remain required before
-merge. The complete local suite passes with 26 test files and 3,045 tests
-using the same temporary external compatibility modules described for the
-preceding isolated-container runs.
+formatter, and that the then-current public Set commands have one schema entry.
+Ordinary one-value commands are exercised through schema-derived parser,
+protocol-key, JSON-type, and exact-arity behavior; special handlers remain
+explicit negative boundaries. Version 2.1.4 extends the same test with the two
+ordered grouped-command schemas. It verifies the six exact subcommands,
+protocol keys, millisecond conversion, enum mapping, strict arity, invalid-input
+rejection, Set discovery, and removal of the six former individual Set names.
+No real device is required to establish the grouping itself because protocol
+keys, payload values, and secured request handling are unchanged; a real-device
+smoke test remains useful before release. The complete local suite passes with
+26 test files and 3,060 tests. Complete CI and release checks remain required
+before merge.
 
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 
