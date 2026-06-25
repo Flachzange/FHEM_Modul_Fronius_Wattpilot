@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.1 defines one authoritative publication policy for every public
+Version 2.1.2 defines one authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -32,6 +32,8 @@ identical snapshots therefore renew neither timestamps nor events. Missing,
 `null`, wrong-type, malformed, out-of-range, or incomplete input preserves the
 previous reading and does not move the shared clock.
 
+Public measured and calculated physical values use `decimal2`, retaining trailing zeroes and normalizing rounded negative zero to positive zero. Explicit exceptions remain visible in the same inventory: `pvBatterySoC` uses `decimal1`; booleans, integer codes and intentionally integral settings use `boolean` or `integer`; percentages use `percentage`; clocks and durations use `clock` or `seconds`; text and enums retain their documented form. Validation always precedes formatting.
+
 There are no compatibility aliases, duplicate old/new readings, automatic
 reading migration, or DbLog migration. Existing automations and history
 queries must be adapted explicitly.
@@ -54,12 +56,12 @@ queries must be adapted explicitly.
 | `maximum_current_limit` | `configMaximumCurrentLimit` | `configuration` | `status:ama` | `immediate` | `none` | `ama` | `integer` | `preserve` | Stored maximum-current limit exposed read-only by the module. |
 | `temperature_current_limit` | `temperatureCurrentLimit` | `status` | `status:amt` | `immediate-on-change` | `none` | `amt` | `integer` | `preserve` | Effective temperature-dependent current limit. |
 | `minimum_charging_current` | `configMinimumChargingCurrent` | `configuration` | `status:mca` | `immediate` | `none` | `mca` | `integer` | `preserve` | Stored minimum charging-current setting exposed read-only. |
-| `pv_surplus_start_power` | `configPvSurplusStartPower` | `configuration` | `status:fst` | `immediate` | `none` | `fst` | `number` | `preserve` | PV-surplus start-power setting; Set command remains `pvSurplusStartPower`. |
+| `pv_surplus_start_power` | `configPvSurplusStartPower` | `configuration` | `status:fst` | `immediate` | `none` | `fst` | `decimal2` | `preserve` | PV-surplus start-power setting; Set command remains `pvSurplusStartPower`. |
 | `pv_surplus_enabled` | `configPvSurplusEnabled` | `configuration` | `status:fup` | `immediate` | `none` | `fup` | `boolean` | `preserve` | PV-surplus enable setting; Set command remains `pvSurplusEnabled`. |
 | `zero_feed_in_enabled` | `configZeroFeedInEnabled` | `configuration` | `status:fzf` | `immediate` | `none` | `fzf` | `boolean` | `preserve` | Zero-feed-in setting; Set command remains `zeroFeedInEnabled`. |
 | `pv_control_preference` | `configPvControlPreference` | `configuration` | `status:frm` | `immediate` | `none` | `frm` | `enum` | `preserve` | PV/grid control preference; Set command remains `pvControlPreference`. |
 | `phase_switch_mode` | `configPhaseSwitchMode` | `configuration` | `status:psm` | `immediate` | `none` | `psm` | `enum` | `preserve` | Phase-switch mode setting; Set command remains `phaseSwitchMode`. |
-| `three_phase_switch_power` | `configThreePhaseSwitchPower` | `configuration` | `status:spl3` | `immediate` | `none` | `spl3` | `number` | `preserve` | Three-phase switching threshold; Set command remains `threePhaseSwitchPower`. |
+| `three_phase_switch_power` | `configThreePhaseSwitchPower` | `configuration` | `status:spl3` | `immediate` | `none` | `spl3` | `decimal2` | `preserve` | Three-phase switching threshold; Set command remains `threePhaseSwitchPower`. |
 | `phase_switch_delay` | `configPhaseSwitchDelay` | `configuration` | `status:mpwst` | `immediate` | `none` | `mpwst` | `seconds` | `preserve` | Phase-switch delay; Set command remains `phaseSwitchDelay`. |
 | `minimum_phase_switch_interval` | `configMinimumPhaseSwitchInterval` | `configuration` | `status:mptwt` | `immediate` | `none` | `mptwt` | `seconds` | `preserve` | Minimum phase-switch interval; Set command remains `minimumPhaseSwitchInterval`. |
 | `minimum_charge_time` | `configMinimumChargeTime` | `configuration` | `status:fmt` | `immediate` | `none` | `fmt` | `seconds` | `preserve` | Minimum charging time; Set command remains `minimumChargeTime`. |

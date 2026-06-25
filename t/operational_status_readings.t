@@ -44,7 +44,7 @@ my %expected_from_observed = (
     configMaximumCurrentLimit => 32,
     temperatureCurrentLimit => 32,
     configMinimumChargingCurrent => 6,
-    configPvSurplusStartPower => 1400,
+    configPvSurplusStartPower => '1400.00',
 );
 
 my $fixture_path = File::Spec->catfile(
@@ -141,7 +141,7 @@ is(reading_value($hash, 'temperatureCurrentLimit'), 32,
     'unit-suffixed temperature-current input is ignored');
 is(reading_value($hash, 'configMinimumChargingCurrent'), 6,
     'boolean minimum-current input is ignored');
-is(reading_value($hash, 'configPvSurplusStartPower'), 1400,
+is(reading_value($hash, 'configPvSurplusStartPower'), '1400.00',
     'negative start-power input is ignored');
 
 $hash = fresh_device();
@@ -165,11 +165,13 @@ main::Wattpilot_DispatchMessage($hash, {
 for my $reading (qw(
     chargingAllowed chargingDecisionCode chargingDecisionInternalCode
     errorCode configMaximumCurrentLimit temperatureCurrentLimit
-    configMinimumChargingCurrent configPvSurplusStartPower
+    configMinimumChargingCurrent
 )) {
     is(reading_value($hash, $reading), 0,
         "$reading preserves an authoritative device-supplied zero");
 }
+is(reading_value($hash, 'configPvSurplusStartPower'), '0.00',
+    'configPvSurplusStartPower preserves zero with two decimal places');
 is(reading_value($hash, 'chargingDecision'),
     'notChargingBecauseNoChargeCtrlData',
     'modelStatus zero maps to its text decision');

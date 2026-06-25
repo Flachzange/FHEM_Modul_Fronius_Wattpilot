@@ -47,6 +47,7 @@ This repository contains the FHEM module `Wattpilot` for local communication wit
 - Related stationary-PV-battery writes use the grouped top-level Set command `pvBattery` with explicit subcommands rather than separate top-level Set commands.
 - At the current experimental development stage, public-interface changes do not provide migration code, compatibility aliases, duplicate old/new readings, automatic DbLog conversion, or transition periods. Breaking reading-name changes are documented and consumers must be adapted explicitly.
 - Treat new readings and commands as user-facing API changes that require documentation and tests.
+- Public measured or calculated physical values use exactly two decimal places with trailing zeroes. A value that rounds to negative zero is published as positive zero. Exceptions are limited to explicitly documented booleans, integer codes, enums, counters, clocks, durations, percentages, and intentionally integral settings. The authoritative reading inventory records the formatter for every public reading.
 - Preserve the `Wattpilot_` callback prefix and keep callback registration consistent with current FHEM conventions.
 - Do not add runtime dependencies without documenting them in META and testing their availability in CI.
 - Keep diagnostics useful while protecting credentials, authentication material, device identifiers, and private endpoint data.
