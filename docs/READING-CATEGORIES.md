@@ -1,8 +1,10 @@
 # Public reading categories
 
-Version 2.0.9 classifies every public reading explicitly. Readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`. The same rule applies to writable and read-only configuration values. Set-command names do not use the prefix. Related PV-battery writes are grouped below the single top-level command `pvBattery`.
+Version 2.0.10 classifies every public reading explicitly. Readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`. The same rule applies to writable and read-only configuration values. Set-command names do not use the prefix. Related PV-battery writes are grouped below the single top-level command `pvBattery`.
 
 There are no compatibility aliases, duplicate old/new readings, automatic reading migration, or DbLog migration. Existing automations and history queries must be adapted explicitly.
+
+Set-command discovery is independent of reading classification. The command list is generated centrally, marks `reconnect` as `reconnect:noArg`, and remains available for `set <name> ?` while `disable=1`; actual commands remain blocked in that state.
 
 | Internal key | Public reading | Category | Reason |
 |---|---|---|---|

@@ -7,7 +7,7 @@ use File::Spec;
 use JSON qw(decode_json encode_json);
 use Test::More;
 
-our ($readingFnAttributes, %modules, %defs);
+our ($readingFnAttributes, %modules, %defs, %attr);
 my $root = File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..'));
 require File::Spec->catfile($root, '72_Wattpilot.pm');
 
@@ -191,8 +191,54 @@ like($help, qr/chargingCurrent:slider,6,1,32/, 'Set help exposes chargingCurrent
 like($help, qr/chargingMode:default,eco,nextTrip/, 'Set help exposes chargingMode values');
 like($help, qr/pvSurplusStartPower/, 'Set help exposes pvSurplusStartPower');
 like($help, qr/nextTripTime/, 'Set help exposes nextTripTime');
+like($help, qr/(?:^|\s)reconnect:noArg(?:\s|$)/,
+    'Set help marks reconnect as a no-argument command for FHEMWEB');
 unlike($help, qr/Password|Laden_starten|Strom|Modus|Zeit_NextTrip/,
     'Set help exposes no old command name');
+
+$hash = fresh_device();
+$attr{$hash->{NAME}}{disable} = 1;
+my $disabled_help = main::Wattpilot_Set($hash, 'testWallbox', '?');
+like($disabled_help, qr/^Unknown argument \?, choose one of /,
+    'disabled device still returns the normal Set command-list envelope');
+is($disabled_help,
+    'Unknown argument ?, choose one of ' . main::Wattpilot_SetOptions(),
+    'enabled and disabled Set discovery use the same authoritative option list');
+unlike($disabled_help, qr/^Device is disabled$/,
+    'disabled Set discovery does not return the runtime rejection sentence');
+my ($disabled_options) = $disabled_help =~ /choose one of (.*)\z/;
+ok(defined($disabled_options),
+    'disabled Set discovery exposes a parseable option list');
+unlike($disabled_options, qr/(?:^|\s)(?:module|disabled|is)(?:\s|$)/,
+    'disabled Set list contains no words from the former error sentence');
+like($disabled_options, qr/(?:^|\s)reconnect:noArg(?:\s|$)/,
+    'disabled Set list retains the reconnect no-argument widget metadata');
+is(main::Wattpilot_Set($hash, 'testWallbox', 'reconnect'),
+    'Device is disabled',
+    'actual Set operations remain blocked while the device is disabled');
+
+for my $case (
+    ['forceState', 'on'],
+    ['chargingCurrent', '16'],
+    ['chargingMode', 'eco'],
+    ['nextTripTime', '07:30'],
+    ['password', 'new-password'],
+) {
+    my ($command, $value) = @$case;
+    $hash = fresh_device();
+    my $password_key = 'Wattpilot_' . $hash->{FUUID} . '_password';
+    my $stored_password_before = $DevIo::KEY_VALUES{$password_key};
+    like(
+        main::Wattpilot_Set(
+            $hash, 'testWallbox', $command, $value, 'unexpected-extra'),
+        qr/^Usage:/,
+        "$command rejects an extra argument");
+    is(scalar @DevIo::WRITES, 0,
+        "$command extra argument sends no protocol frame");
+    is($DevIo::KEY_VALUES{$password_key}, $stored_password_before,
+        "$command extra argument leaves password storage unchanged")
+        if $command eq 'password';
+}
 
 $hash = fresh_device();
 is(main::Wattpilot_Set($hash, 'testWallbox', 'password', 'new-password'), undef,
