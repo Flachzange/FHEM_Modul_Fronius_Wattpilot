@@ -97,7 +97,12 @@ exact JSON kind and semantic validator for every consumed field. Numeric
 strings and numeric/string boolean surrogates are rejected. Invalid known
 fields are removed from the copy; unknown fields are preserved, and the
 caller's structure is never mutated. Clock fields share range and whole-minute
-validation before formatting.
+validation before formatting. The authoritative reading inventory also owns the
+public formatter. Measured and calculated physical values use one small decimal
+helper with exactly two places and positive zero after rounding; explicit
+percentage, integer, clock, duration, enum, and text exceptions remain visible
+in that inventory. Formatting never changes validated protocol values or setter
+payload types.
 
 `Wattpilot_UpdateReadings` first applies validated internal control state. In
 particular, `car` updates `car_state` immediately before charging/idle gating,

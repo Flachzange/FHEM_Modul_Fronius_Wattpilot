@@ -253,6 +253,8 @@ The exact relationship, evaluation order, precedence, and any role of `cpDisable
 
 Version 2.1.1 applies the same reading policy to complete and partial `fullStatus`, `deltaStatus`, and matched response `status`. Configuration fields are immediate after valid device confirmation. `car`, `alw`, `modelStatus`, `msi`, `err`, `amt`, and `fbuf_akkuMode` are immediate-on-change, so identical public values do not renew timestamps or create events. Cumulative energy (`eto`/`wh`), electrical `nrg`, and stationary-battery SOC/power keep separate `energy`, `nrg`, and `battery` latest-value caches and dirty fields but share one interval clock and one FHEM reading transaction. Only valid input changes its own owner; unrelated owners never republish stale cache values. `update_while_idle` gates only electrical and stationary-battery telemetry. Energy is queued only when its formatted public value actually changes; this is module behavior and does not claim when the device emits `eto`/`wh`. Missing, `null`, invalid, or incomplete fields preserve readings and do not move the shared clock.
 
+Version 2.1.2 keeps those protocol and publication semantics unchanged while standardizing public measured and calculated values to exactly two decimal places. Rounded negative zero becomes positive zero; documented percentages, integers, clocks, and durations remain explicit formatting exceptions.
+
 ## Complete observed status-key reference
 
 There is exactly one row for each of the 558 direct keys beneath `status`. “Observation only” never means writable.

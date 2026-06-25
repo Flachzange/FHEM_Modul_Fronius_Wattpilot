@@ -65,7 +65,7 @@ my %expected = (
     configZeroFeedInEnabled => 0,
     configPvControlPreference => 'preferFromGrid',
     configPhaseSwitchMode => 'auto',
-    configThreePhaseSwitchPower => 5200,
+    configThreePhaseSwitchPower => '5200.00',
     configPhaseSwitchDelay => 120,
     configMinimumPhaseSwitchInterval => 600,
     configMinimumChargeTime => 300,
@@ -102,7 +102,7 @@ is(reading_value($hash, 'configPvControlPreference'), 'preferToGrid',
     'frm=2 maps to preferToGrid');
 is(reading_value($hash, 'configPhaseSwitchMode'), 'force3',
     'psm=2 maps to force3');
-is(reading_value($hash, 'configThreePhaseSwitchPower'), 6900.5,
+is(reading_value($hash, 'configThreePhaseSwitchPower'), '6900.50',
     'three-phase threshold preserves a confirmed decimal watt value');
 is(reading_value($hash, 'configPhaseSwitchDelay'), 1.5,
     'phase-switch delay converts milliseconds to seconds');
@@ -231,13 +231,13 @@ for my $case (
 $hash = fresh_device();
 main::Wattpilot_UpdateReadings($hash, { spl3 => 5200 });
 main::Wattpilot_Set($hash, 'controlWallbox', 'threePhaseSwitchPower', 6000);
-is(reading_value($hash, 'configThreePhaseSwitchPower'), 5200,
+is(reading_value($hash, 'configThreePhaseSwitchPower'), '5200.00',
     'pending setter does not fabricate a confirmed reading');
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true,
     status => { spl3 => 6000 },
 }));
-is(reading_value($hash, 'configThreePhaseSwitchPower'), 6000,
+is(reading_value($hash, 'configThreePhaseSwitchPower'), '6000.00',
     'successful response updates the reading through the status path');
 is(reading_value($hash, 'lastCommandStatus'), 'success',
     'successful control response completes the request');

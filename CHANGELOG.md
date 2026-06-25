@@ -1,5 +1,14 @@
 # Changelog
 
+## [v2.1.2] - 2026-06-25
+
+### Public reading precision
+
+- Public measured and calculated physical values are formatted with exactly two decimal places and retained trailing zeroes. Rounded negative zero is normalized to positive zero.
+- `configPvSurplusStartPower` and `configThreePhaseSwitchPower` now follow the same two-decimal public format as voltage, current, power, energy, and `pvBatteryPower`. Validation and setter payload types are unchanged.
+- Explicit exceptions remain documented in the existing authoritative reading inventory: `pvBatterySoC` keeps one decimal place; booleans, integer codes and settings, percentages, clocks, durations, enums, and text retain their established formats.
+- Added exact-string regression coverage across fullStatus, deltaStatus, matched responses, fresh initialization, invalid input, scientific notation, and negative-zero rounding.
+
 ## [v2.1.1] - 2026-06-25
 
 ### Reading publication policy and rate-limit regression

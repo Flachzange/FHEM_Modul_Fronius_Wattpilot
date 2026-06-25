@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.1';
+my $WATTPILOT_VERSION = '2.1.2';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -111,13 +111,13 @@ my @WATTPILOT_READING_DEFINITION = (
         status:amt immediate-on-change none amt integer)],
     [qw(minimum_charging_current configMinimumChargingCurrent configuration
         status:mca immediate none mca integer)],
-    [qw(pv_surplus_start_power configPvSurplusStartPower configuration status:fst immediate none fst number)],
+    [qw(pv_surplus_start_power configPvSurplusStartPower configuration status:fst immediate none fst decimal2)],
     [qw(pv_surplus_enabled configPvSurplusEnabled configuration status:fup immediate none fup boolean)],
     [qw(zero_feed_in_enabled configZeroFeedInEnabled configuration status:fzf immediate none fzf boolean)],
     [qw(pv_control_preference configPvControlPreference configuration status:frm immediate none frm enum)],
     [qw(phase_switch_mode configPhaseSwitchMode configuration status:psm immediate none psm enum)],
     [qw(three_phase_switch_power configThreePhaseSwitchPower configuration
-        status:spl3 immediate none spl3 number)],
+        status:spl3 immediate none spl3 decimal2)],
     [qw(phase_switch_delay configPhaseSwitchDelay configuration status:mpwst immediate none mpwst seconds)],
     [qw(minimum_phase_switch_interval configMinimumPhaseSwitchInterval configuration
         status:mptwt immediate none mptwt seconds)],
@@ -1293,12 +1293,30 @@ sub Wattpilot_IdleRefreshTimeout($) {
     Wattpilot_ScheduleConnect($hash, 1);
 }
 
+sub Wattpilot_FormatDecimal($$) {
+    my ($value, $places) = @_;
+    my $formatted = sprintf('%.*f', $places, $value);
+    return sprintf('%.*f', $places, 0)
+        if $formatted =~ /\A-0(?:\.0+)?\z/;
+    return $formatted;
+}
+
+sub Wattpilot_FormatReadingValue($$) {
+    my ($reading_key, $value) = @_;
+    my $formatter = $WATTPILOT_READING_POLICY{$reading_key}{formatter} // '';
+    return Wattpilot_FormatDecimal($value, 2) if $formatter eq 'decimal2';
+    return Wattpilot_FormatDecimal($value, 1) if $formatter eq 'decimal1';
+    return $value;
+}
+
 sub Wattpilot_PublishReading($$$) {
     my ($hash, $reading, $value) = @_;
     my $reading_key = $WATTPILOT_READING_KEY_BY_NAME{$reading};
     my $publication = defined($reading_key)
         ? $WATTPILOT_READING_POLICY{$reading_key}{publication}
         : 'immediate';
+    $value = Wattpilot_FormatReadingValue($reading_key, $value)
+        if defined $reading_key;
     return readingsBulkUpdateIfChanged($hash, $reading, $value)
         if $publication eq 'immediate-on-change';
     return readingsBulkUpdate($hash, $reading, $value);
@@ -1502,8 +1520,10 @@ sub Wattpilot_TelemetryGroupState($$) {
 
 sub Wattpilot_FormatEnergyTelemetry($$) {
     my ($key, $value) = @_;
-    return sprintf('%.2f', $value / 1000) if $key eq 'eto';
-    return sprintf('%.2f', $value) if $key eq 'wh';
+    return Wattpilot_FormatReadingValue('energy_total', $value / 1000)
+        if $key eq 'eto';
+    return Wattpilot_FormatReadingValue('energy_since_plug_in', $value)
+        if $key eq 'wh';
     return undef;
 }
 
@@ -1576,12 +1596,12 @@ sub Wattpilot_UpdateBatteryReadings($$) {
 
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{pv_battery_soc},
-        sprintf('%.1f', $cache->{fbuf_akkuSOC}))
+        Wattpilot_FormatReadingValue('pv_battery_soc', $cache->{fbuf_akkuSOC}))
         if $dirty->{fbuf_akkuSOC};
 
     readingsBulkUpdate(
         $hash, $WATTPILOT_READING_NAME{pv_battery_power},
-        sprintf('%.2f', $cache->{fbuf_pAkku}))
+        Wattpilot_FormatReadingValue('pv_battery_power', $cache->{fbuf_pAkku}))
         if $dirty->{fbuf_pAkku};
 
     $state->{dirty} = {};
@@ -1650,16 +1670,19 @@ sub Wattpilot_UpdateNrgReadings($$) {
     my @nrg = @{$state->{cache}{nrg}};
     return if @nrg <= 11;
 
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l1}, sprintf('%.2f', $nrg[0]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l2}, sprintf('%.2f', $nrg[1]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{voltage_l3}, sprintf('%.2f', $nrg[2]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l1}, sprintf('%.2f', $nrg[4]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l2}, sprintf('%.2f', $nrg[5]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{current_l3}, sprintf('%.2f', $nrg[6]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l1}, sprintf('%.2f', $nrg[7]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l2}, sprintf('%.2f', $nrg[8]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power_l3}, sprintf('%.2f', $nrg[9]));
-    readingsBulkUpdate($hash, $WATTPILOT_READING_NAME{power}, sprintf('%.2f', $nrg[11]));
+    my @fields = (
+        [voltage_l1 => 0], [voltage_l2 => 1], [voltage_l3 => 2],
+        [current_l1 => 4], [current_l2 => 5], [current_l3 => 6],
+        [power_l1 => 7], [power_l2 => 8], [power_l3 => 9],
+        [power => 11],
+    );
+    for my $field (@fields) {
+        my ($reading_key, $index) = @$field;
+        readingsBulkUpdate(
+            $hash,
+            $WATTPILOT_READING_NAME{$reading_key},
+            Wattpilot_FormatReadingValue($reading_key, $nrg[$index]));
+    }
     $state->{dirty} = {};
 }
 
@@ -2804,6 +2827,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.10 advertises <code>reconnect:noArg</code> in the Set command list, returns the normal command list for <code>set &lt;name&gt; ?</code> even while the device is disabled, and rejects surplus arguments for every single-value Set command. Actual Set operations remain blocked while disabled.</p>
   <p>Version 2.1.0 fixes FHEM <code>modify</code>/<code>defmod</code> lifecycle transitions, preserves top-level <code>fullStatus.partial</code> metadata, enforces exact JSON field types and safe clock validation, and removes the no-op <code>debug</code> and <code>defaultAmp</code> attributes. Changed definitions reconnect once only after successful validation; invalid modifications leave the active session unchanged.</p>
   <p>Version 2.1.1 keeps separate latest-value caches and dirty fields for energy, electrical, and stationary-battery telemetry, but publishes all eligible dirty groups on one shared interval clock and in one FHEM reading transaction. Energy is queued only when its formatted public value changes; discrete status/diagnostic readings publish immediately only when their public value changes.</p>
+  <p>Version 2.1.2 formats public measured and calculated values with exactly two decimal places and trailing zeroes. Rounded negative zero is published as positive zero. Percentages, integral settings and codes, clocks, and durations remain explicit exceptions; <code>pvBatterySoC</code> intentionally keeps one decimal place.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2967,11 +2991,11 @@ sub Wattpilot_WriteJson($$) {
     <li><code>chargingDecision</code>, <code>chargingDecisionInternal</code><br>Compatibility text mappings for the two raw codes. Unknown values are exposed as <code>unknown:&lt;code&gt;</code>. The mapping is derived from the pinned official go-e <code>modelStatus</code> enum and Wattpilot-specific third-party evidence for <code>msi</code>; it is not an official Fronius Flex specification. The pinned third-party source calls <code>msi</code> an internal decision variant, but the exact relationship, evaluation order, precedence, and any role of <code>cpDisabledRequest</code> are not confirmed for Wattpilot Flex. In particular, the module does not claim that <code>modelStatus</code> is necessarily the final/effective decision or that <code>msi</code> is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values; do not infer a causal chain from the module documentation.</li>
     <li><code>errorCode</code><br>Raw integer value from <code>err</code>; no error enum is assumed.</li>
     <li><code>configMaximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>configMinimumChargingCurrent</code><br>Raw integer values from <code>ama</code>, <code>amt</code>, and <code>mca</code>. Their current-limit interpretation and ampere unit come from pinned third-party Wattpilot evidence and are not independently proven by the sanitized Flex capture.</li>
-    <li><code>configPvSurplusStartPower</code><br>Non-negative finite numeric value from <code>fst</code>, exposed in watts. Pinned official go-e API metadata and pinned Wattpilot-specific evidence describe it as the PV-surplus start power and as writable; the observed Wattpilot Flex 43.4 value is <code>1400</code>. This evidence supports the compatibility mapping but is not an official Fronius Flex API specification.</li>
+    <li><code>configPvSurplusStartPower</code><br>Non-negative finite numeric value from <code>fst</code>, exposed in watts with exactly two decimal places. Pinned official go-e API metadata and pinned Wattpilot-specific evidence describe it as the PV-surplus start power and as writable; the observed Wattpilot Flex 43.4 value is <code>1400</code>. This evidence supports the compatibility mapping but is not an official Fronius Flex API specification.</li>
     <li><code>configPvSurplusEnabled</code>, <code>configZeroFeedInEnabled</code>, <code>configChargingPauseAllowed</code><br>Boolean fields <code>fup</code>, <code>fzf</code>, and <code>fap</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configPvControlPreference</code><br><code>preferFromGrid</code>, <code>default</code>, <code>preferToGrid</code>, or <code>unknown:&lt;raw-value&gt;</code> from <code>frm</code>.</li>
     <li><code>configPhaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code>, or <code>unknown:&lt;raw-value&gt;</code> from <code>psm</code>.</li>
-    <li><code>configThreePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts.</li>
+    <li><code>configThreePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts with exactly two decimal places.</li>
     <li><code>configPhaseSwitchDelay</code>, <code>configMinimumPhaseSwitchInterval</code>, <code>configMinimumChargeTime</code>, <code>configMinimumChargingPauseDuration</code>, <code>configMinimumChargingInterval</code><br>Non-negative finite values from <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code>, and <code>mci</code>, converted from protocol milliseconds to public seconds.</li>
     <li><code>pvBatterySoC</code><br>Stationary PV-battery state of charge from <code>fbuf_akkuSOC</code>, accepted only as a finite percentage from <code>0</code> through <code>100</code> and formatted with exactly one decimal place.</li>
     <li><code>pvBatteryPower</code><br>Signed finite value from <code>fbuf_pAkku</code>, exposed in watts and formatted to two decimal places. The module does not assign an unverified charge/discharge direction to the sign.</li>
@@ -2981,7 +3005,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App setting <code>State of charge SoC</code> from <code>pdt</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped setter accepts whole percentages only.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App switch <code>Limit discharging time</code> from <code>pdle</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App start/stop times from <code>pdls</code> and <code>pdlo</code>, converted from whole seconds after midnight to <code>HH:MM</code>. The six configuration mappings were matched to simultaneous Solar.wattpilot app values on one Flex Home 22 C6 running firmware 43.4. All six grouped setters were subsequently accepted on the same model/firmware, reflected in device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and broader firmware/model scope remain unverified.</li>
-    <li>All 24 configuration readings update immediately after valid device confirmation. The nine discrete status/diagnostic readings update immediately only when their public value changes. Energy, electrical <code>nrg</code>, and stationary-battery SOC/power use separate <code>interval</code> histories and never publish stale values because another group arrived. <code>pvBatteryModeCode</code> is discrete status, not battery telemetry. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
+    <li>All 24 configuration readings update immediately after valid device confirmation. The nine discrete status/diagnostic readings update immediately only when their public value changes. Energy, electrical <code>nrg</code>, and stationary-battery SOC/power keep separate caches and dirty fields but share one <code>interval</code> clock; one group never republishes stale values from another. <code>pvBatteryModeCode</code> is discrete status, not battery telemetry. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
   </ul>
   <p><b>Note on aWATTar:</b> aWATTar is a provider or tariff name associated with dynamic electricity prices, not a technical abbreviation introduced by this module. Names containing <code>Awattar</code> in the imported go-e enum refer to price-controlled charging decisions. <code>Fallback</code> denotes the default outcome of a decision branch when no more specific charging reason applies; it does not automatically indicate a technical fault. The exact trigger and full semantics of these codes are not confirmed for Wattpilot Flex. In particular, <code>notChargingBecauseFallbackAwattar</code> alone does not prove that an aWATTar tariff is enabled.</p>
   <p><b>Charging-decision compatibility mapping</b></p>
@@ -3063,6 +3087,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.0.10 weist <code>reconnect:noArg</code> in der Set-Befehlsliste aus, liefert die normale Befehlsliste für <code>set &lt;name&gt; ?</code> auch bei deaktiviertem Device und lehnt überzählige Argumente bei allen einwertigen Set-Befehlen ab. Tatsächliche Set-Befehle bleiben im deaktivierten Zustand gesperrt.</p>
   <p>Version 2.1.0 korrigiert die FHEM-Lebenszyklen von <code>modify</code>/<code>defmod</code>, erhält das Top-Level-Metadatum <code>fullStatus.partial</code>, erzwingt exakte JSON-Feldtypen und sichere Uhrzeitvalidierung und entfernt die wirkungslosen Attribute <code>debug</code> und <code>defaultAmp</code>. Geänderte Definitionen verbinden sich erst nach vollständiger erfolgreicher Prüfung genau einmal neu; ungültige Änderungen lassen die aktive Sitzung unverändert.</p>
   <p>Version 2.1.1 behält getrennte Latest-Value-Caches und Dirty-Felder für Energie-, elektrische und stationäre Speichertelemetrie, veröffentlicht aber alle zulässigen geänderten Gruppen über einen gemeinsamen Intervalltakt und eine FHEM-Reading-Transaktion. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts vorgemerkt; diskrete Status-/Diagnosewerte erscheinen sofort nur bei tatsächlicher Änderung.</p>
+  <p>Version 2.1.2 formatiert öffentliche Mess- und Rechenwerte mit genau zwei Nachkommastellen einschließlich nachgestellter Nullen. Gerundetes negatives Null wird als positives Null ausgegeben. Prozentwerte, ganzzahlige Einstellungen und Codes, Uhrzeiten und Dauern bleiben ausdrückliche Ausnahmen; <code>pvBatterySoC</code> behält bewusst eine Nachkommastelle.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3226,11 +3251,11 @@ sub Wattpilot_WriteJson($$) {
     <li><code>chargingDecision</code>, <code>chargingDecisionInternal</code><br>Kompatibilitäts-Klartextwerte für die beiden Rohcodes. Unbekannte Werte erscheinen als <code>unknown:&lt;Code&gt;</code>. Die Zuordnung stammt aus der gepinnten offiziellen go-e-Enum für <code>modelStatus</code> und Wattpilot-spezifischer Drittquellenevidenz für <code>msi</code>; sie ist keine offizielle Fronius-Flex-Spezifikation. Die gepinnte Drittquelle bezeichnet <code>msi</code> als interne Entscheidungsvariante; die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von <code>cpDisabledRequest</code> sind für Wattpilot Flex jedoch nicht bestätigt. Insbesondere behauptet das Modul weder, dass <code>modelStatus</code> zwingend die abschließende/wirksame Entscheidung ist, noch dass <code>msi</code> zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus der Moduldokumentation darf keine Kausalkette abgeleitet werden.</li>
     <li><code>errorCode</code><br>Unveränderter Ganzzahlwert aus <code>err</code>; es wird keine Fehler-Enum angenommen.</li>
     <li><code>configMaximumCurrentLimit</code>, <code>temperatureCurrentLimit</code>, <code>configMinimumChargingCurrent</code><br>Unveränderte Ganzzahlwerte aus <code>ama</code>, <code>amt</code> und <code>mca</code>. Die Interpretation als Stromgrenzen in Ampere stammt aus gepinnter Wattpilot-Drittquellenevidenz und ist durch den bereinigten Flex-Mitschnitt nicht unabhängig bewiesen.</li>
-    <li><code>configPvSurplusStartPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>fst</code>, ausgegeben in Watt. Gepinnte offizielle go-e-API-Metadaten und gepinnte Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; beim beobachteten Wattpilot Flex 43.4 betrug der Wert <code>1400</code>. Diese Evidenz trägt die Kompatibilitätszuordnung, ist aber keine offizielle Fronius-Flex-API-Spezifikation.</li>
+    <li><code>configPvSurplusStartPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>fst</code>, ausgegeben in Watt mit genau zwei Nachkommastellen. Gepinnte offizielle go-e-API-Metadaten und gepinnte Wattpilot-spezifische Evidenz beschreiben ihn als Startleistung für PV-Überschussladen und als schreibbar; beim beobachteten Wattpilot Flex 43.4 betrug der Wert <code>1400</code>. Diese Evidenz trägt die Kompatibilitätszuordnung, ist aber keine offizielle Fronius-Flex-API-Spezifikation.</li>
     <li><code>configPvSurplusEnabled</code>, <code>configZeroFeedInEnabled</code>, <code>configChargingPauseAllowed</code><br>Boolesche Felder <code>fup</code>, <code>fzf</code> und <code>fap</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configPvControlPreference</code><br><code>preferFromGrid</code>, <code>default</code>, <code>preferToGrid</code> oder <code>unknown:&lt;Rohwert&gt;</code> aus <code>frm</code>.</li>
     <li><code>configPhaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code> oder <code>unknown:&lt;Rohwert&gt;</code> aus <code>psm</code>.</li>
-    <li><code>configThreePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt.</li>
+    <li><code>configThreePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt mit genau zwei Nachkommastellen.</li>
     <li><code>configPhaseSwitchDelay</code>, <code>configMinimumPhaseSwitchInterval</code>, <code>configMinimumChargeTime</code>, <code>configMinimumChargingPauseDuration</code>, <code>configMinimumChargingInterval</code><br>Nicht negative, endliche Werte aus <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code> und <code>mci</code>, von Protokoll-Millisekunden in öffentliche Sekunden umgerechnet.</li>
     <li><code>pvBatterySoC</code><br>Ladezustand des stationären PV-Speichers aus <code>fbuf_akkuSOC</code>, nur als endlicher Prozentwert von <code>0</code> bis <code>100</code> akzeptiert und mit genau einer Nachkommastelle ausgegeben.</li>
     <li><code>pvBatteryPower</code><br>Vorzeichenbehafteter endlicher Wert aus <code>fbuf_pAkku</code>, ausgegeben in Watt und auf zwei Nachkommastellen formatiert. Das Modul weist dem Vorzeichen keine unbestätigte Lade-/Entladerichtung zu.</li>
@@ -3240,7 +3265,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App-Einstellung <code>State of charge SoC</code> aus <code>pdt</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Der gruppierte Setter akzeptiert nur ganze Prozentwerte.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App-Schalter <code>Limit discharging time</code> aus <code>pdle</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App-Start-/Stoppzeiten aus <code>pdls</code> und <code>pdlo</code>, von ganzen Sekunden seit Mitternacht nach <code>HH:MM</code> umgerechnet. Die sechs Konfigurationszuordnungen wurden auf einem Flex Home 22 C6 mit Firmware 43.4 anhand zeitgleich übereinstimmender Solar.wattpilot-App-Werte belegt. Alle sechs gruppierten Setter wurden anschließend auf demselben Modell/Firmwarestand vom Gerät angenommen, im geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
-    <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Die neun diskreten Status-/Diagnosereadings werden sofort nur bei tatsächlicher Änderung veröffentlicht. Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie besitzen getrennte <code>interval</code>-Historien und veröffentlichen nie alte Werte nur wegen einer anderen Gruppe. <code>pvBatteryModeCode</code> ist diskreter Status, keine Batterietelemetrie. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
+    <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Die neun diskreten Status-/Diagnosereadings werden sofort nur bei tatsächlicher Änderung veröffentlicht. Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie behalten getrennte Caches und Dirty-Felder, teilen aber einen <code>interval</code>-Takt; eine Gruppe veröffentlicht nie alte Werte einer anderen. <code>pvBatteryModeCode</code> ist diskreter Status, keine Batterietelemetrie. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
   </ul>
   <p><b>Hinweis zu aWATTar:</b> aWATTar ist ein Anbieter- beziehungsweise Tarifname für dynamische Strompreise und kein technisches Kürzel des Moduls. Die aus der go-e-Enum übernommenen Namen mit <code>Awattar</code> bezeichnen preisabhängige Ladeentscheidungen. <code>Fallback</code> bezeichnet dabei den Standardausgang eines Entscheidungszweigs, wenn kein speziellerer Ladegrund greift, und nicht automatisch einen technischen Fehler. Für den Wattpilot Flex sind der genaue Auslöser dieser Codes und ihre vollständige Semantik nicht bestätigt; insbesondere beweist <code>notChargingBecauseFallbackAwattar</code> allein nicht, dass ein aWATTar-Tarif aktiviert ist.</p>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
@@ -3306,7 +3331,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.1",
+  "version": "v2.1.2",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",
