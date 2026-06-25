@@ -31,7 +31,7 @@ for file in 72_Wattpilot.pm API.md ARCHITECTURE.md AUTHORS.md README.md README_e
 done
 mkdir -p "$package_dir/docs" "$package_dir/t/fixtures"
 cp docs/*.md "$package_dir/docs/"
-cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json t/fixtures/legacy-protocol2-session.json "$package_dir/t/fixtures/"
+cp t/fixtures/README.md t/fixtures/fullStatus-flex-observed.json t/fixtures/legacy-protocol2-session.json t/fixtures/pv-battery-settings-flex-43.4.json "$package_dir/t/fixtures/"
 cp 72_Wattpilot.pm "$standalone"
 
 cat > "$package_dir/validation-build.txt" <<EOF

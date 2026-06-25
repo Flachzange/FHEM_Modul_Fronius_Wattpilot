@@ -86,10 +86,22 @@ For every proposed protocol-field change, record the source revision, applicable
 
 - The sanitized Wattpilot Flex 43.4 `fullStatus` contains numeric `fbuf_akkuSOC=60`, `fbuf_pAkku=-1525`, and `fbuf_akkuMode=1`. This establishes observed field presence, JSON type, and representative values only.
 - Pinned Wattpilot-specific revision `4712ba3b8409fda55303870c047038b1b221d7ff` associates those fields with stationary-battery SOC, power, and mode candidates. This is third-party implementation evidence, not an official Fronius WebSocket specification.
-- Version 2.0.6 therefore exposes the fields conservatively as read-only `pvBatteryStateOfCharge`, `pvBatteryPower`, and `pvBatteryModeCode`. SOC is constrained to the semantic percentage range 0 through 100 and formatted to one decimal place; the signed power value is formatted to two decimal places and the non-negative mode code is otherwise preserved without inventing a sign interpretation or mode enum.
+- Version 2.0.6 therefore exposes the fields conservatively as read-only `pvBatterySoC`, `pvBatteryPower`, and `pvBatteryModeCode`. SOC is constrained to the semantic percentage range 0 through 100 and formatted to one decimal place; the signed power value is formatted to two decimal places and the non-negative mode code is otherwise preserved without inventing a sign interpretation or mode enum.
 - The shared `interval` cadence is a module-side FHEM policy, not a Wattpilot protocol claim. Valid `nrg` and stationary-battery fields are cached together. Once valid `nrg` has initialized the cache, valid input from either group may trigger the next admitted cycle, which republishes the available cache in one FHEM reading transaction. Messages without valid volatile telemetry do not advance `LAST_UPDATE`.
-- The current Fronius Flex operating instructions document user-visible stationary-battery charging/discharging controls but do not publish their WebSocket keys. `fam` and other possible writable battery fields remain excluded until exact current-Flex key mapping, type, unit, range, and write/readback behavior are independently verified.
+- The current Fronius Flex operating instructions document user-visible stationary-battery charging/discharging controls but do not publish their WebSocket keys. Version 2.0.8 adds separate simultaneous app/status evidence for six such fields. Version 2.0.9 subsequently verified successful writes, device-supplied readback, and restoration on one Flex Home 22 C6 running firmware 43.4; deliberate rejection, reboot persistence, and broader firmware/model scope remain unverified.
 - `pakku` and `pvopt_averagePAkku` remain non-public because their distinction from `fbuf_pAkku`, aggregation behavior, and sign convention are not established.
+
+
+## Stationary PV-battery configuration evidence introduced in version 2.0.8
+
+- On one Wattpilot Flex Home 22 C6 running firmware 43.4, the maintainer recorded a Solar.wattpilot app view and a simultaneous non-partial `fullStatus`.
+- The app showed `Charge above=60 %`, `Discharge until=off`, `State of charge SoC=57 %`, `Limit discharging time=on`, `Start=07:00`, and `End=20:00`.
+- The same status contained `fam=60`, `pdte=false`, `pdt=57`, `pdle=true`, `pdls=25200`, and `pdlo=72000`. The two time values convert exactly from seconds after midnight to the displayed clock values.
+- This exact six-value agreement establishes the current read mapping for that device/firmware observation. The repository stores only the minimal sanitized fixture `t/fixtures/pv-battery-settings-flex-43.4.json`; the unsanitized capture is not published.
+- Version 2.0.8 exposes the fields read-only as `configPvBatteryChargeAboveSoC`, `configPvBatteryDischargeEnabled`, `configPvBatteryDischargeUntilSoC`, `configPvBatteryDischargeTimeLimitEnabled`, `configPvBatteryDischargeStartTime`, and `configPvBatteryDischargeStopTime`.
+- The public reader accepts finite percentages from 0 through 100, JSON booleans, and whole-minute clock values from 0 through 86400 seconds. These are defensive FHEM-side validation rules, not proven device-side accepted setter ranges.
+- Version 2.0.9 adds one grouped `pvBattery` command that sends `fam`, `pdte`, `pdt`, `pdle`, `pdls`, and `pdlo` through the established secured `setValue` path.
+- The maintainer changed all six settings individually on one Wattpilot Flex Home 22 C6 running firmware 43.4, observed device acceptance and device-supplied status/readback, and restored the original values. This verifies the successful write path for that model/firmware only. Deliberate rejection, persistence across reboot, and cross-model or other-firmware behavior remain unverified.
 
 ## Public reading classification and naming for version 2.0.7
 

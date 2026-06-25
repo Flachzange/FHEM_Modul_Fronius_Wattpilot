@@ -2,13 +2,13 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.0.7**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). Der vollständige Reading-Kategorien-Audit und das `config`-Namensschema stehen in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
+Aktuelle Modulversion: **2.0.9**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Herkunft und Belastbarkeit der verwendeten Protokollinformationen ist in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md) dokumentiert. Die vollständige bereinigte Beobachtung der Wattpilot-Flex-JSON-Struktur steht in [`docs/WATTPILOT-FLEX-JSON-API.md`](docs/WATTPILOT-FLEX-JSON-API.md). Der vollständige Reading-Kategorien-Audit und das `config`-Namensschema stehen in [`docs/READING-CATEGORIES.md`](docs/READING-CATEGORIES.md).
 
 ## Inkompatible Änderung in 2.0
 
 Version 2.0 unterstützt ausschließlich eine frische Definition. Es gibt keine Aliase und keine automatische Migration der bisherigen Reading- oder Set-Namen. Alte Readings eines bestehenden Devices werden nicht automatisch gelöscht. DOIFs, Notifies, Plots, DbLog-/Influx-Abfragen, Dashboards und Skripte müssen manuell angepasst werden.
 
-Version 2.0.7 benennt zusätzlich jedes Konfigurationsreading auf das Schema `config...` um. Die Namen der Set-Befehle bleiben unverändert. Es gibt keine Kompatibilitätsreadings, Aliase, automatische Reading-Bereinigung oder DbLog-Migration. Nach einem Reload können alte Reading-Einträge eines bestehenden Devices als nicht mehr aktualisierte Werte erhalten bleiben; Verbraucher und gegebenenfalls diese Einträge müssen manuell angepasst beziehungsweise entfernt werden.
+Version 2.0.7 benennt zusätzlich jedes Konfigurationsreading auf das Schema `config...` um. Version 2.0.8 ergänzt sechs Konfigurationsreadings für die in der Solar.wattpilot-App sichtbaren PV-Speichereinstellungen. Version 2.0.9 kürzt den Ladezustand in öffentlichen Namen einheitlich als `SoC` ab, benennt `configPvBatteryDischargeEndTime` in `configPvBatteryDischargeStopTime` um und ergänzt den gruppierten Setter `pvBattery`. Es gibt keine Kompatibilitätsreadings, Aliase, automatische Reading-Bereinigung oder DbLog-Migration. Nach einem Reload können alte Reading-Einträge eines bestehenden Devices als nicht mehr aktualisierte Werte erhalten bleiben; Verbraucher und gegebenenfalls diese Einträge müssen manuell angepasst beziehungsweise entfernt werden.
 
 | Reading bis 2.0.6 | Reading ab 2.0.7 |
 | :--- | :--- |
@@ -221,7 +221,22 @@ Diese zusätzlichen Setter verwenden den bestehenden gesicherten `setValue`-Pfad
 
 ### PV-Speicher-Telemetrie
 
-Die Readings `pvBatteryStateOfCharge`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus den vom Wattpilot gelieferten Feldern `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. Gültige `nrg`- und Speicherwerte werden intern gemeinsam zwischengespeichert. Sobald mindestens ein gültiger `nrg`-Stand vorliegt, kann sowohl ein gültiges `nrg`- als auch ein gültiges Speicher-Update den nächsten gemäß `interval` zugelassenen gemeinsamen Messzyklus auslösen. Dabei werden Spannung, Strom, Leistung und stationäre Speichertelemetrie innerhalb derselben FHEM-Reading-Transaktion aus dem jeweils neuesten Zwischenspeicher veröffentlicht. Es gibt nur eine gemeinsame Zeitbasis in `LAST_UPDATE`; innerhalb des Intervalls eintreffende Werte aktualisieren nur den Zwischenspeicher. `pvBatteryStateOfCharge` wird mit genau einer Nachkommastelle ausgegeben. Für diese drei Werte gibt es bewusst keine Setter. Insbesondere werden weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung für die Speicherleistung erfunden. Schreibbare Speicherparameter wie `fam` bleiben bis zur eindeutigen Feld- und Schreibverifikation außerhalb der öffentlichen Schnittstelle.
+Die Readings `pvBatterySoC`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus den vom Wattpilot gelieferten Feldern `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. Gültige `nrg`- und Speicherwerte werden intern gemeinsam zwischengespeichert. Sobald mindestens ein gültiger `nrg`-Stand vorliegt, kann sowohl ein gültiges `nrg`- als auch ein gültiges Speicher-Update den nächsten gemäß `interval` zugelassenen gemeinsamen Messzyklus auslösen. Dabei werden Spannung, Strom, Leistung und stationäre Speichertelemetrie innerhalb derselben FHEM-Reading-Transaktion aus dem jeweils neuesten Zwischenspeicher veröffentlicht. Es gibt nur eine gemeinsame Zeitbasis in `LAST_UPDATE`; innerhalb des Intervalls eintreffende Werte aktualisieren nur den Zwischenspeicher. `pvBatterySoC` wird mit genau einer Nachkommastelle ausgegeben. Für diese drei Werte gibt es bewusst keine Setter. Insbesondere werden weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung für die Speicherleistung erfunden.
+
+Version 2.0.8 bildet außerdem die gleichzeitig in App und `fullStatus` beobachteten PV-Speichereinstellungen ab: `fam` als `configPvBatteryChargeAboveSoC`, `pdte` als `configPvBatteryDischargeEnabled`, `pdt` als `configPvBatteryDischargeUntilSoC`, `pdle` als `configPvBatteryDischargeTimeLimitEnabled`, `pdls` als `configPvBatteryDischargeStartTime` und `pdlo` als `configPvBatteryDischargeStopTime`. Die beiden Zeitwerte werden aus ganzen Sekunden seit Mitternacht als `HH:MM` dargestellt. Die Zuordnung ist für Wattpilot Flex Home 22 C6 mit Firmware 43.4 durch die exakt übereinstimmenden App-Werte und den zeitgleichen Status belegt.
+
+Version 2.0.9 ergänzt dafür einen einzigen gruppierten Top-Level-Setter:
+
+```text
+set wallbox pvBattery chargeAboveSoC 60
+set wallbox pvBattery dischargeEnabled 1
+set wallbox pvBattery dischargeUntilSoC 57
+set wallbox pvBattery dischargeTimeLimitEnabled 1
+set wallbox pvBattery dischargeStartTime 07:00
+set wallbox pvBattery dischargeStopTime 20:00
+```
+
+`chargeAboveSoC` und `dischargeUntilSoC` akzeptieren ganze Werte von `0` bis `100`. Die beiden Schalter akzeptieren `0` oder `1` und werden als JSON-Boolean gesendet. `dischargeStartTime` akzeptiert `00:00` bis `23:59`; `dischargeStopTime` zusätzlich `24:00`. Intern werden die Zeiten als Sekunden seit Mitternacht über `pdls` beziehungsweise `pdlo` übertragen. Es wird kein Reading optimistisch geändert; nur eine Geräteantwort oder ein späterer Status bestätigt den Wert. Alle sechs Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch den geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände sind nicht verifiziert.
 
 ### Verbindung kontrolliert neu aufbauen
 
@@ -301,7 +316,7 @@ Wählt das Verfahren für die Passwort-Verschlüsselung.
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 47 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 53 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
@@ -333,9 +348,15 @@ Das Modul stellt exakt folgende 47 öffentlichen Readings bereit:
 | `configChargingPauseAllowed` | Boolesches Feld `fap`, ausgegeben als `0` oder `1`. |
 | `configMinimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
 | `configMinimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
-| `pvBatteryStateOfCharge` | Ladezustand des stationären PV-Speichers aus `fbuf_akkuSOC`, als Prozentwert von `0` bis `100` mit genau einer Nachkommastelle. Fehlende oder ungültige Werte verändern das Reading nicht. |
+| `pvBatterySoC` | Ladezustand des stationären PV-Speichers aus `fbuf_akkuSOC`, als Prozentwert von `0` bis `100` mit genau einer Nachkommastelle. Fehlende oder ungültige Werte verändern das Reading nicht. |
 | `pvBatteryPower` | Vorzeichenbehafteter Zahlenwert aus `fbuf_pAkku`, ausgegeben in Watt und grundsätzlich auf zwei Nachkommastellen formatiert. Die Vorzeichenrichtung für Laden und Entladen ist noch nicht durch einen kontrollierten Flex-Realtest bestätigt; das Modul deutet das Vorzeichen daher nicht um. |
 | `pvBatteryModeCode` | Unveränderter nicht negativer Ganzzahlcode aus `fbuf_akkuMode`. Mangels belastbarer Enum wird bewusst kein Klartextmodus erfunden. |
+| `configPvBatteryChargeAboveSoC` | App-Einstellung „Charge above“ aus `fam`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery chargeAboveSoC <0-100>`. |
+| `configPvBatteryDischargeEnabled` | App-Schalter „Discharge until“ aus `pdte`, ausgegeben als `0` oder `1`; schreibbar über `set <name> pvBattery dischargeEnabled <0|1>`. |
+| `configPvBatteryDischargeUntilSoC` | Zugehörige App-Einstellung „State of charge SoC“ aus `pdt`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery dischargeUntilSoC <0-100>`. |
+| `configPvBatteryDischargeTimeLimitEnabled` | App-Schalter „Limit discharging time“ aus `pdle`, ausgegeben als `0` oder `1`; schreibbar über `set <name> pvBattery dischargeTimeLimitEnabled <0|1>`. |
+| `configPvBatteryDischargeStartTime` | App-Startzeit aus `pdls`, von Sekunden seit Mitternacht nach `HH:MM` umgerechnet; schreibbar über `set <name> pvBattery dischargeStartTime <HH:MM>`. |
+| `configPvBatteryDischargeStopTime` | App-Stoppzeit aus `pdlo`, von Sekunden seit Mitternacht nach `HH:MM` umgerechnet; schreibbar über `set <name> pvBattery dischargeStopTime <HH:MM|24:00>`. |
 | `configNextTripTime` | Protokollwert als `HH:MM`; als Sekunden nach Mitternacht interpretiert. |
 | `energyTotal` | `eto / 1000`, mit zwei Nachkommastellen. Die Interpretation Wh nach kWh ist Implementierungswissen und durch den bereinigten Flex-Mitschnitt nicht bewiesen. |
 | `energySincePlugIn` | `wh`, mit zwei Nachkommastellen; als Wh interpretiert. |
@@ -347,7 +368,7 @@ Das Modul stellt exakt folgende 47 öffentlichen Readings bereit:
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. |
 
-Die operativen Status- und Konfigurations-Readings außerhalb der drei PV-Speicherreadings werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Gültige `nrg`- und Speicherwerte werden gemeinsam zwischengespeichert. Nach der ersten gültigen `nrg`-Initialisierung kann jede gültige Nachricht aus einer der beiden Messgruppen den nächsten zugelassenen gemeinsamen Zyklus auslösen; dann werden alle verfügbaren hochfrequenten Messreadings in derselben FHEM-Reading-Transaktion aus dem neuesten Zwischenspeicher aktualisiert. Dadurch verwenden sie dieselbe `LAST_UPDATE`-Zeitbasis und dieselbe `update_while_idle`-Entscheidung. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte und den zuletzt gültigen Zwischenspeicher unverändert.
+Die operativen Status- und Konfigurations-Readings einschließlich der sechs PV-Speicherkonfigurationen werden bei jeder gültigen Geräteinformation sofort verarbeitet und unterliegen weder `interval` noch `update_while_idle`. Die drei PV-Speicher-Telemetriereadings gehören dagegen zum gemeinsamen volatilen Messzyklus und unterliegen dessen `interval`- und `update_while_idle`-Regeln. Gültige `nrg`- und Speicherwerte werden gemeinsam zwischengespeichert. Nach der ersten gültigen `nrg`-Initialisierung kann jede gültige Nachricht aus einer der beiden Messgruppen den nächsten zugelassenen gemeinsamen Zyklus auslösen; dann werden alle verfügbaren hochfrequenten Messreadings in derselben FHEM-Reading-Transaktion aus dem neuesten Zwischenspeicher aktualisiert. Dadurch verwenden sie dieselbe `LAST_UPDATE`-Zeitbasis und dieselbe `update_while_idle`-Entscheidung. Fehlende, `null`- oder typfalsche Felder lassen bestehende Werte und den zuletzt gültigen Zwischenspeicher unverändert.
 
 Die Klartextwerte verwenden eine Kompatibilitätszuordnung aus der gepinnten offiziellen go-e-Enum für `modelStatus`. Für `msi` wird dieselbe Wertetabelle verwendet, weil die gepinnte Wattpilot-spezifische Quelle das Feld als interne Entscheidungsvariante beschreibt. Dies ist keine offizielle Fronius-Flex-Spezifikation; deshalb bleiben beide Rohcodes erhalten und nicht zugeordnete Werte ausdrücklich sichtbar. Die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von `cpDisabledRequest` sind für Wattpilot Flex nicht bestätigt. Insbesondere behauptet das Modul weder, dass `modelStatus` zwingend die abschließende/wirksame Entscheidung ist, noch dass `msi` zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus dieser Dokumentation darf keine Kausalkette abgeleitet werden.
 

@@ -1,6 +1,6 @@
 # Public reading categories
 
-Version 2.0.7 classifies every public reading explicitly. Readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`. The same rule applies to writable and read-only configuration values. Set-command names are unchanged and do not use the prefix.
+Version 2.0.9 classifies every public reading explicitly. Readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`. The same rule applies to writable and read-only configuration values. Set-command names do not use the prefix. Related PV-battery writes are grouped below the single top-level command `pvBattery`.
 
 There are no compatibility aliases, duplicate old/new readings, automatic reading migration, or DbLog migration. Existing automations and history queries must be adapted explicitly.
 
@@ -34,9 +34,15 @@ There are no compatibility aliases, duplicate old/new readings, automatic readin
 | `charging_pause_allowed` | `configChargingPauseAllowed` | configuration | Charging-pause setting; Set command remains `chargingPauseAllowed`. |
 | `minimum_charging_pause_duration` | `configMinimumChargingPauseDuration` | configuration | Minimum charging-pause duration; Set command remains `minimumChargingPauseDuration`. |
 | `minimum_charging_interval` | `configMinimumChargingInterval` | configuration | Forced/minimum charging interval; Set command remains `minimumChargingInterval`. |
-| `pv_battery_state_of_charge` | `pvBatteryStateOfCharge` | telemetry | Current stationary PV-battery SOC. |
+| `pv_battery_soc` | `pvBatterySoC` | telemetry | Current stationary PV-battery SOC. |
 | `pv_battery_power` | `pvBatteryPower` | telemetry | Current stationary PV-battery power. |
 | `pv_battery_mode_code` | `pvBatteryModeCode` | status | Current raw stationary-battery mode code. |
+| `pv_battery_charge_above_soc` | `configPvBatteryChargeAboveSoC` | configuration | App setting “Charge above”; stationary PV-battery SOC threshold above which vehicle charging may start. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
+| `pv_battery_discharge_enabled` | `configPvBatteryDischargeEnabled` | configuration | App switch “Discharge until”. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
+| `pv_battery_discharge_until_soc` | `configPvBatteryDischargeUntilSoC` | configuration | App setting “State of charge SoC” belonging to “Discharge until”. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
+| `pv_battery_discharge_time_limit_enabled` | `configPvBatteryDischargeTimeLimitEnabled` | configuration | App switch “Limit discharging time”. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
+| `pv_battery_discharge_start_time` | `configPvBatteryDischargeStartTime` | configuration | App start time for the discharge window. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
+| `pv_battery_discharge_stop_time` | `configPvBatteryDischargeStopTime` | configuration | App end time for the discharge window. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
 | `next_trip_time` | `configNextTripTime` | configuration | Configured next-trip target time; Set command remains `nextTripTime`. |
 | `energy_total` | `energyTotal` | telemetry | Total measured energy. |
 | `energy_since_plug_in` | `energySincePlugIn` | telemetry | Measured energy since plug-in. |

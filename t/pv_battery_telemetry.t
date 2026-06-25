@@ -55,7 +55,7 @@ subtest 'combined nrg cycle exposes stationary PV-battery telemetry' => sub {
     $attr{$hash->{NAME}}{interval} = 0;
     $DevIo::NOW = 100;
 
-    for my $reading (qw(pvBatteryStateOfCharge pvBatteryPower pvBatteryModeCode)) {
+    for my $reading (qw(pvBatterySoC pvBatteryPower pvBatteryModeCode)) {
         ok(!exists $hash->{READINGS}{$reading},
             "$reading remains absent before a valid device value arrives");
     }
@@ -68,7 +68,7 @@ subtest 'combined nrg cycle exposes stationary PV-battery telemetry' => sub {
         fbuf_akkuMode => 1,
         nrg => nrg(690),
     }), 'combined fullStatus is accepted');
-    is(reading_value($hash, 'pvBatteryStateOfCharge'), '60.0',
+    is(reading_value($hash, 'pvBatterySoC'), '60.0',
         'stationary PV-battery state of charge is formatted with one decimal place');
     is(reading_value($hash, 'pvBatteryPower'), '-1525.00',
         'signed PV-battery power is formatted with two decimal places');
@@ -88,7 +88,7 @@ subtest 'combined nrg cycle exposes stationary PV-battery telemetry' => sub {
         fbuf_akkuMode => 77,
         nrg => nrg(900),
     }), 'combined deltaStatus updates the shared telemetry cycle');
-    is(reading_value($hash, 'pvBatteryStateOfCharge'), '42.5',
+    is(reading_value($hash, 'pvBatterySoC'), '42.5',
         'decimal PV-battery SOC is formatted with one decimal place');
     is(reading_value($hash, 'pvBatteryPower'), '987.26',
         'positive PV-battery power is rounded to two decimal places');
@@ -111,7 +111,7 @@ subtest 'invalid battery values neither overwrite readings nor cached values' =>
     }), 'valid baseline is accepted');
 
     my %stable = (
-        pvBatteryStateOfCharge => reading_value($hash, 'pvBatteryStateOfCharge'),
+        pvBatterySoC => reading_value($hash, 'pvBatterySoC'),
         pvBatteryPower => reading_value($hash, 'pvBatteryPower'),
         pvBatteryModeCode => reading_value($hash, 'pvBatteryModeCode'),
     );
@@ -177,7 +177,7 @@ subtest 'battery-only input can trigger the shared cached telemetry cycle' => su
         fbuf_pAkku => -700,
         fbuf_akkuMode => 2,
     }), 'battery-only boundary delta starts the shared cycle');
-    is(reading_value($hash, 'pvBatteryStateOfCharge'), '49.0',
+    is(reading_value($hash, 'pvBatterySoC'), '49.0',
         'fresh SOC is published with one decimal place');
     is(reading_value($hash, 'pvBatteryPower'), '-700.00',
         'fresh battery power is published at the shared boundary');
@@ -243,7 +243,7 @@ subtest 'matched responses cache battery data without bypassing the shared caden
     $DevIo::NOW = 2_030;
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(650) }),
         'next nrg boundary flushes response-cached battery data');
-    is(reading_value($hash, 'pvBatteryStateOfCharge'), '61.0',
+    is(reading_value($hash, 'pvBatterySoC'), '61.0',
         'response-cached SOC becomes visible with one decimal place');
     is(reading_value($hash, 'pvBatteryPower'), '-1200.00',
         'response-cached power becomes visible at the shared boundary');
@@ -321,8 +321,8 @@ subtest 'interval zero lets either volatile input trigger the shared cycle after
 };
 
 my $interface = main::Wattpilot_InterfaceSnapshot();
-is($interface->{readings}{pv_battery_state_of_charge},
-    'pvBatteryStateOfCharge',
+is($interface->{readings}{pv_battery_soc},
+    'pvBatterySoC',
     'public interface snapshot exposes the stationary-battery SOC reading');
 is($interface->{readings}{pv_battery_power}, 'pvBatteryPower',
     'public interface snapshot exposes the stationary-battery power reading');

@@ -38,8 +38,11 @@ my @public_readings = qw(
     configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
-    configMinimumChargingInterval pvBatteryStateOfCharge pvBatteryPower
-    pvBatteryModeCode configNextTripTime
+    configMinimumChargingInterval pvBatterySoC pvBatteryPower
+    pvBatteryModeCode configPvBatteryChargeAboveSoC
+    configPvBatteryDischargeEnabled configPvBatteryDischargeUntilSoC
+    configPvBatteryDischargeTimeLimitEnabled configPvBatteryDischargeStartTime
+    configPvBatteryDischargeStopTime configNextTripTime
     energyTotal energySincePlugIn
     voltageL1 voltageL2 voltageL3 currentL1 currentL2 currentL3
     powerL1 powerL2 powerL3 power lastCommandRequestId
@@ -88,6 +91,12 @@ main::Wattpilot_UpdateReadings($hash, {
     fbuf_akkuSOC => 60,
     fbuf_pAkku => -1525,
     fbuf_akkuMode => 1,
+    fam => 60,
+    pdte => JSON::false(),
+    pdt => 57,
+    pdle => JSON::true(),
+    pdls => 25200,
+    pdlo => 72000,
     ftt => 7 * 3600 + 30 * 60,
     eto => 123456,
     wh => 789,
@@ -96,7 +105,7 @@ main::Wattpilot_UpdateReadings($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 47 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 53 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

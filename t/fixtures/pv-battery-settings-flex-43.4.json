@@ -1,0 +1,12 @@
+{
+  "type": "fullStatus",
+  "partial": false,
+  "status": {
+    "fam": 60,
+    "pdte": false,
+    "pdt": 57,
+    "pdle": true,
+    "pdls": 25200,
+    "pdlo": 72000
+  }
+}

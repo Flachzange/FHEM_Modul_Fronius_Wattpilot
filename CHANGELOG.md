@@ -1,5 +1,26 @@
 # Changelog
 
+## [v2.0.9] - 2026-06-24
+
+### Gruppierte PV-Speicher-Setter und konsistente SoC-Namen
+
+- Einen einzigen Top-Level-Befehl `pvBattery` ergänzt. Die Unterbefehle `chargeAboveSoC`, `dischargeEnabled`, `dischargeUntilSoC`, `dischargeTimeLimitEnabled`, `dischargeStartTime` und `dischargeStopTime` schreiben die Rohfelder `fam`, `pdte`, `pdt`, `pdle`, `pdls` und `pdlo` über den bestehenden gesicherten `setValue`-Pfad.
+- Prozent-Setter akzeptieren ausschließlich ganze Werte von 0 bis 100. Boolesche Setter senden echte JSON-Booleans. Startzeit akzeptiert `00:00` bis `23:59`; Stoppzeit zusätzlich `24:00`. Zeitwerte werden als ganze Sekunden seit Mitternacht übertragen.
+- Keine optimistischen Reading-Updates: nur vom Gerät zurückgelieferter Status bestätigt einen neuen Wert; Fehlerantworten lassen den zuletzt bestätigten Wert unverändert.
+- Öffentliche Namen verwenden einheitlich `SoC`: `pvBatterySoC`, `configPvBatteryChargeAboveSoC` und `configPvBatteryDischargeUntilSoC`. `configPvBatteryDischargeEndTime` wurde ohne Alias oder Migration in `configPvBatteryDischargeStopTime` umbenannt.
+- Automatisierte Tests decken exakte Payload-Schlüssel und JSON-Typen, Grenzwerte, Zeitkonvertierung, ungültige Syntax, fehlende optimistische Updates sowie erfolgreiche und fehlgeschlagene Responses ab.
+- Alle sechs gruppierten Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, vom Gerät angenommen, über geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben ungetestet.
+
+## [v2.0.8] - 2026-06-24
+
+### PV-Speicher-Konfiguration aus App und Status zugeordnet
+
+- Sechs auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 gleichzeitig in Solar.wattpilot-App und `fullStatus` beobachtete PV-Speichereinstellungen ausschließlich lesend veröffentlicht.
+- `fam` wird als `configPvBatteryChargeAboveSoC`, `pdte` als `configPvBatteryDischargeEnabled`, `pdt` als `configPvBatteryDischargeUntilSoC`, `pdle` als `configPvBatteryDischargeTimeLimitEnabled`, `pdls` als `configPvBatteryDischargeStartTime` und `pdlo` als `configPvBatteryDischargeStopTime` ausgegeben.
+- Prozentwerte werden nur im Bereich 0 bis 100 akzeptiert, boolesche Werte stabil als `0`/`1` ausgegeben und ganze Minuten seit Mitternacht als `HH:MM` dargestellt. Fehlende, `null`- oder ungültige Werte überschreiben bestehende Readings nicht.
+- Die sechs Readings folgen unmittelbar dem in Version 2.0.7 eingeführten `config...`-Schema. Es gibt keine Aliase oder Migration.
+- Noch keine Batterie-Set-Befehle ergänzt: Schreibbarkeit, Geräteantwort, Readback, Restore, Grenzen und weitere Modell-/Firmwarestände bleiben vor Veröffentlichung von Settern zu verifizieren.
+
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
 ## [v2.0.7] - 2026-06-24
@@ -15,8 +36,8 @@ Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [v2.0.6] - 2026-06-24
 
-- Drei ausschließlich lesende Readings für den stationären PV-Speicher ergänzt: `pvBatteryStateOfCharge` aus `fbuf_akkuSOC`, `pvBatteryPower` aus `fbuf_pAkku` und `pvBatteryModeCode` aus `fbuf_akkuMode`. Sie bezeichnen ausdrücklich nicht den Fahrzeugakku.
-- `pvBatteryStateOfCharge` akzeptiert nur endliche Werte von 0 bis 100 Prozent und wird mit genau einer Nachkommastelle ausgegeben. `pvBatteryPower` gibt den vorzeichenbehafteten Wattwert grundsätzlich mit zwei Nachkommastellen aus; mangels kontrolliert bestätigter Vorzeichenrichtung wird Laden/Entladen nicht umgedeutet. `pvBatteryModeCode` bewahrt den nicht negativen Rohcode; mangels belastbarer Enum wird kein Klartextmodus erfunden.
+- Drei ausschließlich lesende Readings für den stationären PV-Speicher ergänzt: `pvBatterySoC` aus `fbuf_akkuSOC`, `pvBatteryPower` aus `fbuf_pAkku` und `pvBatteryModeCode` aus `fbuf_akkuMode`. Sie bezeichnen ausdrücklich nicht den Fahrzeugakku.
+- `pvBatterySoC` akzeptiert nur endliche Werte von 0 bis 100 Prozent und wird mit genau einer Nachkommastelle ausgegeben. `pvBatteryPower` gibt den vorzeichenbehafteten Wattwert grundsätzlich mit zwei Nachkommastellen aus; mangels kontrolliert bestätigter Vorzeichenrichtung wird Laden/Entladen nicht umgedeutet. `pvBatteryModeCode` bewahrt den nicht negativen Rohcode; mangels belastbarer Enum wird kein Klartextmodus erfunden.
 - Fehlende, `null`-, typfalsche, NaN-, unendliche oder außerhalb des belegten SOC-Bereichs liegende Batteriefelder verändern vorhandene Readings nicht.
 - Spannung, Strom, Leistung und die drei stationären Speicherreadings verwenden genau eine gemeinsame `interval`-Zeitbasis. Gültige `nrg`- und Batterieinformationen werden gemeinsam zwischengespeichert. Nach der ersten gültigen `nrg`-Initialisierung kann ein gültiges Update aus jeder der beiden Messgruppen den nächsten gemeinsamen Zyklus auslösen; dabei werden alle verfügbaren Messreadings in derselben FHEM-Reading-Transaktion aktualisiert. Eine separate `LAST_BATTERY_UPDATE`-Historie gibt es nicht.
 - Regression im Messwert-Rate-Limit behoben: Der gemeinsame Zyklus ist nicht mehr ausschließlich von einem neuen `nrg`-Delta abhängig. Gültige Werte innerhalb des Intervalls aktualisieren nur den gemeinsamen Zwischenspeicher; Konfigurations- und ungültige Nachrichten verbrauchen `LAST_UPDATE` nicht. `update_while_idle` gilt einmalig für den gesamten Messzyklus.

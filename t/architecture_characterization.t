@@ -55,11 +55,12 @@ is_deeply(
         minimum_charging_pause_duration => 'minimumChargingPauseDuration',
         minimum_charging_interval => 'minimumChargingInterval',
         reconnect => 'reconnect',
+        pv_battery => 'pvBattery',
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 47,
-    'central reading definition contains all 47 public readings');
+is(scalar(keys %{$interface->{readings}}), 53,
+    'central reading definition contains all 53 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -91,9 +92,15 @@ is_deeply(
         charging_pause_allowed => 'configChargingPauseAllowed',
         minimum_charging_pause_duration => 'configMinimumChargingPauseDuration',
         minimum_charging_interval => 'configMinimumChargingInterval',
-        pv_battery_state_of_charge => 'pvBatteryStateOfCharge',
+        pv_battery_soc => 'pvBatterySoC',
         pv_battery_power => 'pvBatteryPower',
         pv_battery_mode_code => 'pvBatteryModeCode',
+        pv_battery_charge_above_soc => 'configPvBatteryChargeAboveSoC',
+        pv_battery_discharge_enabled => 'configPvBatteryDischargeEnabled',
+        pv_battery_discharge_until_soc => 'configPvBatteryDischargeUntilSoC',
+        pv_battery_discharge_time_limit_enabled => 'configPvBatteryDischargeTimeLimitEnabled',
+        pv_battery_discharge_start_time => 'configPvBatteryDischargeStartTime',
+        pv_battery_discharge_stop_time => 'configPvBatteryDischargeStopTime',
         next_trip_time => 'configNextTripTime',
         energy_total => 'energyTotal',
         energy_since_plug_in => 'energySincePlugIn',
@@ -111,7 +118,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 47 public reading names match the 2.x contract');
+    'all 53 public reading names match the 2.x contract');
 is_deeply(
     $interface->{readingCategories},
     {
@@ -143,9 +150,15 @@ is_deeply(
         charging_pause_allowed => 'configuration',
         minimum_charging_pause_duration => 'configuration',
         minimum_charging_interval => 'configuration',
-        pv_battery_state_of_charge => 'telemetry',
+        pv_battery_soc => 'telemetry',
         pv_battery_power => 'telemetry',
         pv_battery_mode_code => 'status',
+        pv_battery_charge_above_soc => 'configuration',
+        pv_battery_discharge_enabled => 'configuration',
+        pv_battery_discharge_until_soc => 'configuration',
+        pv_battery_discharge_time_limit_enabled => 'configuration',
+        pv_battery_discharge_start_time => 'configuration',
+        pv_battery_discharge_stop_time => 'configuration',
         next_trip_time => 'configuration',
         energy_total => 'telemetry',
         energy_since_plug_in => 'telemetry',
