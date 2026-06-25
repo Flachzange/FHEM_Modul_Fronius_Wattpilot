@@ -3,7 +3,10 @@ use warnings;
 no warnings 'once';
 
 use File::Basename qw(dirname);
+use File::Copy qw(copy);
+use File::Path qw(make_path);
 use File::Spec;
+use File::Temp qw(tempdir);
 use Test::More;
 
 our ($readingFnAttributes, %modules, %defs, %attr);
@@ -145,6 +148,128 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'reload-style Initialize restores the same DefFn registration');
     is($reloaded{SetFn}, $registration->{SetFn},
         'reload-style Initialize restores the same SetFn registration');
+}
+
+
+{
+    install_module();
+    is(FHEMCorePinned::CommandDefine(
+        undef, 'definedWallbox Wattpilot 192.0.2.67 00670001'), undef,
+        'pinned CommandDefine creates a valid Wattpilot device');
+    my $hash = $defs{definedWallbox};
+    ok($hash, 'real core installs the device hash before DefFn');
+    is($hash->{TYPE}, 'Wattpilot', 'real core records the module type');
+    is($hash->{DEF}, '192.0.2.67 00670001',
+        'real core retains the type-dependent definition');
+    is($hash->{DeviceName}, 'ws:192.0.2.67:80/ws',
+        'module receives the framework-created hash');
+    is($hash->{STATE}, 'passwordMissing',
+        'definition follows the normal missing-credential lifecycle');
+    ok(!exists $hash->{CL}, 'real core removes the temporary command client');
+    is_deeply($FHEMCorePinned::CALLS[0], ['definedWallbox', 'DefFn'],
+        'real core dispatches DefFn after installing defs');
+}
+
+{
+    install_module();
+    like(FHEMCorePinned::CommandDefine(
+        undef, 'rejectedWallbox Wattpilot 192.0.2.67 invalid-serial'),
+        qr/Serial must contain digits only/,
+        'pinned CommandDefine propagates a DefFn veto');
+    ok(!exists $defs{rejectedWallbox},
+        'real core removes a vetoed device definition');
+    ok(!exists $attr{rejectedWallbox},
+        'real core removes attributes for a vetoed definition');
+}
+
+{
+    install_module();
+    is(FHEMCorePinned::CommandDefMod(
+        undef, 'newViaDefmod Wattpilot 192.0.2.68 00670002'), undef,
+        'pinned CommandDefMod routes a missing device through CommandDefine');
+    is($defs{newViaDefmod}{DeviceName}, 'ws:192.0.2.68:80/ws',
+        'defmod creation uses the real definition path');
+}
+
+{
+    my $registration = install_module();
+    existing_device();
+    my $original = $registration->{AttrFn};
+    my @observed;
+    $modules{Wattpilot}{AttrFn} = sub {
+        my ($cmd, $name, $attribute, $value) = @_;
+        push @observed, [
+            $cmd,
+            $attribute,
+            exists($attr{$name}{$attribute}) ? $attr{$name}{$attribute} : undef,
+        ];
+        return $original->(@_);
+    };
+
+    is(FHEMCorePinned::CommandAttr(undef, 'wallbox interval 30'), '',
+        'pinned CommandAttr accepts a valid module attribute');
+    is_deeply($observed[0], ['set', 'interval', undef],
+        'AttrFn runs before framework attribute storage');
+    is($attr{wallbox}{interval}, '30',
+        'framework stores the value only after AttrFn accepts it');
+
+    like(FHEMCorePinned::CommandAttr(undef, 'wallbox interval 301'),
+        qr/integer from 0 to 300/,
+        'AttrFn veto is propagated by the real core path');
+    is($attr{wallbox}{interval}, '30',
+        'rejected attribute value does not replace the stored value');
+
+    @observed = ();
+    is(FHEMCorePinned::CommandDeleteAttr(undef, 'wallbox interval'), '',
+        'pinned CommandDeleteAttr accepts deletion');
+    is_deeply($observed[0], ['del', 'interval', '30'],
+        'AttrFn sees the old attribute value before deletion');
+    ok(!exists $attr{wallbox}{interval},
+        'framework deletes the attribute after AttrFn accepts deletion');
+}
+
+{
+    my $registration = install_module();
+    my $hash = existing_device();
+    $hash->{VERSION} = 'stale-version';
+    $hash->{helper}{reloadSentinel} = 'preserved';
+    my $original_hash = $hash;
+    my $original_device_name = $hash->{DeviceName};
+    my $original_open = $hash->{TEST_OPEN};
+    my $password_key = 'Wattpilot_' . $hash->{FUUID} . '_password';
+    my $original_password = $DevIo::KEY_VALUES{$password_key};
+
+    my $tmp = tempdir(CLEANUP => 1);
+    my $fhem_dir = File::Spec->catdir($tmp, 'FHEM');
+    make_path($fhem_dir);
+    my $module_copy = File::Spec->catfile($fhem_dir, '72_Wattpilot.pm');
+    ok(copy(File::Spec->catfile($root, '72_Wattpilot.pm'), $module_copy),
+        'reload fixture contains the current module file');
+    $attr{global}{modpath} = $tmp;
+
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    is(FHEMCorePinned::CommandReload(undef, '72_Wattpilot'), undef,
+        'pinned CommandReload executes the real module reload path');
+    is($defs{wallbox}, $original_hash,
+        'real reload preserves the existing device hash identity');
+    is($hash->{VERSION}, '2.1.2',
+        'real reload refreshes the module version internal');
+    is($hash->{DeviceName}, $original_device_name,
+        'real reload preserves the configured endpoint');
+    is($hash->{TEST_OPEN}, $original_open,
+        'real reload preserves the open transport state');
+    is($hash->{helper}{reloadSentinel}, 'preserved',
+        'real reload preserves runtime helper state');
+    is($DevIo::KEY_VALUES{$password_key}, $original_password,
+        'real reload preserves stable credentials');
+    is($modules{Wattpilot}{DefFn}, \&main::Wattpilot_Define,
+        'real reload registers the freshly loaded DefFn');
+    is($modules{Wattpilot}{ORDER}, '72',
+        'real reload retains the filename order prefix');
+    ok($modules{Wattpilot}{LOADED}, 'real reload marks the module loaded');
+    is_deeply([grep { $_ !~ /Subroutine .* redefined/ } @warnings], [],
+        'reload emits no unexpected warnings');
 }
 
 done_testing();

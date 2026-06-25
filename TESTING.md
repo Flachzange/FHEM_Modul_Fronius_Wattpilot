@@ -75,7 +75,25 @@ Version 2.1.1 adds `t/reading_update_policy.t` and timestamp/event-aware FHEM re
 
 Version 2.1.2 adds `t/reading_precision.t`. It checks the central formatter inventory, exact trailing-zero strings, positive and negative rounding, negative-zero normalization, scientific numeric input, explicit percentage/integer/duration exceptions, all status-envelope paths, fresh initialization, and invalid-input preservation. The complete local suite passes with 24 test files and 2,886 tests. No real FHEM reload or real-device test was performed for this display-only formatting change; setter payloads and protocol values are unchanged.
 
-Issue #67 starts with `t/fhem_core_lifecycle_integration.t` and `t/lib/FHEMCorePinned.pm`. The helper pins FHEM mirror revision `0ae38bf79d19d8d598c065bf84b3990b33063c4b`, `fhem.pl` blob `0c03b2989d2e5be6f019cfb07a6a3e53db62050b`, and `DevIo.pm` blob `ce94276bb9d3e4963ebc514a93a86b442984e72f`. It executes the unchanged pinned `DoSet`, `CommandModify`, `CommandDefMod`, `CommandRename`, and `CommandDelete` function bodies while replacing only external side effects with the existing deterministic DevIo, timer, credential, reading, and log adapters. The first bounded stage covers modify/defmod success and veto rollback, rename mutation order, UndefFn-before-DeleteFn ordering, disabled-device Set discovery, and reload-style `Initialize` registration. Define, attribute set/delete, and the complete reload command path remain explicitly open for the next stage; this initial harness does not claim full issue-#67 completion. The complete local suite passes with 25 test files and 2,918 tests.
+Issue #67 is covered by `t/fhem_core_lifecycle_integration.t` and
+`t/lib/FHEMCorePinned.pm`. The helper pins FHEM mirror revision
+`0ae38bf79d19d8d598c065bf84b3990b33063c4b`, `fhem.pl` blob
+`0c03b2989d2e5be6f019cfb07a6a3e53db62050b`, and `DevIo.pm` blob
+`ce94276bb9d3e4963ebc514a93a86b442984e72f`. It executes the unchanged pinned
+`DoSet`, `CommandDefine`, `CommandModify`, `CommandDefMod`, `CommandRename`,
+`CommandDelete`, `CommandAttr`, `CommandDeleteAttr`, and `CommandReload`
+function bodies. External network, timer, credential, reading, and log effects
+remain deterministic adapters; a small namespace bridge is required because
+the extracted functions live in the test helper rather than FHEM's `main`
+package. Coverage includes define success and veto cleanup, defmod creation and
+replacement, modify rollback, rename mutation order, UndefFn-before-DeleteFn,
+attribute callback ordering and veto behavior, disabled-device Set discovery,
+and an actual reload from a temporary `FHEM/72_Wattpilot.pm` path while an
+existing device hash, endpoint, transport state, helper state, and stable
+credential remain intact. No production-module line changes are required. The
+complete local suite passes with 25 test files and 2,951 tests. This remains a
+bounded core-path integration test, not a live FHEM process, real network, or
+physical Wattpilot test.
 
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 
