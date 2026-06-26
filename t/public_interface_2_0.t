@@ -29,7 +29,7 @@ sub fresh_device {
 }
 
 my @public_readings = qw(
-    state firmwareVersion deviceType deviceModel deviceSubType deviceVariant helloProtocol statusProtocol authHashMode carState configForceState configChargingCurrent
+    state deviceFirmwareVersion deviceType deviceModel deviceSubType deviceVariant deviceHelloProtocol deviceStatusProtocol authHashMode carState configForceState configChargingCurrent
     configChargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
     temperatureCurrentLimit configMinimumChargingCurrent configPvSurplusStartPower

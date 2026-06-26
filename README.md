@@ -110,7 +110,7 @@ Im Normalfall sendet der Wattpilot seine Seriennummer vor der Authentifizierung 
 
 Das Passwort wird separat mit `set <Name> password <secret>` gesetzt und nicht in der Definition gespeichert.
 
-**Versionsanzeige:** Das Internal `VERSION` zeigt die Modulversion. Die vom Wattpilot gemeldete Firmware steht separat im Reading `firmwareVersion`.
+**Versionsanzeige:** Das Internal `VERSION` zeigt die Modulversion. Die vom Wattpilot gemeldete Firmware steht separat im Reading `deviceFirmwareVersion`.
 
 ### Beispiel
 
@@ -317,13 +317,13 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | Reading | Beschreibung |
 | :--- | :--- |
 | `state` | Lifecycle-Zustand: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed` oder `authNonceFailed`. |
-| `firmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
+| `deviceFirmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
 | `deviceType` | Exakter String aus dem Statusfeld `typ`. |
 | `deviceModel` | Exakter vom Gerät gemeldeter Modell-/Gruppenstring aus `grp`; keine erfundene Modellzuordnung. |
 | `deviceSubType` | Exakter Subtyp-String aus `styp`. |
 | `deviceVariant` | Unveränderter nicht negativer Ganzzahlwert aus `var`. |
-| `helloProtocol` | Unveränderter Ganzzahlwert aus `hello.protocol`. |
-| `statusProtocol` | Unveränderter Ganzzahlwert aus `status.proto`; keine angenommene Beziehung zu `helloProtocol`. |
+| `deviceHelloProtocol` | Unveränderter Ganzzahlwert aus `hello.protocol`. |
+| `deviceStatusProtocol` | Unveränderter Ganzzahlwert aus `status.proto`; keine angenommene Beziehung zu `deviceHelloProtocol`. |
 | `authHashMode` | Tatsächlich verwendetes Verfahren: `pbkdf2` oder `bcrypt`. |
 | `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error` oder `unknown:<Rohwert>`. |
 | `configForceState` | `neutral`, `off`, `on` oder `unknown:<Rohwert>`. |

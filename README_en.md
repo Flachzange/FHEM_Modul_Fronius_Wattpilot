@@ -110,7 +110,7 @@ Normally the Wattpilot sends its serial in the `hello` message before authentica
 
 Set the password separately with `set <Name> password <secret>`; it is not stored in the definition.
 
-**Version display:** The Internal `VERSION` reports the module version. Firmware reported by the Wattpilot remains separate in the `firmwareVersion` reading.
+**Version display:** The Internal `VERSION` reports the module version. Firmware reported by the Wattpilot remains separate in the `deviceFirmwareVersion` reading.
 
 ### Example
 
@@ -315,13 +315,13 @@ The module exposes exactly these 73 public readings:
 | Reading | Description |
 | :--- | :--- |
 | `state` | Lifecycle state: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed`, or `authNonceFailed`. |
-| `firmwareVersion` | Firmware/version string from the device `hello` message. Identical reconnect values do not renew the reading. |
+| `deviceFirmwareVersion` | Firmware/version string from the device `hello` message. Identical reconnect values do not renew the reading. |
 | `deviceType` | Exact string from status field `typ`. |
 | `deviceModel` | Exact device-reported model/group string from `grp`; no model mapping is invented. |
 | `deviceSubType` | Exact subtype string from `styp`. |
 | `deviceVariant` | Raw non-negative integer from `var`. |
-| `helloProtocol` | Raw integer from `hello.protocol`. |
-| `statusProtocol` | Raw integer from `status.proto`; no relationship to `helloProtocol` is assumed. |
+| `deviceHelloProtocol` | Raw integer from `hello.protocol`. |
+| `deviceStatusProtocol` | Raw integer from `status.proto`; no relationship to `deviceHelloProtocol` is assumed. |
 | `authHashMode` | Effective mode: `pbkdf2` or `bcrypt`. |
 | `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error`, or `unknown:<raw-value>`. |
 | `configForceState` | `neutral`, `off`, `on`, or `unknown:<raw-value>`. |

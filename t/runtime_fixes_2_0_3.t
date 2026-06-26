@@ -71,8 +71,8 @@ main::Wattpilot_DispatchMessage($hash, {
 });
 is($hash->{VERSION}, '2.1.7',
     'device hello firmware does not overwrite module VERSION');
-is($hash->{READINGS}{firmwareVersion}{VAL}, '43.4',
-    'device hello firmware remains available as firmwareVersion');
+is($hash->{READINGS}{deviceFirmwareVersion}{VAL}, '43.4',
+    'device hello firmware remains available as deviceFirmwareVersion');
 is($hash->{helper}{protocol}, 2,
     'hello.protocol is stored separately in the connection helper');
 

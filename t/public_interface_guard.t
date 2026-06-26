@@ -100,7 +100,7 @@ for my $path (sort @test_files) {
 }
 
 my @public_readings = qw(
-    state firmwareVersion deviceType deviceModel deviceSubType deviceVariant helloProtocol statusProtocol
+    state deviceFirmwareVersion deviceType deviceModel deviceSubType deviceVariant deviceHelloProtocol deviceStatusProtocol
     authHashMode carState configForceState configChargingCurrent
     configChargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
@@ -130,7 +130,7 @@ my @public_commands = qw(
 
 my @migration_pairs = (
     [ 'state', 'state' ],
-    [ 'version', 'firmwareVersion' ],
+    [ 'version', 'deviceFirmwareVersion' ],
     [ 'authHashMode', 'authHashMode' ],
     [ 'CarState', 'carState' ],
     [ 'Laden_starten', 'configForceState' ],

@@ -54,13 +54,13 @@ my $WATTPILOT_CHARGING_CURRENT_MAXIMUM = 32;
 # formatter, incoming validator, formatter detail
 my @WATTPILOT_READING_DEFINITION = (
     [qw(state state lifecycle event:connection immediate none connection lifecycle none none)],
-    [qw(firmware_version firmwareVersion identity event:hello immediate-on-change none identity text none none)],
+    [qw(firmware_version deviceFirmwareVersion identity event:hello immediate-on-change none identity text none none)],
     [qw(device_type deviceType identity status:typ immediate-on-change none typ text nonempty_string none)],
     [qw(device_model deviceModel identity status:grp immediate-on-change none grp text nonempty_string none)],
     [qw(device_sub_type deviceSubType identity status:styp immediate-on-change none styp text nonempty_string none)],
     [qw(device_variant deviceVariant identity status:var immediate-on-change none var integer nonnegative_integer none)],
-    [qw(hello_protocol helloProtocol identity event:hello immediate-on-change none hello_protocol integer none none)],
-    [qw(status_protocol statusProtocol identity status:proto immediate-on-change none proto integer nonnegative_integer none)],
+    [qw(hello_protocol deviceHelloProtocol identity event:hello immediate-on-change none hello_protocol integer none none)],
+    [qw(status_protocol deviceStatusProtocol identity status:proto immediate-on-change none proto integer nonnegative_integer none)],
     [qw(auth_hash_mode authHashMode diagnostic event:authentication immediate none authentication enum none none)],
     [qw(car_state carState status status:car immediate-on-change none car enum integer car)],
     [qw(force_state configForceState configuration status:frc immediate none frc enum integer force)],
@@ -2949,7 +2949,7 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>This module controls a Fronius Wattpilot wallbox through the local WebSocket API.</li>
   <li>The public 2.0 interface uses English <code>lowerCamelCase</code> reading and set-command names.</li>
-  <li>The device Internal <code>VERSION</code> reports the module version. Firmware reported by the wallbox remains separate in <code>firmwareVersion</code>.</li>
+  <li>The device Internal <code>VERSION</code> reports the module version. Firmware reported by the wallbox remains separate in <code>deviceFirmwareVersion</code>.</li>
   <li>Decoded input is limited to 1 MiB and at most 256 concatenated JSON documents. Known fields are type-checked, omitted partial-update fields remain unchanged, and missing values are never converted to zero.</li>
   <li>The empirically observed Flex startup message types <code>clearInverters</code>, <code>updateInverter</code>, and <code>clearSmips</code> are deliberately ignored because the module does not use their payloads. They remain visible in the level-4 received-type trace but do not produce a level-3 unsupported-type warning. Other unsupported JSON message types are ignored without logging their payload. A type name is shown only when it is a bounded, log-safe ASCII token; otherwise it is reported as <code>redacted</code>.</li>
   <br>
@@ -2998,7 +2998,7 @@ sub Wattpilot_WriteJson($$) {
   <table class="block wide">
     <tr><th>Type</th><th>1.x name</th><th>2.0 name</th></tr>
     <tr><td>Reading</td><td><code>state</code></td><td><code>state</code></td></tr>
-    <tr><td>Reading</td><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
+    <tr><td>Reading</td><td><code>version</code></td><td><code>deviceFirmwareVersion</code></td></tr>
     <tr><td>Reading</td><td><code>authHashMode</code></td><td><code>authHashMode</code></td></tr>
     <tr><td>Reading</td><td><code>CarState</code></td><td><code>carState</code></td></tr>
     <tr><td>Reading</td><td><code>Laden_starten</code></td><td><code>configForceState</code></td></tr>
@@ -3125,9 +3125,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>state</code><br>
         Lifecycle state: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code>, or <code>authNonceFailed</code>.</li>
-    <li><code>firmwareVersion</code><br>Firmware/version string reported by the device <code>hello</code> message; identical reconnect values do not renew the reading.</li>
+    <li><code>deviceFirmwareVersion</code><br>Firmware/version string reported by the device <code>hello</code> message; identical reconnect values do not renew the reading.</li>
     <li><code>deviceType</code>, <code>deviceModel</code>, <code>deviceSubType</code>, <code>deviceVariant</code><br>Exact valid values from <code>typ</code>, <code>grp</code>, <code>styp</code>, and <code>var</code>. No commercial-model mapping is invented.</li>
-    <li><code>helloProtocol</code>, <code>statusProtocol</code><br>Raw non-negative integers from <code>hello.protocol</code> and <code>status.proto</code>. They remain separate and no relationship is assumed.</li>
+    <li><code>deviceHelloProtocol</code>, <code>deviceStatusProtocol</code><br>Raw non-negative integers from <code>hello.protocol</code> and <code>status.proto</code>. They remain separate and no relationship is assumed.</li>
     <li><code>authHashMode</code><br>Effective authentication mode: <code>pbkdf2</code> or <code>bcrypt</code>.</li>
     <li><code>carState</code><br><code>unknown</code>, <code>idle</code>, <code>charging</code>, <code>waitingForCar</code>, <code>complete</code>, <code>error</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
     <li><code>configForceState</code><br><code>neutral</code>, <code>off</code>, <code>on</code>, or <code>unknown:&lt;raw-value&gt;</code>.</li>
@@ -3217,7 +3217,7 @@ sub Wattpilot_WriteJson($$) {
 <ul>
   <li>Dieses Modul steuert eine Fronius-Wattpilot-Wallbox über die lokale WebSocket-API.</li>
   <li>Die öffentliche 2.0-Schnittstelle verwendet englische Reading- und Set-Namen in <code>lowerCamelCase</code>.</li>
-  <li>Das Device-Internal <code>VERSION</code> zeigt die Modulversion. Die von der Wallbox gemeldete Firmware bleibt separat im Reading <code>firmwareVersion</code>.</li>
+  <li>Das Device-Internal <code>VERSION</code> zeigt die Modulversion. Die von der Wallbox gemeldete Firmware bleibt separat im Reading <code>deviceFirmwareVersion</code>.</li>
   <li>Decodierte Eingaben sind auf 1 MiB und höchstens 256 verkettete JSON-Dokumente begrenzt. Bekannte Felder werden typgeprüft, ausgelassene Teil-Updates bleiben unverändert und fehlende Werte werden niemals als Null behandelt.</li>
   <li>Die empirisch beobachteten Flex-Startnachrichtentypen <code>clearInverters</code>, <code>updateInverter</code> und <code>clearSmips</code> werden bewusst ignoriert, weil das Modul ihre Payloads nicht verwendet. Sie bleiben im Level-4-Empfangs-Trace sichtbar, erzeugen aber keine Level-3-Warnung wegen eines nicht unterstützten Typs. Andere nicht unterstützte JSON-Nachrichtentypen werden ohne Protokollierung ihres Payloads ignoriert. Ein Typname wird nur als begrenztes, logsicheres ASCII-Token ausgegeben; andernfalls erscheint <code>redacted</code>.</li>
   <br>
@@ -3266,7 +3266,7 @@ sub Wattpilot_WriteJson($$) {
   <table class="block wide">
     <tr><th>Typ</th><th>1.x-Name</th><th>2.0-Name</th></tr>
     <tr><td>Reading</td><td><code>state</code></td><td><code>state</code></td></tr>
-    <tr><td>Reading</td><td><code>version</code></td><td><code>firmwareVersion</code></td></tr>
+    <tr><td>Reading</td><td><code>version</code></td><td><code>deviceFirmwareVersion</code></td></tr>
     <tr><td>Reading</td><td><code>authHashMode</code></td><td><code>authHashMode</code></td></tr>
     <tr><td>Reading</td><td><code>CarState</code></td><td><code>carState</code></td></tr>
     <tr><td>Reading</td><td><code>Laden_starten</code></td><td><code>configForceState</code></td></tr>
@@ -3393,9 +3393,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>state</code><br>
         Lifecycle-Zustand: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code> oder <code>authNonceFailed</code>.</li>
-    <li><code>firmwareVersion</code><br>Firmware-/Versionsstring aus der <code>hello</code>-Nachricht; identische Reconnect-Werte erneuern das Reading nicht.</li>
+    <li><code>deviceFirmwareVersion</code><br>Firmware-/Versionsstring aus der <code>hello</code>-Nachricht; identische Reconnect-Werte erneuern das Reading nicht.</li>
     <li><code>deviceType</code>, <code>deviceModel</code>, <code>deviceSubType</code>, <code>deviceVariant</code><br>Exakte gültige Werte aus <code>typ</code>, <code>grp</code>, <code>styp</code> und <code>var</code>. Es wird keine kommerzielle Modellzuordnung erfunden.</li>
-    <li><code>helloProtocol</code>, <code>statusProtocol</code><br>Unveränderte nicht negative Ganzzahlen aus <code>hello.protocol</code> und <code>status.proto</code>. Sie bleiben getrennt; eine Beziehung wird nicht angenommen.</li>
+    <li><code>deviceHelloProtocol</code>, <code>deviceStatusProtocol</code><br>Unveränderte nicht negative Ganzzahlen aus <code>hello.protocol</code> und <code>status.proto</code>. Sie bleiben getrennt; eine Beziehung wird nicht angenommen.</li>
     <li><code>authHashMode</code><br>Tatsächlich verwendetes Verfahren: <code>pbkdf2</code> oder <code>bcrypt</code>.</li>
     <li><code>carState</code><br><code>unknown</code>, <code>idle</code>, <code>charging</code>, <code>waitingForCar</code>, <code>complete</code>, <code>error</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>
     <li><code>configForceState</code><br><code>neutral</code>, <code>off</code>, <code>on</code> oder <code>unknown:&lt;Rohwert&gt;</code>.</li>

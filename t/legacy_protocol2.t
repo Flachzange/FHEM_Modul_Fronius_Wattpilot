@@ -57,7 +57,7 @@ is(main::Wattpilot_Define(
 main::Wattpilot_Parse($hash, encode_json($fixture->{hello}));
 is($hash->{SERIAL}, '10000001', 'configured serial remains available for legacy PBKDF2');
 is($hash->{VERSION}, '2.1.7', 'legacy hello preserves the module VERSION Internal');
-is($hash->{READINGS}{firmwareVersion}{VAL}, '36.3',
+is($hash->{READINGS}{deviceFirmwareVersion}{VAL}, '36.3',
     'legacy hello exposes device firmware separately');
 is(main::Wattpilot_GetAuthHashMode($hash, $fixture->{authRequired}), 'pbkdf2',
     'missing legacy hash selects PBKDF2');

@@ -43,7 +43,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `hello`
 
 - Direction: device → client in the historical flow.
-- Observed/required fields: not present in the accepted fullStatus capture. Current code handles `type`, reads `serial` if no serial is configured, stores integer `protocol` as the connection helper, and exposes `version` as the FHEM reading `firmwareVersion`.
+- Observed/required fields: not present in the accepted fullStatus capture. Current code handles `type`, reads `serial` if no serial is configured, stores integer `protocol` as the connection helper, and exposes `version` as the FHEM reading `deviceFirmwareVersion`.
 - Example: `{"type":"hello","serial":"10000001","version":"43.4","protocol":2}`
 - Evidence: current implementation behavior plus historical compilation. A separate live FHEM observation on 2026-06-24 showed helper value `protocol=2`; current code assigns that helper only from `hello.protocol`. No raw `hello` frame from that session was retained.
 - Open questions: the complete Flex 43.4 field set, ordering, requiredness, `secured`, and the semantic relationship between `hello.protocol` and `status.proto` remain unknown.
@@ -227,13 +227,13 @@ The names below describe the current version-2.1.7 implementation. They describe
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
-| hello `version` | `firmwareVersion` | copied on change | current implementation; actual Flex hello unobserved |
-| hello `protocol` | `helloProtocol` | raw non-negative integer, separate from status `proto` | current implementation plus separate real runtime observation; relationship unknown |
+| hello `version` | `deviceFirmwareVersion` | copied on change | current implementation; actual Flex hello unobserved |
+| hello `protocol` | `deviceHelloProtocol` | raw non-negative integer, separate from status `proto` | current implementation plus separate real runtime observation; relationship unknown |
 | `typ` | `deviceType` | exact non-empty string | observed field/type/value only |
 | `grp` | `deviceModel` | exact non-empty string; no model mapping | observed field/type/value only |
 | `styp` | `deviceSubType` | exact non-empty string | observed field/type/value only |
 | `var` | `deviceVariant` | raw non-negative integer | observed field/type/value only |
-| `proto` | `statusProtocol` | raw non-negative integer, separate from hello protocol | observed field/type/value plus separate hello observation; relationship unknown |
+| `proto` | `deviceStatusProtocol` | raw non-negative integer, separate from hello protocol | observed field/type/value plus separate hello observation; relationship unknown |
 | `rbc` | `deviceRebootCount` | raw non-negative integer on shared interval; no unit/meaning conversion | observed field/type/value; historical reboot-count candidate remains unconfirmed |
 | `rbt` | `uptime` | non-negative value, empirically treated as milliseconds, divided by 1,000, and rendered as cumulative `H:MM` on the shared interval and idle gate | observed field/type/value plus maintainer live-device time progression; broader scope unverified |
 | selected raw diagnostic fields | exact `diag_` + protocol key | optional validated scalar; numbers formatted to two decimals without scaling, strings unchanged, booleans as `0|1` | observed field/type only; semantics remain unknown |
