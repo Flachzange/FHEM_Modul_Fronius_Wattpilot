@@ -223,8 +223,14 @@ my %WATTPILOT_READING_CATEGORY = map {
 
 my %WATTPILOT_READING_KEY_BY_NAME = reverse %WATTPILOT_READING_NAME;
 
-my %WATTPILOT_TELEMETRY_OWNER_IDLE_GATE;
-for my $reading_key (keys %WATTPILOT_READING_POLICY) {
+my (
+    %WATTPILOT_TELEMETRY_OWNER_IDLE_GATE,
+    %WATTPILOT_SCALAR_TELEMETRY_BY_OWNER,
+);
+my @WATTPILOT_TELEMETRY_OWNER_DISCOVERY_ORDER;
+my %WATTPILOT_TELEMETRY_OWNER_SEEN;
+for my $definition (@WATTPILOT_READING_DEFINITION) {
+    my ($reading_key) = @$definition;
     my $policy = $WATTPILOT_READING_POLICY{$reading_key};
     next if $policy->{publication} ne 'interval';
     my $owner = $policy->{owner};
@@ -233,45 +239,41 @@ for my $reading_key (keys %WATTPILOT_READING_POLICY) {
         if exists($WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner})
         && $WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner} ne $idle_gate;
     $WATTPILOT_TELEMETRY_OWNER_IDLE_GATE{$owner} = $idle_gate;
+    if (!$WATTPILOT_TELEMETRY_OWNER_SEEN{$owner}++) {
+        push @WATTPILOT_TELEMETRY_OWNER_DISCOVERY_ORDER, $owner;
+    }
+    if ($policy->{source} =~ /^status:([A-Za-z0-9_]+)$/) {
+        push @{$WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$owner}},
+            [$1, $reading_key];
+    }
 }
 
 my $WATTPILOT_ENERGY_OWNER = $WATTPILOT_READING_POLICY{energy_total}{owner};
 my $WATTPILOT_NRG_OWNER = $WATTPILOT_READING_POLICY{power}{owner};
-my $WATTPILOT_DEVICE_HEALTH_OWNER =
-    $WATTPILOT_READING_POLICY{device_reboot_count}{owner};
-my $WATTPILOT_DEVICE_UPTIME_OWNER =
-    $WATTPILOT_READING_POLICY{device_uptime}{owner};
 my $WATTPILOT_DIAGNOSTIC_OWNER =
     $WATTPILOT_READING_POLICY{diag_fbuf_p_grid}{owner};
+my @WATTPILOT_TELEMETRY_OWNER_ORDER = (
+    $WATTPILOT_ENERGY_OWNER,
+    $WATTPILOT_NRG_OWNER,
+    grep {
+        $_ ne $WATTPILOT_ENERGY_OWNER && $_ ne $WATTPILOT_NRG_OWNER
+    } @WATTPILOT_TELEMETRY_OWNER_DISCOVERY_ORDER,
+);
 
-my @WATTPILOT_DEVICE_HEALTH_TELEMETRY = (
-    [rbc => 'device_reboot_count'],
-);
-my @WATTPILOT_DEVICE_UPTIME_TELEMETRY = (
-    [rbt => 'device_uptime'],
-);
-my @WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY = (
-    [fbuf_akkuSOC => 'diag_fbuf_akku_soc'],
-    [fbuf_pAkku => 'diag_fbuf_p_akku'],
-    [fbuf_pGrid => 'diag_fbuf_p_grid'],
-    [fbuf_pPv => 'diag_fbuf_p_pv'],
-    [pvopt_averagePGrid => 'diag_pvopt_average_p_grid'],
-    [pvopt_averagePPv => 'diag_pvopt_average_p_pv'],
-    [pvopt_averagePAkku => 'diag_pvopt_average_p_akku'],
-    [pvopt_averagePOhmpilot => 'diag_pvopt_average_p_ohmpilot'],
-    [pvopt_deltaP => 'diag_pvopt_delta_p'],
-    [pvopt_deltaA => 'diag_pvopt_delta_a'],
-    [pvopt_specialCase => 'diag_pvopt_special_case'],
-    [fbuf_pAcTotal => 'diag_fbuf_p_ac_total'],
-    [fbuf_ohmpilotState => 'diag_fbuf_ohmpilot_state'],
-    [fbuf_ohmpilotTemperature => 'diag_fbuf_ohmpilot_temperature'],
-);
+for my $owner (@WATTPILOT_TELEMETRY_OWNER_ORDER) {
+    next if $owner eq $WATTPILOT_ENERGY_OWNER;
+    next if $owner eq $WATTPILOT_NRG_OWNER;
+    my $fields = $WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$owner};
+    die "Missing scalar telemetry mapping for Wattpilot owner $owner"
+        if ref($fields) ne 'ARRAY' || !@$fields;
+}
+
 my %WATTPILOT_OPTIONAL_DIAGNOSTIC_PROTOCOL_KEY = map {
     $_->[0] => 1
-} @WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY;
+} @{$WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$WATTPILOT_DIAGNOSTIC_OWNER}};
 my @WATTPILOT_OPTIONAL_DIAGNOSTIC_READING = map {
     $WATTPILOT_READING_NAME{$_->[1]}
-} @WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY;
+} @{$WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$WATTPILOT_DIAGNOSTIC_OWNER}};
 
 # key, public name, FHEMWEB widget, protocol key, parser, usage, invalid mode
 my @WATTPILOT_COMMAND_DEFINITION = (
@@ -473,9 +475,12 @@ sub Wattpilot_Initialize($) {
         next if ref($device_hash) ne 'HASH';
         next if ($device_hash->{TYPE} // '') ne 'Wattpilot';
         $device_hash->{VERSION} = $WATTPILOT_VERSION;
-        Wattpilot_ClearOptionalDiagnosticCache($device_hash);
-        Wattpilot_ClearOptionalDiagnosticReadings($device_hash)
-            if AttrVal($device_hash->{NAME}, 'diagnosticReadings', 0) ne '1';
+        if (AttrVal($device_hash->{NAME}, 'diagnosticReadings', 0) eq '1') {
+            Wattpilot_ClearOptionalDiagnosticCache($device_hash);
+        }
+        else {
+            Wattpilot_ClearOptionalDiagnosticReadings($device_hash);
+        }
     }
 
     $hash->{DefFn}    = \&Wattpilot_Define;
@@ -1476,9 +1481,28 @@ sub Wattpilot_FormatDecimal($$) {
 
 sub Wattpilot_FormatReadingValue($$) {
     my ($reading_key, $value) = @_;
-    my $formatter = $WATTPILOT_READING_POLICY{$reading_key}{formatter} // '';
+    my $policy = $WATTPILOT_READING_POLICY{$reading_key}
+        or die "Unknown Wattpilot reading key: $reading_key";
+    my $formatter = $policy->{formatter};
+
+    return $value
+        if $formatter eq 'lifecycle'
+        || $formatter eq 'text'
+        || $formatter eq 'percentage';
+    return int($value) if $formatter eq 'integer';
+    return $value ? 1 : 0 if $formatter eq 'boolean';
+    return Wattpilot_MillisecondsToSeconds($value) if $formatter eq 'seconds';
+    return Wattpilot_SecondsSinceMidnightToTime(
+        $value, $policy->{detail} eq 'end_of_day')
+        if $formatter eq 'clock';
+    if ($formatter eq 'enum') {
+        return $value if $policy->{detail} eq 'none';
+        my $map = $WATTPILOT_STATUS_ENUM_MAP{$policy->{detail}};
+        die "Missing enum map for Wattpilot reading $reading_key" if !$map;
+        my $normalized = int($value);
+        return $map->{$normalized} // 'unknown:' . $normalized;
+    }
     return Wattpilot_FormatDecimal($value, 2) if $formatter eq 'decimal2';
-    return Wattpilot_FormatDecimal($value, 1) if $formatter eq 'decimal1';
     if ($formatter eq 'diagnostic2') {
         return $value ? 1 : 0 if Wattpilot_IsJsonBoolean($value);
         return Wattpilot_FormatDecimal($value, 2)
@@ -1491,27 +1515,7 @@ sub Wattpilot_FormatReadingValue($$) {
         my $minutes = int(($seconds % 3600) / 60);
         return sprintf('%d:%02d', $hours, $minutes);
     }
-    return $value;
-}
-
-sub Wattpilot_StatusReadingValue($$) {
-    my ($reading_key, $value) = @_;
-    my $policy = $WATTPILOT_READING_POLICY{$reading_key};
-    my $formatter = $policy->{formatter} // '';
-
-    return int($value) if $formatter eq 'integer';
-    return $value ? 1 : 0 if $formatter eq 'boolean';
-    return Wattpilot_MillisecondsToSeconds($value) if $formatter eq 'seconds';
-    return Wattpilot_SecondsSinceMidnightToTime(
-        $value, $policy->{detail} eq 'end_of_day')
-        if $formatter eq 'clock';
-    if ($formatter eq 'enum') {
-        my $map = $WATTPILOT_STATUS_ENUM_MAP{$policy->{detail}};
-        die "Missing enum map for Wattpilot reading $reading_key" if !$map;
-        my $normalized = int($value);
-        return $map->{$normalized} // 'unknown:' . $normalized;
-    }
-    return $value;
+    die "Unknown Wattpilot reading formatter: $formatter";
 }
 
 sub Wattpilot_PublishReading($$$) {
@@ -1541,11 +1545,9 @@ sub Wattpilot_UpdateImmediateReadings($$) {
     for my $field (@WATTPILOT_IMMEDIATE_STATUS_READING) {
         my ($protocol_key, $reading_key) = @$field;
         next if !defined $status->{$protocol_key};
-        my $value = Wattpilot_StatusReadingValue(
-            $reading_key, $status->{$protocol_key});
         Wattpilot_PublishReading(
-            $hash, $WATTPILOT_READING_NAME{$reading_key}, $value)
-            if defined $value;
+            $hash, $WATTPILOT_READING_NAME{$reading_key},
+            $status->{$protocol_key});
     }
 }
 
@@ -1633,16 +1635,15 @@ sub Wattpilot_CacheTelemetry($$) {
         Wattpilot_CacheEnergyTelemetry($hash, $energy, $key);
     }
 
-    Wattpilot_CacheScalarTelemetryGroup(
-        $hash, $status, $WATTPILOT_DEVICE_HEALTH_OWNER,
-        \@WATTPILOT_DEVICE_HEALTH_TELEMETRY);
-    Wattpilot_CacheScalarTelemetryGroup(
-        $hash, $status, $WATTPILOT_DEVICE_UPTIME_OWNER,
-        \@WATTPILOT_DEVICE_UPTIME_TELEMETRY);
-    Wattpilot_CacheScalarTelemetryGroup(
-        $hash, $status, $WATTPILOT_DIAGNOSTIC_OWNER,
-        \@WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY)
-        if Wattpilot_DiagnosticReadingsEnabled($hash);
+    for my $owner (@WATTPILOT_TELEMETRY_OWNER_ORDER) {
+        next if $owner eq $WATTPILOT_ENERGY_OWNER;
+        next if $owner eq $WATTPILOT_NRG_OWNER;
+        next if $owner eq $WATTPILOT_DIAGNOSTIC_OWNER
+            && !Wattpilot_DiagnosticReadingsEnabled($hash);
+        my $fields = $WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$owner};
+        Wattpilot_CacheScalarTelemetryGroup(
+            $hash, $status, $owner, $fields);
+    }
 }
 
 sub Wattpilot_ClearOptionalDiagnosticCache($) {
@@ -1808,52 +1809,24 @@ sub Wattpilot_FlushTelemetryOwners($$;$) {
     my %wanted = map { $_ => 1 } @$owners;
     my $updated = 0;
 
-    if ($wanted{$WATTPILOT_ENERGY_OWNER}
-        && Wattpilot_TelemetryOwnerEligible($hash, $WATTPILOT_ENERGY_OWNER)) {
-        Wattpilot_UpdateEnergyReadings(
-            $hash, Wattpilot_TelemetryGroupState($hash, $WATTPILOT_ENERGY_OWNER));
-        $updated = 1;
-    }
+    for my $owner (@WATTPILOT_TELEMETRY_OWNER_ORDER) {
+        next if !$wanted{$owner};
+        next if $owner eq $WATTPILOT_DIAGNOSTIC_OWNER
+            && !Wattpilot_DiagnosticReadingsEnabled($hash);
+        my $bypass = $owner eq $WATTPILOT_NRG_OWNER ? $nrg_bypass : 0;
+        next if !Wattpilot_TelemetryOwnerEligible($hash, $owner, $bypass);
 
-    if ($wanted{$WATTPILOT_NRG_OWNER}
-        && Wattpilot_TelemetryOwnerEligible(
-            $hash, $WATTPILOT_NRG_OWNER, $nrg_bypass)) {
-        Wattpilot_UpdateNrgReadings(
-            $hash, Wattpilot_TelemetryGroupState($hash, $WATTPILOT_NRG_OWNER));
-        $updated = 1;
-    }
-
-    if ($wanted{$WATTPILOT_DEVICE_HEALTH_OWNER}
-        && Wattpilot_TelemetryOwnerEligible(
-            $hash, $WATTPILOT_DEVICE_HEALTH_OWNER)) {
-        Wattpilot_UpdateScalarTelemetryReadings(
-            $hash,
-            Wattpilot_TelemetryGroupState(
-                $hash, $WATTPILOT_DEVICE_HEALTH_OWNER),
-            \@WATTPILOT_DEVICE_HEALTH_TELEMETRY);
-        $updated = 1;
-    }
-
-    if ($wanted{$WATTPILOT_DEVICE_UPTIME_OWNER}
-        && Wattpilot_TelemetryOwnerEligible(
-            $hash, $WATTPILOT_DEVICE_UPTIME_OWNER)) {
-        Wattpilot_UpdateScalarTelemetryReadings(
-            $hash,
-            Wattpilot_TelemetryGroupState(
-                $hash, $WATTPILOT_DEVICE_UPTIME_OWNER),
-            \@WATTPILOT_DEVICE_UPTIME_TELEMETRY);
-        $updated = 1;
-    }
-
-    if ($wanted{$WATTPILOT_DIAGNOSTIC_OWNER}
-        && Wattpilot_DiagnosticReadingsEnabled($hash)
-        && Wattpilot_TelemetryOwnerEligible(
-            $hash, $WATTPILOT_DIAGNOSTIC_OWNER)) {
-        Wattpilot_UpdateScalarTelemetryReadings(
-            $hash,
-            Wattpilot_TelemetryGroupState(
-                $hash, $WATTPILOT_DIAGNOSTIC_OWNER),
-            \@WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY);
+        my $state = Wattpilot_TelemetryGroupState($hash, $owner);
+        if ($owner eq $WATTPILOT_ENERGY_OWNER) {
+            Wattpilot_UpdateEnergyReadings($hash, $state);
+        }
+        elsif ($owner eq $WATTPILOT_NRG_OWNER) {
+            Wattpilot_UpdateNrgReadings($hash, $state);
+        }
+        else {
+            my $fields = $WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$owner};
+            Wattpilot_UpdateScalarTelemetryReadings($hash, $state, $fields);
+        }
         $updated = 1;
     }
 
@@ -1862,25 +1835,20 @@ sub Wattpilot_FlushTelemetryOwners($$;$) {
 
 sub Wattpilot_FlushAllTelemetry($;$) {
     my ($hash, $nrg_bypass) = @_;
-    return Wattpilot_FlushTelemetryOwners($hash, [
-        $WATTPILOT_ENERGY_OWNER,
-        $WATTPILOT_NRG_OWNER,
-        $WATTPILOT_DEVICE_HEALTH_OWNER,
-        $WATTPILOT_DEVICE_UPTIME_OWNER,
-        $WATTPILOT_DIAGNOSTIC_OWNER,
-    ], $nrg_bypass);
+    return Wattpilot_FlushTelemetryOwners(
+        $hash, \@WATTPILOT_TELEMETRY_OWNER_ORDER, $nrg_bypass);
 }
 
 sub Wattpilot_HasTelemetryInput($) {
     my ($status) = @_;
     return 1 if Wattpilot_HasValidNrg($status);
     return 1 if Wattpilot_HasEnergyTelemetry($status);
-    return 1 if Wattpilot_HasScalarTelemetry(
-        $status, \@WATTPILOT_DEVICE_HEALTH_TELEMETRY);
-    return 1 if Wattpilot_HasScalarTelemetry(
-        $status, \@WATTPILOT_DEVICE_UPTIME_TELEMETRY);
-    return 1 if Wattpilot_HasScalarTelemetry(
-        $status, \@WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY);
+    for my $owner (@WATTPILOT_TELEMETRY_OWNER_ORDER) {
+        next if $owner eq $WATTPILOT_ENERGY_OWNER;
+        next if $owner eq $WATTPILOT_NRG_OWNER;
+        my $fields = $WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$owner};
+        return 1 if Wattpilot_HasScalarTelemetry($status, $fields);
+    }
     return 0;
 }
 

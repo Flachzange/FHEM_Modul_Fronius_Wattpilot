@@ -268,14 +268,17 @@ for my $reading_key (sort keys %$reading_policy) {
             ? (86400, '24:00')
             : (3600, '01:00');
     }
+    elsif ($policy->{formatter} eq 'decimal2') {
+        ($sample, $expected) = (12.5, '12.50');
+    }
     else {
         ($sample, $expected) = (12.5, 12.5);
     }
     $actual_formatter{$reading_key} =
-        main::Wattpilot_StatusReadingValue($reading_key, $sample);
+        main::Wattpilot_FormatReadingValue($reading_key, $sample);
     $expected_formatter{$reading_key} = $expected;
 }
 is_deeply(\%actual_formatter, \%expected_formatter,
-    'every immediate status reading executes its schema-defined formatter');
+    'every immediate status reading executes the central schema-defined formatter');
 
 done_testing;

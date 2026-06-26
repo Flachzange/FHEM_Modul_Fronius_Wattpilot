@@ -103,8 +103,11 @@ Incoming status data is copied and normalized once by
 `Wattpilot_NormalizeStatus`. The authoritative reading inventory records each
 consumed status source together with its exact JSON validator, public formatter,
 publication policy, idle gate, and cache owner. `%WATTPILOT_STATUS_SCHEMA` and
-the immediate-publication list are derived from that inventory at module load;
-there is no second hand-maintained field/type table. Multiple public readings
+the immediate-publication list, scalar interval mappings, and ordinary
+scalar-owner order are derived from that inventory at module load; there is no
+second hand-maintained field/type or scalar-telemetry table. Energy scaling and the
+indexed `nrg` array remain explicit strategies because their cache and dirty
+semantics differ from ordinary scalar fields. Multiple public readings
 may intentionally share one protocol field, as with the charging-decision code
 and text pairs, and conflicting validators fail immediately during module load.
 Numeric strings and numeric/string boolean surrogates are rejected. Invalid
@@ -113,8 +116,10 @@ caller's structure is never mutated. Clock fields share range and whole-minute
 validation before formatting. Measured and calculated physical values use one
 small decimal helper with exactly two places and positive zero after rounding;
 explicit percentage, integer, clock, duration, enum, and text exceptions remain
-visible in the same inventory. Formatting never changes validated protocol
-values or setter payload types.
+visible in the same inventory. One central formatter handles immediate and
+interval status publication. CI validates every formatter classification, and
+unknown formatters cannot silently fall through at runtime. Formatting never
+changes validated protocol values or setter payload types.
 
 `Wattpilot_UpdateReadings` first applies validated internal control state. In
 particular, `car` updates `car_state` immediately before charging/idle gating,

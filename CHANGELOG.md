@@ -9,6 +9,7 @@
 - Adds boolean attribute `diagnosticReadings:0,1` with effective default `0`. Enabling it exposes fourteen exact `diag_`-prefixed raw scalar fields for real-device investigation, including `diag_fbuf_akkuSOC` and `diag_fbuf_pAkku` in place of the former standalone stationary-battery SOC/power readings; JSON numbers are rounded to exactly two decimal places without scaling, strings remain unchanged, and JSON booleans become `0|1`; no semantic interpretation is added.
 - Setting `diagnosticReadings=0` or deleting the attribute immediately removes all optional diagnostic readings and clears their cache/dirty state. Optional diagnostics share the normal interval and charging/`update_while_idle` gate.
 - Expands the authoritative reading inventory from 53 to 73 public readings and the consumed scalar status schema from 36 to 55 fields, with complete documentation and regression coverage.
+- Derives scalar interval mappings and ordinary scalar-owner order from that same reading inventory, removes the parallel device-health/uptime/diagnostic field tables, and uses one strict formatter dispatcher for immediate and interval status readings. Unknown formatter classifications now fail explicitly instead of silently passing values through; public names, values, cadence, and protocol behavior are unchanged.
 
 ## [v2.1.6] - 2026-06-26
 

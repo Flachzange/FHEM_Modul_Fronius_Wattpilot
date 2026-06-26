@@ -80,10 +80,6 @@ subtest 'reading inventory declares one intentional public format per reading' =
         )],
         'all optional diagnostics use scalar-aware two-decimal formatting');
     is_deeply(
-        [sort grep { $policy->{$_}{formatter} eq 'decimal1' } keys %$policy],
-        [],
-        'no current public reading uses the legacy one-decimal formatter');
-    is_deeply(
         [sort grep { $policy->{$_}{formatter} eq 'hours_minutes_ms' } keys %$policy],
         ['device_uptime'],
         'uptime is the explicit millisecond-to-hours-and-minutes formatter');
@@ -92,6 +88,15 @@ subtest 'reading inventory declares one intentional public format per reading' =
             || $policy->{$_}{formatter} eq ''
         } keys %$policy), 0,
         'every public reading has an intentional formatter classification');
+    my %known_formatter = map { $_ => 1 } qw(
+        lifecycle text integer boolean seconds clock enum percentage
+        decimal2 diagnostic2 hours_minutes_ms
+    );
+    is_deeply(
+        [sort grep { !$known_formatter{$policy->{$_}{formatter}} }
+            keys %$policy],
+        [],
+        'every declared formatter belongs to the supported central set');
 };
 
 subtest 'decimal formatter retains trailing zeroes and removes rounded negative zero' => sub {
@@ -123,6 +128,15 @@ subtest 'decimal formatter retains trailing zeroes and removes rounded negative 
             'diag_fbuf_ohmpilot_state', JSON::true()),
         1,
         'diagnostic booleans remain zero-or-one values');
+    is(main::Wattpilot_FormatReadingValue('auth_hash_mode', 'pbkdf2'),
+        'pbkdf2',
+        'event-sourced enum text also uses the central formatter safely');
+    my $unknown_error = eval {
+        main::Wattpilot_FormatReadingValue('not_a_public_reading', 1);
+        '';
+    };
+    like($@, qr/Unknown Wattpilot reading key/,
+        'unknown reading keys cannot silently bypass central formatting');
 };
 
 subtest 'fullStatus formats physical readings without changing discrete settings' => sub {
