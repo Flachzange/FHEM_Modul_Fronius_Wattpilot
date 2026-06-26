@@ -68,6 +68,10 @@ ok(index($registration{AttrList}, 'debug') < 0,
     'removed no-op debug attribute is absent from AttrList');
 ok(index($registration{AttrList}, 'defaultAmp') < 0,
     'removed no-op defaultAmp attribute is absent from AttrList');
+like($registration{AttrList}, qr/(?:^|\s)interval(?:\s|$)/,
+    'interval is registered as a free-value attribute');
+unlike($registration{AttrList}, qr/interval:slider/,
+    'interval no longer registers a FHEMWEB slider');
 
 my %valid_existing_value = (
     interval          => '30',

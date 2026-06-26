@@ -128,11 +128,11 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `fam` | `configPvBatteryChargeAboveSoC`; grouped Set `pvBattery chargeAboveSoC`; app `Charge above` | The reader accepts finite 0–100 values; the setter sends whole 0–100 integers. The exact app/status pair was 60/60 on one Flex 43.4. | R/W verified on one Flex 43.4; rejection/persistence/broader scope unverified | simultaneous Solar.wattpilot app and `fullStatus` evidence plus maintainer write/readback/restore test; historical `pvBatteryLimit` alias is secondary |
 | `fap` | `configChargingPauseAllowed` / Set `chargingPauseAllowed`; historical `froniusAllowPause` | The module exposes the JSON boolean as `0`/`1` and provides a secured setter for the documented Allow charging pause behavior. | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | observed Flex boolean plus official Fronius behavior documentation and pinned API/Wattpilot R/W evidence |
 | `fbuf_age` | `fbufAge` | Age of Fronius inverter buffer data | unknown | historical candidate |
-| `fbuf_akkuMode` | `pvBatteryModeCode` / historical `akkuMode` | The observed non-negative integer is preserved unchanged. No text enum is claimed. Version 2.1.1 publishes it immediately only when the public value changes; it is not battery telemetry and is not idle-gated. | R compatibility implementation; no setter | sanitized Flex 43.4 field/type/value plus pinned Wattpilot-specific alias; publication policy is module behavior, not protocol semantics |
-| `fbuf_akkuSOC` | `pvBatterySoC` / historical `akkuSoc` | The stationary PV-battery state of charge is accepted from 0 through 100 percent and formatted with exactly one decimal place. Version 2.1.1 uses a separate battery cache/dirty owner, the shared telemetry clock, and the battery idle gate for all status-envelope paths. | R compatibility implementation; no setter | sanitized Flex 43.4 field/type/value plus pinned Wattpilot-specific meaning; one observation does not establish broader firmware scope |
-| `fbuf_pAkku` | `pvBatteryPower` / historical `powerAkku` | The signed finite value is exposed in W with two decimal places. No charge/discharge direction is assigned without controlled Flex confirmation. Version 2.1.1 uses a separate battery cache/dirty owner, the shared telemetry clock, and the battery idle gate; other telemetry owners cannot renew its timestamp. | R compatibility implementation; no setter | sanitized Flex 43.4 field/type/value plus pinned Wattpilot-specific power/W candidate; sign semantics remain unconfirmed |
-| `fbuf_pGrid` | `powerGrid` | Grid power; historical sign convention says negative means feed-in | unknown | historical candidate |
-| `fbuf_pPv` | `powerPv` | PV production power candidate | unknown | historical candidate |
+| `fbuf_akkuMode` | `diag_fbuf_akkuMode` / historical `pvBatteryModeCode`, `akkuMode` | Optional raw scalar behind `diagnosticReadings=1`. Numeric values are formatted to two decimal places; no text enum, meaning, or unit is claimed. It follows the shared diagnostic interval and charging/`update_while_idle` gate. | R diagnostic implementation; no setter | sanitized Flex 43.4 field/type/value plus pinned Wattpilot-specific alias; publication policy is module behavior, not protocol semantics |
+| `fbuf_akkuSOC` | `diag_fbuf_akkuSOC`; historical stationary-battery SOC alias | Optional raw scalar diagnostic with `diagnosticReadings=1`; no percentage range, unit, or scaling is applied; numeric values are formatted to exactly two decimal places. | R diagnostic mapping; no setter | sanitized Flex 43.4 field/type/value plus pinned Wattpilot-specific SOC candidate; current raw interface deliberately does not promote that candidate to a unit claim |
+| `fbuf_pAkku` | `diag_fbuf_pAkku`; historical stationary-battery power alias | Optional raw scalar diagnostic with `diagnosticReadings=1`; no unit, scaling, or sign interpretation is applied; numeric values are formatted to exactly two decimal places. It remains distinct from `pvopt_averagePAkku`; their exact relationship and aggregation are unknown. | R diagnostic mapping; no setter | sanitized Flex 43.4 field/type/value plus pinned Wattpilot-specific power candidate; unit/sign/relationship remain unconfirmed |
+| `fbuf_pGrid` | `diag_fbuf_pGrid`; historical `powerGrid` | Raw optional diagnostic only. Historical grid-power/sign candidate is not promoted to fact. | R only when diagnostics enabled | observed number plus historical candidate |
+| `fbuf_pPv` | `diag_fbuf_pPv`; historical `powerPv` | Raw optional diagnostic only. Historical PV-power candidate is not promoted to fact. | R only when diagnostics enabled | observed number plus historical candidate |
 | `frm` | `configPvControlPreference` / Set `pvControlPreference`; historical `roundingMode` | The module maps `0 preferFromGrid`, `1 default`, `2 preferToGrid`; unknown numeric values remain explicit. | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | observed Flex number plus official Fronius control-behavior labels and pinned API/Wattpilot enum/R/W evidence |
 | `fst` | `configPvSurplusStartPower` / Set `pvSurplusStartPower`; historical `startingPower` | The module exposes a non-negative finite start-power value in W with exactly two public decimal places and provides a secured setter. | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | observed Flex value, official Fronius behavior documentation, pinned official go-e metadata, pinned Wattpilot-specific evidence, and maintainer live test; not official Fronius Flex WebSocket documentation |
 | `fte` | `froniusTripEnergy` | Minimum next-trip energy, candidate unit Wh | R/W | historical candidate |
@@ -150,13 +150,13 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `pdlo` | `configPvBatteryDischargeStopTime`; grouped Set `pvBattery dischargeStopTime`; app `End` | Whole seconds after midnight rendered as `HH:MM`; the setter converts strict `00:00`–`23:59` and the boundary `24:00` to seconds. Observed `72000` = `20:00`. | R/W verified on one Flex 43.4; rejection/persistence/broader scope unverified | simultaneous app/status evidence plus maintainer write/readback/restore test on one Flex 43.4 |
 | `po` | `prioOffset` | Priority offset, candidate unit W | R/W | historical candidate |
 | `psh` | `phaseSwitchHysteresis` | Phase-switch hysteresis, candidate unit W | R/W | historical candidate |
-| `pvopt_averagePAkku` | `averagePAkku` | Average battery power candidate | R | historical candidate |
-| `pvopt_averagePGrid` | `averagePGrid` | Average grid power candidate | R | historical candidate |
-| `pvopt_averagePOhmpilot` | `avgPowerOhmpilot` | Average Ohmpilot power candidate | R | historical candidate |
-| `pvopt_averagePPv` | `averagePPv` | Average PV power candidate | R | historical candidate |
-| `pvopt_deltaA` | `deltaCurrent` | PV-control current difference candidate | R | historical candidate |
-| `pvopt_deltaP` | `deltaPower` | PV-control power difference candidate | R | historical candidate |
-| `pvopt_specialCase` | `pvOptSpecialCase` | PV-optimization special-case code candidate | R | historical candidate |
+| `pvopt_averagePAkku` | `diag_pvopt_averagePAkku`; historical `averagePAkku` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
+| `pvopt_averagePGrid` | `diag_pvopt_averagePGrid`; historical `averagePGrid` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
+| `pvopt_averagePOhmpilot` | `diag_pvopt_averagePOhmpilot`; historical `avgPowerOhmpilot` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
+| `pvopt_averagePPv` | `diag_pvopt_averagePPv`; historical `averagePPv` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
+| `pvopt_deltaA` | `diag_pvopt_deltaA`; historical `deltaCurrent` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
+| `pvopt_deltaP` | `diag_pvopt_deltaP`; historical `deltaPower` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
+| `pvopt_specialCase` | `diag_pvopt_specialCase`; historical `pvOptSpecialCase` | Raw optional diagnostic; historical meaning candidate remains unconfirmed | R only when diagnostics enabled | observed number plus historical candidate |
 | `sh` | `stopHysteresis` | Stop hysteresis, candidate unit W | R/W | historical candidate |
 | `spl3` | `configThreePhaseSwitchPower` / Set `phaseSwitch threePhasePower`; historical `threePhaseSwitchLevel` | The module exposes a non-negative finite value in W with exactly two public decimal places and provides a secured setter for the documented 3-phase power level. | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | observed Flex number plus official Fronius behavior documentation and pinned API/Wattpilot R/W/W-unit evidence |
 | `zfo` | `zeroFeedinOffset` | Zero-feed-in offset, candidate unit W | R/W | historical candidate |
@@ -205,16 +205,16 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `onv` | `otaNewestVersion` | Newest available OTA version candidate | R | historical candidate |
 | `sbe` | `secureBootEnabled` | Secure boot active candidate | R | historical candidate |
 | `sse` | `serialNumber` | Device serial-number field; treat as sensitive identifier | R | historical candidate |
-| `typ` | `deviceType` | Device-type string candidate | R | historical candidate |
-| `var` | `variant` | Candidate hardware power class: `11` for 11 kW/16 A, `22` for 22 kW/32 A | R | historical candidate |
+| `typ` | `deviceType` | Exact observed device-type identity string; no mapping | R | observed Flex field/type/value |
+| `var` | `deviceVariant`; historical `variant` | Raw observed non-negative integer; hardware-class interpretation unconfirmed | R | observed Flex field/type/value plus historical candidate |
 
 ## Time and diagnostic fields
 
 | Key | Alias / readable name | Meaning, unit, or enum candidate | R/W candidate | Evidence |
 |---|---|---|---|---|
 | `loc` | `localTime` | Local device time candidate | R | historical candidate |
-| `rbc` | `rebootCounter` | Device reboot count candidate | R | historical candidate |
-| `rbt` | `timeSinceBoot` | Time since boot, candidate unit ms | R | historical candidate |
+| `rbc` | `deviceRebootCount`; historical `rebootCounter` | Raw non-negative integer; exact meaning unconfirmed | R | observed field/type/value plus historical candidate |
+| `rbt` | `uptime`; historical `timeSinceBoot` | Non-negative value empirically treated as milliseconds on the maintainer Flex test, divided by 1,000, and rendered as cumulative `H:MM`; remaining seconds and milliseconds discarded | R | sanitized field/type/value plus maintainer live-device time progression; not an official specification and broader scope unverified |
 | `rr` | `espResetReason` | ESP reset-reason enum candidate | R | historical candidate |
 | `tds` | `timezoneDaylightSavingMode` | Candidate enum: `None=0`, `EuropeanSummerTime=1`, `UsDaylightTime=2` | R/W | historical candidate |
 | `tma` | `temperatureSensors` | Temperature-sensor array candidate; element mapping and unit remain unverified | R | historical candidate plus observed array shape |
@@ -238,3 +238,14 @@ Their observed key presence and JSON shape remain available in the sanitized emp
 This catalog provides readable candidates for the operational fields that were useful in the former compilation. The empirical Flex document contains 558 direct status keys, so many observed fields still have no accepted meaning. Those remain `unknown` by design.
 
 A future description change should update the applicable empirical field row or add a source/conflict note. Never silently promote a historical alias, go-e statement, current implementation, or third-party behavior to an official Fronius Flex guarantee.
+
+## Version 2.1.7 raw identity and field-research mappings
+
+| Key | Public reading | Confirmed implementation boundary | Evidence |
+|---|---|---|---|
+| `grp` | `deviceModel` | Exact non-empty device string; no model mapping | observed Flex field/type/value |
+| `styp` | `deviceSubType` | Exact non-empty device string; no subtype interpretation | observed Flex field/type/value |
+| `proto` | `statusProtocol` | Raw non-negative integer, separate from `helloProtocol` | observed Flex status plus separate hello observation |
+| `fbuf_pAcTotal` | `diag_fbuf_pAcTotal` | Optional raw scalar only; observed value is `null` | observed field/null only |
+| `fbuf_ohmpilotState` | `diag_fbuf_ohmpilotState` | Optional raw scalar only; observed value is `null` | observed field/null only |
+| `fbuf_ohmpilotTemperature` | `diag_fbuf_ohmpilotTemperature` | Optional raw scalar only; observed value is `null` | observed field/null only |

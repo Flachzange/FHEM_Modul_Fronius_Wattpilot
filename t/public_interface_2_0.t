@@ -29,15 +29,19 @@ sub fresh_device {
 }
 
 my @public_readings = qw(
-    state firmwareVersion authHashMode carState configForceState configChargingCurrent
+    state firmwareVersion deviceType deviceModel deviceSubType deviceVariant helloProtocol statusProtocol authHashMode carState configForceState configChargingCurrent
     configChargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
     temperatureCurrentLimit configMinimumChargingCurrent configPvSurplusStartPower
     configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
-    configMinimumChargingInterval pvBatterySoC pvBatteryPower
-    pvBatteryModeCode configPvBatteryChargeAboveSoC
+    configMinimumChargingInterval deviceRebootCount uptime
+    diag_fbuf_akkuMode diag_fbuf_akkuSOC diag_fbuf_pAkku diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
+    diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
+    diag_pvopt_deltaA diag_pvopt_specialCase diag_fbuf_pAcTotal
+    diag_fbuf_ohmpilotState diag_fbuf_ohmpilotTemperature
+    configPvBatteryChargeAboveSoC
     configPvBatteryDischargeEnabled configPvBatteryDischargeUntilSoC
     configPvBatteryDischargeTimeLimitEnabled configPvBatteryDischargeStartTime
     configPvBatteryDischargeStopTime configNextTripTime
@@ -54,6 +58,7 @@ my @old_readings = qw(
 
 my $hash = fresh_device();
 $attr{$hash->{NAME}}{update_while_idle} = 1;
+$attr{$hash->{NAME}}{diagnosticReadings} = 1;
 main::readingsSingleUpdate($hash, 'state', 'connected', 1);
 main::Wattpilot_DispatchMessage($hash, {
     type => 'hello',
@@ -63,6 +68,11 @@ main::Wattpilot_DispatchMessage($hash, {
 });
 main::readingsSingleUpdate($hash, 'authHashMode', 'pbkdf2', 1);
 main::Wattpilot_UpdateReadings($hash, {
+    typ => 'wattpilot_flex',
+    grp => 'Wattpilot Flex Home 22 C6',
+    styp => 'wattpilot_flex_c6',
+    var => 22,
+    proto => 4,
     car => 3,
     frc => 0,
     amp => 16,
@@ -89,6 +99,20 @@ main::Wattpilot_UpdateReadings($hash, {
     fbuf_akkuSOC => 60,
     fbuf_pAkku => -1525,
     fbuf_akkuMode => 1,
+    rbc => 104,
+    rbt => 62068619,
+    fbuf_pGrid => 125,
+    fbuf_pPv => 1650,
+    pvopt_averagePGrid => 1,
+    pvopt_averagePPv => 2,
+    pvopt_averagePAkku => 3,
+    pvopt_averagePOhmpilot => 4,
+    pvopt_deltaP => 5,
+    pvopt_deltaA => 6,
+    pvopt_specialCase => 7,
+    fbuf_pAcTotal => 8,
+    fbuf_ohmpilotState => 9,
+    fbuf_ohmpilotTemperature => 10,
     fam => 60,
     pdte => JSON::false(),
     pdt => 57,
@@ -103,7 +127,7 @@ main::Wattpilot_UpdateReadings($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 53 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 73 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

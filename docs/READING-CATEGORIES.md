@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.6 retains the authoritative publication policy for every public
+Version 2.1.7 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -24,19 +24,22 @@ Publication policies:
   change, or deletion to the effective default zero, also flushes every currently
   eligible queued owner in one reading transaction after cancelling the old clock.
 
-The data owners `energy`, `nrg`, and `battery` keep separate caches and dirty
-fields but share one flush timer and one FHEM reading transaction. Input from
-one owner neither publishes cached values nor changes dirty state for another.
-The `electrical` and `battery` ordinary-idle gates are controlled by
-`update_while_idle`. The bounded one-shot Charging-to-Idle `nrg` refresh applies
-with both attribute values; changing the attribute during that episode neither
-duplicates nor cancels it. Energy has no artificial idle gate, but it becomes dirty
-only when its formatted public value differs from the published reading;
-identical snapshots therefore renew neither timestamps nor events. Missing,
-`null`, wrong-type, malformed, out-of-range, or incomplete input preserves the
-previous reading and does not move the shared clock.
+The five data owners `energy`, `nrg`, `device_health`, `device_uptime`, and
+`diagnostic` keep separate caches and dirty fields but share one flush timer and
+one FHEM reading transaction. Input from one owner neither publishes cached
+values nor changes dirty state for another. The `electrical`, `device`, and
+`diagnostic` ordinary-idle gates are controlled by `update_while_idle`: those
+owners are eligible while the vehicle is charging or while the attribute is
+enabled. `device_health` and `energy` have no artificial
+idle gate. The bounded one-shot Charging-to-Idle `nrg` refresh applies with both
+attribute values; changing the attribute during that episode neither duplicates
+nor cancels it. Energy becomes dirty only when its formatted public value differs
+from the published reading; identical snapshots therefore renew neither
+timestamps nor events. Missing, `null`, wrong-type, malformed, out-of-range, or
+incomplete input preserves the previous reading and does not move the shared
+clock.
 
-Public measured and calculated physical values use `decimal2`, retaining trailing zeroes and normalizing rounded negative zero to positive zero. Explicit exceptions remain visible in the same inventory: `pvBatterySoC` uses `decimal1`; booleans, integer codes and intentionally integral settings use `boolean` or `integer`; percentages use `percentage`; clocks and durations use `clock` or `seconds`; text and enums retain their documented form. Validation always precedes formatting.
+Public measured and calculated physical values use `decimal2`, retaining trailing zeroes and normalizing rounded negative zero to positive zero. Explicit exceptions remain visible in the same inventory: booleans, integer codes and intentionally integral settings use `boolean` or `integer`; percentages use `percentage`; clocks and durations use `clock`, `seconds`, or `hours_minutes_ms`; text and enums retain their documented form. `uptime` converts a non-negative `rbt` millisecond value into cumulative `H:MM`, discarding remaining seconds and milliseconds. Optional `diag_...` readings use `diagnostic2`: validated JSON numbers are formatted with exactly two decimal places and rounded negative zero is normalized, strings remain unchanged, and JSON booleans become `0|1`. No scaling or semantic interpretation is applied. Validation always precedes formatting.
 
 There are no compatibility aliases, duplicate old/new readings, automatic
 reading migration, or DbLog migration. Existing automations and history
@@ -45,7 +48,13 @@ queries must be adapted explicitly.
 | Internal key | Public reading | Category | Source | Publication | Idle gate | Owner | Formatter | Invalid input | Reason |
 |---|---|---|---|---|---|---|---|---|---|
 | `state` | `state` | `lifecycle` | `event:connection` | `immediate` | `none` | `connection` | `lifecycle` | `preserve` | Module connection/authentication lifecycle. |
-| `firmware_version` | `firmwareVersion` | `identity` | `event:hello` | `immediate` | `none` | `identity` | `text` | `preserve` | Device firmware identity, not a user setting. |
+| `firmware_version` | `firmwareVersion` | `identity` | `event:hello` | `immediate-on-change` | `none` | `identity` | `text` | `preserve` | Device firmware identity; identical reconnect values do not renew the reading. |
+| `device_type` | `deviceType` | `identity` | `status:typ` | `immediate-on-change` | `none` | `typ` | `text` | `preserve` | Exact status-level device-type identifier. |
+| `device_model` | `deviceModel` | `identity` | `status:grp` | `immediate-on-change` | `none` | `grp` | `text` | `preserve` | Exact device-reported model/group string; no model mapping is invented. |
+| `device_sub_type` | `deviceSubType` | `identity` | `status:styp` | `immediate-on-change` | `none` | `styp` | `text` | `preserve` | Exact status-level subtype identifier. |
+| `device_variant` | `deviceVariant` | `identity` | `status:var` | `immediate-on-change` | `none` | `var` | `integer` | `preserve` | Exact non-negative status-level variant number. |
+| `hello_protocol` | `helloProtocol` | `identity` | `event:hello` | `immediate-on-change` | `none` | `hello_protocol` | `integer` | `preserve` | Raw `hello.protocol`; deliberately separate from `statusProtocol`. |
+| `status_protocol` | `statusProtocol` | `identity` | `status:proto` | `immediate-on-change` | `none` | `proto` | `integer` | `preserve` | Raw `status.proto`; no relationship to `helloProtocol` is assumed. |
 | `auth_hash_mode` | `authHashMode` | `diagnostic` | `event:authentication` | `immediate` | `none` | `authentication` | `enum` | `preserve` | Effective authentication method selected for the current session. |
 | `car_state` | `carState` | `status` | `status:car` | `immediate-on-change` | `none` | `car` | `enum` | `preserve` | Current vehicle/charging-port state. |
 | `force_state` | `configForceState` | `configuration` | `status:frc` | `immediate` | `none` | `frc` | `enum` | `preserve` | User-selectable force-state setting; Set command remains `forceState`. |
@@ -72,9 +81,23 @@ queries must be adapted explicitly.
 | `charging_pause_allowed` | `configChargingPauseAllowed` | `configuration` | `status:fap` | `immediate` | `none` | `fap` | `boolean` | `preserve` | Charging-pause setting; Set command remains `chargingPauseAllowed`. |
 | `minimum_charging_pause_duration` | `configMinimumChargingPauseDuration` | `configuration` | `status:mcpd` | `immediate` | `none` | `mcpd` | `seconds` | `preserve` | Minimum charging-pause duration; writable through `minimumCharging pauseDuration`. |
 | `minimum_charging_interval` | `configMinimumChargingInterval` | `configuration` | `status:mci` | `immediate` | `none` | `mci` | `seconds` | `preserve` | Forced/minimum charging interval; writable through `minimumCharging interval`. |
-| `pv_battery_soc` | `pvBatterySoC` | `telemetry` | `status:fbuf_akkuSOC` | `interval` | `battery` | `battery` | `decimal1` | `preserve` | Current stationary PV-battery SOC. |
-| `pv_battery_power` | `pvBatteryPower` | `telemetry` | `status:fbuf_pAkku` | `interval` | `battery` | `battery` | `decimal2` | `preserve` | Current stationary PV-battery power. |
-| `pv_battery_mode_code` | `pvBatteryModeCode` | `status` | `status:fbuf_akkuMode` | `immediate-on-change` | `none` | `fbuf_akkuMode` | `integer` | `preserve` | Current raw stationary-battery mode code. |
+| `diag_fbuf_akku_mode` | `diag_fbuf_akkuMode` | `optional_diagnostic` | `status:fbuf_akkuMode` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw stationary-battery mode field. |
+| `device_reboot_count` | `deviceRebootCount` | `device_health` | `status:rbc` | `interval` | `none` | `device_health` | `integer` | `preserve` | Raw non-negative `rbc` value on the shared interval; exact protocol semantics remain unverified. |
+| `device_uptime` | `uptime` | `device_health` | `status:rbt` | `interval` | `device` | `device_uptime` | `hours_minutes_ms` | `preserve` | Non-negative `rbt` interpreted as milliseconds from the maintainer live observation, divided by 1,000, and rendered as cumulative `H:MM`; remaining seconds and milliseconds are discarded. |
+| `diag_fbuf_akku_soc` | `diag_fbuf_akkuSOC` | `optional_diagnostic` | `status:fbuf_akkuSOC` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field-research value; no percentage range, unit, or scaling is imposed. |
+| `diag_fbuf_p_akku` | `diag_fbuf_pAkku` | `optional_diagnostic` | `status:fbuf_pAkku` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field-research value; distinction from `pvopt_averagePAkku`, aggregation, unit, and sign remain unconfirmed. |
+| `diag_fbuf_p_grid` | `diag_fbuf_pGrid` | `optional_diagnostic` | `status:fbuf_pGrid` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; no meaning, unit, or sign convention claimed. |
+| `diag_fbuf_p_pv` | `diag_fbuf_pPv` | `optional_diagnostic` | `status:fbuf_pPv` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; no meaning or unit claimed. |
+| `diag_pvopt_average_p_grid` | `diag_pvopt_averagePGrid` | `optional_diagnostic` | `status:pvopt_averagePGrid` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; aggregation and semantics remain unknown. |
+| `diag_pvopt_average_p_pv` | `diag_pvopt_averagePPv` | `optional_diagnostic` | `status:pvopt_averagePPv` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; aggregation and semantics remain unknown. |
+| `diag_pvopt_average_p_akku` | `diag_pvopt_averagePAkku` | `optional_diagnostic` | `status:pvopt_averagePAkku` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; aggregation, distinction, and sign remain unknown. |
+| `diag_pvopt_average_p_ohmpilot` | `diag_pvopt_averagePOhmpilot` | `optional_diagnostic` | `status:pvopt_averagePOhmpilot` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; aggregation and semantics remain unknown. |
+| `diag_pvopt_delta_p` | `diag_pvopt_deltaP` | `optional_diagnostic` | `status:pvopt_deltaP` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; compared quantities and unit remain unknown. |
+| `diag_pvopt_delta_a` | `diag_pvopt_deltaA` | `optional_diagnostic` | `status:pvopt_deltaA` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; compared quantities and unit remain unknown. |
+| `diag_pvopt_special_case` | `diag_pvopt_specialCase` | `optional_diagnostic` | `status:pvopt_specialCase` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw code; no enum or code meaning is claimed. |
+| `diag_fbuf_p_ac_total` | `diag_fbuf_pAcTotal` | `optional_diagnostic` | `status:fbuf_pAcTotal` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw scalar when present; observed capture contained `null`. |
+| `diag_fbuf_ohmpilot_state` | `diag_fbuf_ohmpilotState` | `optional_diagnostic` | `status:fbuf_ohmpilotState` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw scalar when present; observed capture contained `null`. |
+| `diag_fbuf_ohmpilot_temperature` | `diag_fbuf_ohmpilotTemperature` | `optional_diagnostic` | `status:fbuf_ohmpilotTemperature` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw scalar when present; observed capture contained `null`. |
 | `pv_battery_charge_above_soc` | `configPvBatteryChargeAboveSoC` | `configuration` | `status:fam` | `immediate` | `none` | `fam` | `percentage` | `preserve` | App setting “Charge above”; stationary PV-battery SOC threshold above which vehicle charging may start. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
 | `pv_battery_discharge_enabled` | `configPvBatteryDischargeEnabled` | `configuration` | `status:pdte` | `immediate` | `none` | `pdte` | `boolean` | `preserve` | App switch “Discharge until”. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
 | `pv_battery_discharge_until_soc` | `configPvBatteryDischargeUntilSoC` | `configuration` | `status:pdt` | `immediate` | `none` | `pdt` | `percentage` | `preserve` | App setting “State of charge SoC” belonging to “Discharge until”. Writable through the grouped `pvBattery` verification command; live device verification remains pending. |
@@ -102,7 +125,9 @@ queries must be adapted explicitly.
 authentication method actually selected for the current session, which may be
 derived from `authHash=auto` and the device challenge.
 `temperatureCurrentLimit` is an effective runtime limit rather than a stored
-user setting. `pvBatteryModeCode` is a discrete current status code, not a
-configuration enum and not part of the interval-controlled battery telemetry.
+user setting.
 Paired decision code/text readings share one source and are updated in the same
 FHEM reading transaction.
+
+
+`deviceRebootCount` and `uptime` are normal public readings, not optional diagnostics. `deviceRebootCount` is always interval-eligible; `uptime` follows the charging/`update_while_idle` gate. The fifteen `diag_...` readings exist only with `diagnosticReadings=1`; setting the attribute to `0` or deleting it removes those readings and clears their owner state immediately.

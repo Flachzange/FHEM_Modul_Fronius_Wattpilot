@@ -48,6 +48,28 @@ like($runtime,
     qr/sub\s+Wattpilot_SecretKey.*?\$fuuid\s*=\s*\$hash->\{FUUID\}.*?return\s+"Wattpilot_"\s*\.\s*\$fuuid/s,
     'stable credential key construction is anchored to FUUID');
 
+unlike($runtime, qr/sub\s+Wattpilot_StatusReadingValue\b/,
+    'status readings do not use a second formatter dispatcher');
+like($runtime, qr/sub\s+Wattpilot_FormatReadingValue\b/,
+    'one central reading formatter remains explicit');
+like($runtime, qr/Unknown Wattpilot reading formatter/,
+    'unknown formatter classifications fail explicitly');
+unlike($runtime, qr/\bdecimal1\b/,
+    'the unused one-decimal formatter classification is absent');
+
+for my $table (qw(
+    WATTPILOT_DEVICE_HEALTH_TELEMETRY
+    WATTPILOT_DEVICE_UPTIME_TELEMETRY
+    WATTPILOT_OPTIONAL_DIAGNOSTIC_TELEMETRY
+)) {
+    unlike($runtime, qr/\b\Q$table\E\b/,
+        "$table is not maintained beside the authoritative reading inventory");
+}
+like($runtime, qr/\bWATTPILOT_SCALAR_TELEMETRY_BY_OWNER\b/,
+    'scalar telemetry mappings are derived from the reading inventory');
+like($runtime, qr/\bWATTPILOT_TELEMETRY_OWNER_DISCOVERY_ORDER\b/,
+    'ordinary shared-clock owner order is derived from the reading inventory');
+
 my @test_files;
 find(sub {
     return if !-f $_;
