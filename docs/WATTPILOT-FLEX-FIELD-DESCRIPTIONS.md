@@ -214,7 +214,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 |---|---|---|---|---|
 | `loc` | `localTime` | Local device time candidate | R | historical candidate |
 | `rbc` | `deviceRebootCount`; historical `rebootCounter` | Raw non-negative integer; exact meaning unconfirmed | R | observed field/type/value plus historical candidate |
-| `rbt` | `uptime`; historical `timeSinceBoot` | Non-negative value empirically treated as seconds on the maintainer Flex test and rendered as cumulative `H:MM`; remaining seconds discarded | R | sanitized field/type/value plus maintainer live-device time progression; not an official specification and broader scope unverified |
+| `rbt` | `uptime`; historical `timeSinceBoot` | Non-negative value empirically treated as milliseconds on the maintainer Flex test, divided by 1,000, and rendered as cumulative `H:MM`; remaining seconds and milliseconds discarded | R | sanitized field/type/value plus maintainer live-device time progression; not an official specification and broader scope unverified |
 | `rr` | `espResetReason` | ESP reset-reason enum candidate | R | historical candidate |
 | `tds` | `timezoneDaylightSavingMode` | Candidate enum: `None=0`, `EuropeanSummerTime=1`, `UsDaylightTime=2` | R/W | historical candidate |
 | `tma` | `temperatureSensors` | Temperature-sensor array candidate; element mapping and unit remain unverified | R | historical candidate plus observed array shape |

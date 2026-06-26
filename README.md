@@ -354,7 +354,7 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | `diag_fbuf_pAkku` | Optionaler Rohskalar aus `fbuf_pAkku`; Abgrenzung zu `diag_pvopt_averagePAkku`, Aggregation, Einheit und Vorzeichen bleiben unbestätigt. |
 | `pvBatteryModeCode` | Unveränderter nicht negativer Ganzzahlcode aus `fbuf_akkuMode`. Mangels belastbarer Enum wird bewusst kein Klartextmodus erfunden. |
 | `deviceRebootCount` | Unveränderter nicht negativer Ganzzahlwert aus `rbc`, im normalen Intervall ohne Idle-Sperre. Die genaue Protokollbedeutung ist unbestätigt. |
-| `uptime` | Nicht negativer Wert aus `rbt`, aufgrund der Realgerätbeobachtung als Sekunden interpretiert und als kumulative Stunden und Minuten im Format `H:MM` ausgegeben. Restsekunden werden verworfen; Aktualisierung im normalen Intervall beim Laden oder mit `update_while_idle=1`. |
+| `uptime` | Nicht negativer Millisekundenwert aus `rbt`, aufgrund der Realgerätbeobachtung als Zeit seit dem Gerätestart interpretiert und nach Division durch 1.000 als kumulative Stunden und Minuten im Format `H:MM` ausgegeben. Verbleibende Sekunden und Millisekunden werden verworfen; Aktualisierung im normalen Intervall beim Laden oder mit `update_while_idle=1`. |
 | `diag_fbuf_pGrid` | Optionaler Rohskalar aus `fbuf_pGrid`; keine Behauptung zu Bedeutung, Einheit oder Vorzeichen. |
 | `diag_fbuf_pPv` | Optionaler Rohskalar aus `fbuf_pPv`; keine Behauptung zu Bedeutung oder Einheit. |
 | `diag_pvopt_averagePGrid` | Optionaler Rohskalar aus `pvopt_averagePGrid`; Aggregation und Semantik unbekannt. |

@@ -204,10 +204,10 @@ subtest 'device health readings share interval timing with separate idle gates' 
         'idle updates can be enabled');
     $DevIo::NOW = 2_059;
     ok(parse_status($hash, 'deltaStatus', { rbt => 62_070_123 }),
-        'latest uptime in seconds is cached');
+        'latest uptime in milliseconds is cached');
     DevIo::run_due_timers(2_060);
-    is(reading_value($hash, 'uptime'), '17241:42',
-        'uptime publishes as cumulative hours and minutes when idle updates are enabled');
+    is(reading_value($hash, 'uptime'), '17:14',
+        'uptime converts milliseconds to cumulative hours and minutes when idle updates are enabled');
 
     my $charging = fresh_device('chargingHealthWallbox');
     $attr{$charging->{NAME}}{interval} = 30;
@@ -217,8 +217,8 @@ subtest 'device health readings share interval timing with separate idle gates' 
         car => 2,
         rbt => 77_777,
     }), 'charging health status is accepted');
-    is(reading_value($charging, 'uptime'), '21:36',
-        'charging opens the uptime idle gate and drops remaining seconds');
+    is(reading_value($charging, 'uptime'), '0:01',
+        'charging opens the uptime idle gate after converting milliseconds');
 };
 
 subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and removable' => sub {
@@ -257,6 +257,8 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
     # END 2.0 negative controls for removed public names
     is(reading_value($hash, 'diag_fbuf_pGrid'), '125.13',
         'numeric diagnostics are rounded to two decimals');
+    ok(!ref($hash->{helper}{telemetryPublication}{diagnostic}{cache}{fbuf_pGrid}),
+        'numeric diagnostic cache keeps the original plain JSON scalar type');
     is(reading_value($hash, 'diag_fbuf_pPv'), '-1650.25',
         'signed diagnostics are not reinterpreted');
     is(reading_value($hash, 'diag_pvopt_averagePGrid'), '1.23',
@@ -350,7 +352,7 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
 };
 
 
-subtest 'reload clears legacy diagnostic cache shape while preserving enabled readings' => sub {
+subtest 'reload clears transient diagnostic cache while preserving enabled readings' => sub {
     my $hash = fresh_device('reloadEnabledDiagnostics');
     $attr{$hash->{NAME}}{diagnosticReadings} = 1;
     $hash->{READINGS}{diag_fbuf_pGrid} = { VAL => '12.34', TIME => 'old' };
@@ -364,7 +366,7 @@ subtest 'reload clears legacy diagnostic cache shape while preserving enabled re
     is(reading_value($hash, 'diag_fbuf_pGrid'), '12.34',
         'reload preserves an enabled diagnostic reading');
     ok(!exists $hash->{helper}{telemetryPublication}{diagnostic},
-        'reload discards the pre-format-wrapper diagnostic cache shape');
+        'reload discards transient diagnostic cache state');
 
     $attr{$hash->{NAME}}{interval} = 0;
     $attr{$hash->{NAME}}{update_while_idle} = 1;

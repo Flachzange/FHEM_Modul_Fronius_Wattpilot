@@ -84,9 +84,9 @@ subtest 'reading inventory declares one intentional public format per reading' =
         [],
         'no current public reading uses the legacy one-decimal formatter');
     is_deeply(
-        [sort grep { $policy->{$_}{formatter} eq 'hours_minutes' } keys %$policy],
+        [sort grep { $policy->{$_}{formatter} eq 'hours_minutes_ms' } keys %$policy],
         ['device_uptime'],
-        'uptime is the explicit cumulative hours-and-minutes formatter');
+        'uptime is the explicit millisecond-to-hours-and-minutes formatter');
     is(scalar(grep {
             !defined($policy->{$_}{formatter})
             || $policy->{$_}{formatter} eq ''
@@ -108,8 +108,8 @@ subtest 'decimal formatter retains trailing zeroes and removes rounded negative 
     is(main::Wattpilot_FormatDecimal(42.54, 1), '42.5',
         'the decimal helper still supports one decimal place');
     is(main::Wattpilot_FormatReadingValue('device_uptime', 62_070_123),
-        '17241:42',
-        'uptime converts seconds to cumulative hours and minutes');
+        '17:14',
+        'uptime converts milliseconds to cumulative hours and minutes');
     is(main::Wattpilot_FormatReadingValue('diag_fbuf_p_grid', 1.236),
         '1.24',
         'numeric diagnostics round to two decimal places');

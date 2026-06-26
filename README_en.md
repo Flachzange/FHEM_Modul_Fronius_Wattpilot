@@ -352,7 +352,7 @@ The module exposes exactly these 73 public readings:
 | `diag_fbuf_pAkku` | Optional raw scalar from `fbuf_pAkku`; distinction from `diag_pvopt_averagePAkku`, aggregation, unit, and sign remain unconfirmed. |
 | `pvBatteryModeCode` | Unmodified non-negative integer code from `fbuf_akkuMode`. No text mode is invented because no reliable enum is available. |
 | `deviceRebootCount` | Raw non-negative integer from `rbc`, published on the normal interval without idle gating. The exact protocol meaning remains unverified. |
-| `uptime` | Non-negative `rbt` value interpreted as seconds from the live-device observation and rendered as cumulative hours and minutes in `H:MM`. Remaining seconds are discarded; publication uses the normal interval while charging or with `update_while_idle=1`. |
+| `uptime` | Non-negative millisecond value from `rbt`, interpreted from the live-device observation as time since device start and divided by 1,000 before rendering cumulative hours and minutes in `H:MM`. Remaining seconds and milliseconds are discarded; publication uses the normal interval while charging or with `update_while_idle=1`. |
 | `diag_fbuf_pGrid` | Optional raw scalar from `fbuf_pGrid`; no meaning, unit, or sign convention is claimed. |
 | `diag_fbuf_pPv` | Optional raw scalar from `fbuf_pPv`; no meaning or unit is claimed. |
 | `diag_pvopt_averagePGrid` | Optional raw scalar from `pvopt_averagePGrid`; aggregation and semantics remain unknown. |
