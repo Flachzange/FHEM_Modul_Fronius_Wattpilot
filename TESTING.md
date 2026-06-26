@@ -29,7 +29,7 @@ It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, valida
 `t/pv_battery_telemetry.t` covers the version-2.0.6 read-only stationary-PV-battery readings under the version-2.1.1 publication contract. It verifies fullStatus, deltaStatus, and matched-response handling; SOC bounds from 0 through 100; signed finite power formatting to two decimal places without sign reinterpretation; raw non-negative mode-code preservation; omission, `null`, wrong-type, NaN, infinity, and overflow rejection; interface exposure; and the deliberate absence of battery setters. SOC/power use a separate battery latest-value cache and idle gate while sharing the common telemetry clock, whereas `pvBatteryModeCode` is immediate-on-change. Battery input never republishes cached electrical values, all eligible dirty owners share one transaction timestamp, and `interval=0` disables rate limiting.
 
 
-`t/reading_update_policy.t` is the authoritative publication-policy regression. It verifies one shared `telemetry_flush` timer, one common interval boundary, same-transaction timestamps across eligible dirty owners, separate caches/dirty fields without cross-owner starvation, change-only energy publication, both idle-gate settings, exact-boundary and `interval=0` behavior, positive-to-zero and deleted-attribute immediate flushes, preservation of ineligible idle `nrg`/battery dirty state, interval reset, stale-callback rejection, session cleanup, immediate-on-change discrete readings, immediate device-confirmed configuration, and complete policy-inventory exposure.
+`t/reading_update_policy.t` is the authoritative publication-policy regression. It verifies one shared `telemetry_flush` timer, one common interval boundary, same-transaction timestamps across eligible dirty owners, separate caches/dirty fields without cross-owner starvation, change-only energy publication, both idle-gate settings, exact-boundary and `interval=0` behavior, positive-to-zero and deleted-attribute immediate flushes, positive-to-positive timer replacement for dirty telemetry, publication at the new boundary without further status input, repeated-change timer uniqueness, lazy no-dirty behavior, preservation of ineligible idle `nrg`/battery dirty state, stale-callback rejection, session cleanup, immediate-on-change discrete readings, immediate device-confirmed configuration, and complete policy-inventory exposure.
 
 `t/pv_surplus_start_power.t` covers issue #43 end to end: `fullStatus` and `deltaStatus` parsing, missing/`null`/negative/wrong-type/overflow preservation, finite non-negative setter validation, secured `fst` request encoding, no optimistic reading update, successful device-confirmed updates, failed responses, successful responses without `fst`, and type-invalid response status.
 
@@ -151,6 +151,20 @@ No running-FHEM, live-network fault-injection, or physical-device test was
 performed for these 2.1.5 lifecycle/publication changes. They alter local FHEM
 ownership and timing only and add no Wattpilot protocol field or writability
 claim.
+
+Version 2.1.6 extends the same deterministic attribute/timer regression for the
+remaining positive-to-positive transition. It proves a replacement boundary
+without later status input, exactly one timer across repeated changes, harmless
+obsolete callbacks, preserved Idle gating, and lazy behavior when no owner is
+dirty. This is local FHEM timer ownership only and adds no protocol claim. A
+running-FHEM reload test and physical-device test were not performed for this
+follow-up. The complete local suite passes with 28 test files and 3,154
+tests, followed by META, command-reference, repository, UTF-8,
+release-verification, and reproducibility checks. The isolated container used
+temporary external compatibility modules for `JSON`, `Crypt::PBKDF2`, and
+`Crypt::URandom`; the fixed PBKDF2 vector passed, while the optional bcrypt
+vector was skipped because `Crypt::Bcrypt` was unavailable. GitHub CI with the
+declared dependencies remains required before merge.
 
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 

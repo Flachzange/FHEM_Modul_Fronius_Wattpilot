@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.5 retains the authoritative publication policy for every public
+Version 2.1.6 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,

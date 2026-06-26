@@ -508,7 +508,7 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
         'deleting interval removes the old shared clock');
 };
 
-subtest 'shared telemetry clock owns one lifecycle-safe timer' => sub {
+subtest 'positive interval changes replace one timer and preserve queued telemetry' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
@@ -533,41 +533,69 @@ subtest 'shared telemetry clock owns one lifecycle-safe timer' => sub {
         eto => 1_000,
         fbuf_pAkku => -100,
         nrg => nrg(110),
-    }), 'additional owners join the existing telemetry cycle');
-    is($hash->{helper}{timers}{telemetry_flush}, $first_ctx,
-        'additional telemetry does not replace the shared timer');
-    is((scalar grep {
-        $_->[1] eq 'Wattpilot_TelemetryFlush'
-    } @DevIo::ACTIVE_TIMERS), 1,
-        'additional telemetry cannot create duplicate flush timers');
+    }), 'all telemetry owners become dirty inside the first interval');
+    is(reading_value($hash, 'power'), '100.00',
+        'queued nrg is not published before the boundary');
+    ok(!defined $hash->{READINGS}{energyTotal}{VAL},
+        'new energy remains queued before the boundary');
+    ok(!exists $hash->{READINGS}{pvBatteryPower},
+        'new battery telemetry remains queued before the boundary');
 
     $DevIo::NOW = 5_502;
     is(DevIo::command_attr($hash->{NAME}, 'interval', 60), undef,
-        'changing interval is accepted through the real attribute path');
-    ok(!exists $hash->{helper}{telemetryClock},
-        'changing interval clears the old common boundary');
-    ok(!exists $hash->{helper}{timers}{telemetry_flush},
-        'changing interval releases the old timer ownership');
+        'first positive-to-positive interval change is accepted');
+    my $second_ctx = $hash->{helper}{timers}{telemetry_flush};
+    ok(ref($second_ctx) eq 'HASH',
+        'dirty telemetry immediately receives a replacement timer');
+    isnt($second_ctx, $first_ctx,
+        'replacement timer uses a fresh lifecycle-safe context');
+    is($hash->{helper}{telemetryClock}{nextFlush}, 5_562,
+        'replacement boundary is based on the new interval and change time');
+    is(reading_value($hash, 'power'), '100.00',
+        'positive interval change does not flush queued telemetry early');
     is((scalar grep {
-        $_->[1] eq 'Wattpilot_TelemetryFlush'
-    } @DevIo::ACTIVE_TIMERS), 0,
-        'changing interval removes the active telemetry timer');
+        $_->[1] eq 'Wattpilot_TelemetryFlush' && $_->[2] == $second_ctx
+    } @DevIo::ACTIVE_TIMERS), 1,
+        'the first interval change leaves exactly one owned timer');
 
     $DevIo::NOW = 5_503;
-    ok(parse_status($hash, 'deltaStatus', { nrg => nrg(200) }),
-        'next telemetry input starts the clock with the new interval');
-    my $second_ctx = $hash->{helper}{timers}{telemetry_flush};
-    isnt($second_ctx, $first_ctx,
-        'new interval receives a fresh timer context');
-    is($hash->{helper}{telemetryClock}{nextFlush}, 5_563,
-        'new common boundary uses the changed interval');
+    is(DevIo::command_attr($hash->{NAME}, 'interval', 45), undef,
+        'repeated positive interval change is accepted');
+    my $third_ctx = $hash->{helper}{timers}{telemetry_flush};
+    ok(ref($third_ctx) eq 'HASH',
+        'repeated change still owns a telemetry timer');
+    isnt($third_ctx, $second_ctx,
+        'repeated change replaces the previous timer context');
+    is($hash->{helper}{telemetryClock}{nextFlush}, 5_548,
+        'latest positive interval defines the only active boundary');
+    is((scalar grep {
+        $_->[1] eq 'Wattpilot_TelemetryFlush'
+    } @DevIo::ACTIVE_TIMERS), 1,
+        'repeated positive changes cannot create duplicate timers');
 
     my $power_time = reading_time($hash, 'power');
     main::Wattpilot_TelemetryFlush($first_ctx);
-    is($hash->{helper}{timers}{telemetry_flush}, $second_ctx,
-        'stale callback cannot steal current timer ownership');
+    main::Wattpilot_TelemetryFlush($second_ctx);
+    is($hash->{helper}{timers}{telemetry_flush}, $third_ctx,
+        'obsolete callbacks cannot steal replacement timer ownership');
     is(reading_time($hash, 'power'), $power_time,
-        'stale callback cannot refresh telemetry readings');
+        'obsolete callbacks cannot publish queued telemetry');
+
+    DevIo::run_due_timers(5_548);
+    is(reading_value($hash, 'power'), '110.00',
+        'queued nrg publishes at the replacement boundary without new input');
+    is(reading_value($hash, 'pvBatteryPower'), '-100.00',
+        'queued battery telemetry publishes at the replacement boundary');
+    is(reading_value($hash, 'energyTotal'), '1.00',
+        'queued energy publishes at the replacement boundary');
+    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        'replacement-boundary nrg and battery share one transaction timestamp');
+    is(reading_time($hash, 'power'), reading_time($hash, 'energyTotal'),
+        'all replacement-boundary owners share one transaction timestamp');
+    is((scalar grep {
+        $_->[1] eq 'Wattpilot_TelemetryFlush'
+    } @DevIo::ACTIVE_TIMERS), 1,
+        'the shared cadence advances with exactly one timer after publication');
 
     is(DevIo::command_attr($hash->{NAME}, 'disable', 1), undef,
         'disabling the device is accepted through the real attribute path');
@@ -575,6 +603,57 @@ subtest 'shared telemetry clock owns one lifecycle-safe timer' => sub {
         'session invalidation clears the shared telemetry clock');
     ok(!exists $hash->{helper}{timers}{telemetry_flush},
         'session invalidation cancels the telemetry timer');
+
+    $hash = fresh_device();
+    $attr{$hash->{NAME}}{interval} = 30;
+    $attr{$hash->{NAME}}{update_while_idle} = 0;
+    $DevIo::NOW = 5_600;
+    ok(parse_status($hash, 'fullStatus', { car => 2, nrg => nrg(200) }),
+        'clean baseline starts a clock and publishes its only telemetry');
+    ok(!main::Wattpilot_HasDirtyTelemetry($hash),
+        'baseline publication leaves no dirty telemetry');
+    $DevIo::NOW = 5_601;
+    is(DevIo::command_attr($hash->{NAME}, 'interval', 60), undef,
+        'positive interval change without dirty telemetry is accepted');
+    ok(!exists $hash->{helper}{telemetryClock},
+        'no dirty telemetry keeps the replacement clock lazy');
+    ok(!exists $hash->{helper}{timers}{telemetry_flush},
+        'no dirty telemetry creates no unnecessary timer');
+
+    $hash = fresh_device();
+    $attr{$hash->{NAME}}{interval} = 30;
+    $attr{$hash->{NAME}}{update_while_idle} = 0;
+    $DevIo::NOW = 5_700;
+    ok(parse_status($hash, 'fullStatus', {
+        car => 1,
+        eto => 100_000,
+        fbuf_pAkku => -100,
+        nrg => nrg(0),
+    }), 'idle baseline retains gated telemetry and publishes energy');
+    $DevIo::NOW = 5_701;
+    ok(parse_status($hash, 'deltaStatus', {
+        eto => 101_000,
+        fbuf_pAkku => -200,
+        nrg => nrg(10),
+    }), 'idle energy, nrg, and battery become dirty');
+    $DevIo::NOW = 5_702;
+    is(DevIo::command_attr($hash->{NAME}, 'interval', 60), undef,
+        'idle positive-to-positive change is accepted');
+    is($hash->{helper}{telemetryClock}{nextFlush}, 5_762,
+        'dirty idle telemetry receives the new positive boundary');
+    DevIo::run_due_timers(5_762);
+    is(reading_value($hash, 'energyTotal'), '101.00',
+        'eligible changed energy publishes at the new boundary while idle');
+    ok(!exists $hash->{READINGS}{power},
+        'ineligible idle nrg remains passive at the new boundary');
+    ok(!exists $hash->{READINGS}{pvBatteryPower},
+        'ineligible idle battery remains passive at the new boundary');
+    ok(keys %{$hash->{helper}{telemetryPublication}{nrg}{dirty}},
+        'ineligible idle nrg remains dirty after the boundary');
+    ok(keys %{$hash->{helper}{telemetryPublication}{battery}{dirty}},
+        'ineligible idle battery remains dirty after the boundary');
+    ok(!keys %{$hash->{helper}{telemetryPublication}{energy}{dirty}},
+        'eligible energy dirty state is consumed at the boundary');
 };
 
 subtest 'invalid or incomplete telemetry never advances cadence' => sub {
@@ -624,7 +703,7 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
 
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.5',
+    is($hash->{VERSION}, '2.1.6',
         'reload-style Initialize refreshes the module version');
     is($hash->{FD}, 69,
         'reload-style Initialize preserves the open transport');

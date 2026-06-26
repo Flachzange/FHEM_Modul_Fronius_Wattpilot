@@ -143,7 +143,12 @@ become dirty and does not move the shared clock. `interval=0` disables rate
 limiting and immediately publishes eligible dirty values. A positive-to-zero
 attribute transition, and deletion to the effective default zero, first cancels
 the old timer/clock and then flushes every currently eligible dirty owner in one
-reading transaction. Idle-gated `nrg` or battery data remains dirty/passive.
+reading transaction. Idle-gated `nrg` or battery data remains dirty/passive. A
+positive-to-positive transition also cancels the old timer/clock. When any owner
+is dirty, it immediately creates exactly one replacement clock from the
+attribute-change time using the new interval; it does not publish early, and
+stale callbacks cannot affect the replacement owner. With no dirty telemetry,
+the clock stays absent until later valid input starts it.
 
 `update_while_idle` applies only to the `electrical` and `battery` gates. While
 charging, electrical telemetry is eligible regardless of the attribute. While

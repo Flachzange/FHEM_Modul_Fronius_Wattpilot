@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.5';
+my $WATTPILOT_VERSION = '2.1.6';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -1633,6 +1633,16 @@ sub Wattpilot_UpdateNrgReadings($$) {
     $state->{dirty} = {};
 }
 
+sub Wattpilot_HasDirtyTelemetry($) {
+    my ($hash) = @_;
+    for my $owner (keys %WATTPILOT_TELEMETRY_OWNER_IDLE_GATE) {
+        my $state = $hash->{helper}{telemetryPublication}{$owner};
+        return 1 if ref($state) eq 'HASH'
+            && Wattpilot_TelemetryGroupHasDirty($state);
+    }
+    return 0;
+}
+
 sub Wattpilot_HasEligibleTelemetry($;$) {
     my ($hash, $nrg_bypass) = @_;
     $nrg_bypass //= 0;
@@ -2487,12 +2497,18 @@ sub Wattpilot_Attr(@) {
     }
 
     if ($attrName eq "interval" && ($cmd eq "set" || $cmd eq "del")) {
+        my $previous_interval = 0 + AttrVal($name, "interval", 0);
         Wattpilot_ResetTelemetryClock($hash);
         my $effective_interval = $cmd eq "set" ? 0 + $attrVal : 0;
         if ($effective_interval <= 0 && Wattpilot_HasEligibleTelemetry($hash)) {
             readingsBeginUpdate($hash);
             Wattpilot_FlushAllTelemetry($hash);
             readingsEndUpdate($hash, 1);
+        } elsif ($previous_interval > 0
+            && $effective_interval > 0
+            && Wattpilot_HasDirtyTelemetry($hash)) {
+            Wattpilot_StartTelemetryClock(
+                $hash, gettimeofday(), $effective_interval);
         }
     }
 
@@ -2801,6 +2817,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
   <p>Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
   <p>Version 2.1.5 limits <code>chargingCurrent</code> to <code>6..min(32, configMaximumCurrentLimit)</code> after a usable <code>ama</code> value has been received for the current device hash. Missing, stale, malformed, non-integer, or out-of-range values keep the compatibility range <code>6..32</code>. FHEMWEB receives the same dynamic upper bound; rejected commands are not sent and <code>configChargingCurrent</code> remains device-confirmed. The same release also preserves exactly one reconnect owner after ordinary EOF or a WebSocket Close frame, treats the first valid authenticated partial or complete status as initialization, finalizes pending commands on session invalidation, applies the bounded Charging-to-Idle electrical refresh with both <code>update_while_idle</code> values, and flushes already queued eligible telemetry when <code>interval</code> becomes <code>0</code>.</p>
+  <p>Version 2.1.6 replaces the shared telemetry timer immediately when <code>interval</code> changes between positive values while telemetry is dirty. The queued values remain rate-limited and publish at the new boundary even without another status message. Repeated changes keep exactly one timer, stale callbacks are harmless, idle-gated electrical and battery data remains passive, and a positive change with no dirty telemetry keeps the clock lazy.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3062,6 +3079,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
   <p>Version 2.1.4 ersetzt die sieben einzelnen Setter für Phasenumschaltung und Mindestladen durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
   <p>Version 2.1.5 begrenzt <code>chargingCurrent</code> nach Empfang eines nutzbaren <code>ama</code>-Werts für den aktuellen Device-Hash auf <code>6..min(32, configMaximumCurrentLimit)</code>. Fehlende, noch nicht bestätigte, fehlerhafte, nicht ganzzahlige oder außerhalb des nutzbaren Bereichs liegende Werte behalten den Kompatibilitätsbereich <code>6..32</code>. FHEMWEB erhält dieselbe dynamische Obergrenze; abgelehnte Befehle werden nicht gesendet und <code>configChargingCurrent</code> bleibt gerätebestätigt. Dieselbe Version bewahrt nach normalem EOF oder WebSocket-Close genau einen Reconnect-Eigentümer, behandelt den ersten gültigen authentifizierten partiellen oder vollständigen Status als Initialisierung, beendet ausstehende Befehle bei Sitzungsinvalidierung, führt den begrenzten Charging-zu-Idle-Refresh bei beiden <code>update_while_idle</code>-Werten aus und veröffentlicht bereits gepufferte zulässige Telemetrie sofort, wenn <code>interval</code> auf <code>0</code> wechselt.</p>
+  <p>Version 2.1.6 ersetzt den gemeinsamen Telemetrie-Timer sofort, wenn <code>interval</code> zwischen positiven Werten geändert wird und Telemetrie als geändert vorgemerkt ist. Die gepufferten Werte bleiben intervallgesteuert und werden auch ohne weiteres Statuspaket am neuen Zeitpunkt veröffentlicht. Wiederholte Änderungen behalten genau einen Timer, veraltete Callbacks bleiben wirkungslos, im Idle gesperrte elektrische und Batteriedaten bleiben passiv und ohne Dirty-Daten bleibt die Clock weiterhin lazy.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3303,7 +3321,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.5",
+  "version": "v2.1.6",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",
