@@ -48,8 +48,8 @@ is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
 is(scalar(keys %$command_schema), 14,
     'command schema contains the complete 14-command public surface');
-is(scalar(keys %$status_fields), 36,
-    'status schema contains all 36 consumed protocol fields');
+is(scalar(keys %$status_fields), 55,
+    'status schema contains all 55 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
@@ -188,6 +188,8 @@ my %valid_for_kind = (
     clock_seconds => 3600,
     boolean => JSON::true,
     nrg => [1 .. 12],
+    nonempty_string => 'synthetic',
+    raw_scalar => 12.3456789,
 );
 my %invalid_for_kind = (
     integer => '7',
@@ -198,7 +200,10 @@ my %invalid_for_kind = (
     clock_seconds => 1,
     boolean => 1,
     nrg => [1, 2],
+    nonempty_string => '',
+    raw_scalar => {},
 );
+$attr{schemaWallbox}{diagnosticReadings} = 1;
 my (@valid_failures, @invalid_failures, @mapping_errors);
 for my $protocol_key (sort keys %$status_fields) {
     my $field = $status_fields->{$protocol_key};

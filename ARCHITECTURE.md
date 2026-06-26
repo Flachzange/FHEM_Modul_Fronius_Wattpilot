@@ -123,19 +123,20 @@ The function then owns one FHEM bulk-reading transaction and applies the
 runtime `%WATTPILOT_READING_POLICY`:
 
 - all `config...` readings are immediate after valid device-confirmed status;
-- `carState`, `chargingAllowed`, `temperatureCurrentLimit`,
+- identity readings, `carState`, `chargingAllowed`, `temperatureCurrentLimit`,
   `pvBatteryModeCode`, both charging-decision code/text pairs, and `errorCode`
   are immediate-on-change; repeated identical public values neither renew
   their timestamps nor create events;
-- cumulative energy, electrical `nrg`, and stationary-battery SOC/power are
-  interval-controlled by three data owners: `energy`, `nrg`, and `battery`,
-  which share one interval clock and one typed flush timer.
+- cumulative energy, electrical `nrg`, stationary-battery SOC/power, raw
+  device-health values, and enabled optional diagnostics are interval-controlled
+  by six data owners: `energy`, `nrg`, `battery`, `device_health`,
+  `device_uptime`, and `diagnostic`, which share one interval clock and one
+  typed flush timer.
 
 Each owner stores only its newest valid values and a dirty-field set. The shared
 tick publishes all eligible dirty owners in one FHEM bulk-reading transaction,
 so their readings receive the same transaction timestamp. Owner separation is
-still strict: battery input cannot publish cached `nrg`, energy cannot release
-battery data, and immediate status input cannot flush telemetry early. Energy
+still strict: one owner cannot publish another owner's cached data, and immediate status input cannot flush telemetry early. Energy
 becomes dirty only when its formatted public value differs from the currently
 published reading; identical `eto`/`wh` values therefore renew neither
 timestamps nor events. Invalid, incomplete, missing, or `null` input does not
@@ -236,3 +237,6 @@ timers, credentials, readings, logging, and the helper-package namespace bridge
 remain controlled adapters. No runtime abstraction is added to
 `72_Wattpilot.pm`, and neither the complete FHEM server nor a second generic
 FHEM simulator is vendored.
+
+
+Optional diagnostic architecture: `diagnosticReadings=0` is the effective default and removes all twelve `diag_...` readings plus the `diagnostic` owner state. With value `1`, only validated JSON scalars are cached; objects, arrays, and `null` are ignored. The `diagnostic` and `device_uptime` owners use the same charging/`update_while_idle` eligibility rule, while `device_health` remains ungated.

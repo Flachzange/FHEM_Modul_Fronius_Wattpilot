@@ -703,7 +703,7 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
 
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.6',
+    is($hash->{VERSION}, '2.1.7',
         'reload-style Initialize refreshes the module version');
     is($hash->{FD}, 69,
         'reload-style Initialize preserves the open transport');
@@ -750,8 +750,9 @@ subtest 'authoritative reading policy inventory is complete' => sub {
         'energyTotal policy is interval-controlled');
     is($interface->{telemetryCadence}{mode}, 'shared',
         'all interval-controlled telemetry uses one shared cadence');
-    is_deeply($interface->{telemetryCadence}{owners}, [qw(battery energy nrg)],
-        'the shared cadence derives all three telemetry owners from policy');
+    is_deeply($interface->{telemetryCadence}{owners}, [qw(
+        battery device_health device_uptime diagnostic energy nrg
+    )], 'the shared cadence derives all six telemetry owners from policy');
     isnt($policy->{power}{owner}, $policy->{pv_battery_power}{owner},
         'nrg and battery telemetry have different cadence owners');
     isnt($policy->{energy_total}{owner}, $policy->{power}{owner},
@@ -773,19 +774,48 @@ subtest 'authoritative reading policy inventory is complete' => sub {
         $policy->{$_}{publication} eq 'immediate-on-change'
     } keys %$policy;
     is_deeply(\@discrete, [sort qw(
-        car_state charging_allowed temperature_current_limit
-        pv_battery_mode_code charging_decision_code charging_decision
-        charging_decision_internal_code charging_decision_internal error_code
-    )], 'exactly the nine discrete status/diagnostic readings are immediate-on-change');
+        firmware_version device_type device_model device_sub_type device_variant
+        hello_protocol status_protocol car_state charging_allowed
+        temperature_current_limit pv_battery_mode_code charging_decision_code
+        charging_decision charging_decision_internal_code
+        charging_decision_internal error_code
+    )], 'identity and discrete status readings are exactly immediate-on-change');
 
     for my $key (qw(
-        state firmware_version auth_hash_mode last_command_request_id
+        state auth_hash_mode last_command_request_id
         last_command_status last_command_error
     )) {
         is($policy->{$key}{publication}, 'immediate',
             "$key remains event-driven and immediate");
         like($policy->{$key}{source}, qr/^event:/,
             "$key remains outside status payload policy");
+    }
+
+    for my $key (qw(firmware_version hello_protocol)) {
+        is($policy->{$key}{publication}, 'immediate-on-change',
+            "$key remains event-sourced but suppresses identical reconnect values");
+        like($policy->{$key}{source}, qr/^event:/,
+            "$key remains outside status payload policy");
+    }
+
+    is($policy->{device_reboot_count}{idleGate}, 'none',
+        'deviceRebootCount is interval-controlled without an idle gate');
+    is($policy->{device_uptime}{idleGate}, 'device',
+        'deviceUptime uses the charging/update_while_idle gate');
+    my @optional_diagnostic = grep {
+        $policy->{$_}{category} eq 'optional_diagnostic'
+    } keys %$policy;
+    is(scalar @optional_diagnostic, 12,
+        'all twelve optional raw diagnostics are inventoried');
+    for my $key (@optional_diagnostic) {
+        is($policy->{$key}{publication}, 'interval',
+            "$key follows the shared interval");
+        is($policy->{$key}{idleGate}, 'diagnostic',
+            "$key uses the common diagnostic idle gate");
+        is($policy->{$key}{owner}, 'diagnostic',
+            "$key uses the diagnostic owner");
+        is($policy->{$key}{formatter}, 'raw',
+            "$key preserves the validated raw scalar");
     }
 };
 

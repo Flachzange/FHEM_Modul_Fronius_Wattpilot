@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.1.7] - 2026-06-26
+
+### Identity, device health, and optional raw diagnostics
+
+- Adds always-visible `deviceType`, `deviceModel`, `deviceSubType`, `deviceVariant`, `helloProtocol`, and `statusProtocol` readings. The two protocol values remain source-separated and exact device strings are not mapped to invented models.
+- Adds raw interval-controlled `deviceRebootCount` from `rbc` and `deviceUptime` from `rbt`. `deviceRebootCount` is not idle-gated; `deviceUptime` is eligible while charging or with `update_while_idle=1`. No unit conversion or unverified semantic claim is applied.
+- Adds boolean attribute `diagnosticReadings:0,1` with effective default `0`. Enabling it exposes twelve exact `diag_`-prefixed raw scalar fields for real-device investigation; numbers and strings are not rounded, scaled, or interpreted, while JSON booleans become `0|1`.
+- Setting `diagnosticReadings=0` or deleting the attribute immediately removes all optional diagnostic readings and clears their cache/dirty state. Optional diagnostics share the normal interval and charging/`update_while_idle` gate.
+- Expands the authoritative reading inventory from 53 to 73 public readings and the consumed scalar status schema from 36 to 55 fields, with complete documentation and regression coverage.
+
 ## [v2.1.6] - 2026-06-26
 
 ### Positive interval timer replacement

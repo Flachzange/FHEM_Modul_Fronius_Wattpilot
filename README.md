@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.6**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.7**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -12,7 +12,7 @@ Version 2.x ist eine grundlegende Überarbeitung und keine bloße Erweiterung de
 | :--- | :--- | :--- |
 | Definition und Passwort | Passwort als Bestandteil der FHEM-Definition | Definition ohne Passwort; Speicherung über `set <Name> password <secret>` unter stabilen FUUID-basierten Schlüsseln |
 | Geräte und Authentifizierung | Vorgänger-Wattpilot mit PBKDF2 | Legacy-Profil bleibt erhalten; Wattpilot Flex wird ausschließlich über bcrypt authentifiziert |
-| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 53 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
+| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 73 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
 | Protokollverarbeitung | Grundlegende Verarbeitung von `hello`, Authentifizierung und Status | Strikte JSON-Typprüfung, partielle Statusmeldungen, robuste Nachrichtenfortsetzung, gesicherte Befehle und Antwortkorrelation |
 | Laufzeitverhalten | Einfaches Intervall und Idle-Filter | Kontrollierter Lifecycle für Reload, Rename, `modify`, Disable, Reconnect und Delete sowie getrennte Telemetrie-Caches mit gemeinsamem Veröffentlichungstakt |
 | Qualitätssicherung | Ursprünglicher Funktionsumfang | Umfangreiche Regressionstests, gepinnte FHEM-Core-Integration, Dokumentations- und reproduzierbare Releaseprüfungen |
@@ -250,7 +250,7 @@ Legt fest, wie oft Telemetriereadings veröffentlicht werden: `energyTotal`, `en
 * Empfehlung: `10` oder `60`.
 * Energie, elektrische `nrg`-Telemetrie und stationäre Speichertelemetrie besitzen getrennte Latest-Value-Caches und Dirty-Felder, verwenden aber einen gemeinsamen Intervalltakt. Ein Tick veröffentlicht alle zulässigen geänderten Gruppen in derselben FHEM-Reading-Transaktion und mit demselben Zeitstempel. Keine Gruppe kann eine andere blockieren oder deren Reading-Zeitstempel mit alten Cachewerten erneuern.
 * Innerhalb des Intervalls wird je Gruppe nur der neueste gültige Stand gepuffert. Energie wird nur dirty, wenn sich der formatierte öffentliche Wert tatsächlich ändert; identische `eto`-/`wh`-Werte erneuern weder Zeitstempel noch Events. Fehlende, `null`-, typfalsche oder unvollständige Werte werden nicht dirty und verschieben den gemeinsamen Takt nicht.
-* Alle 24 `config...`-Readings bleiben nach gültiger Gerätebestätigung sofort. `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, die vier Ladeentscheidungsreadings und `errorCode` werden sofort, aber nur bei tatsächlicher Wertänderung veröffentlicht.
+* Alle 24 `config...`-Readings bleiben nach gültiger Gerätebestätigung sofort. Identitätsreadings, `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, die vier Ladeentscheidungsreadings und `errorCode` werden sofort, aber nur bei tatsächlicher Wertänderung veröffentlicht.
 * `fullStatus`, partielles `fullStatus`, `deltaStatus` und zugeordnete Response-`status` verwenden dieselbe Policy. Der erste gültige authentifizierte `fullStatus`- oder `deltaStatus`-Input beendet die Initialisierung; `partial=true` beschreibt nur die Unvollständigkeit des Snapshots. `interval=0` deaktiviert die Rate-Limits. Wird ein positiver Wert auf `0` geändert oder das Attribut gelöscht, werden bereits gepufferte, aktuell zulässige Dirty-Gruppen sofort gemeinsam veröffentlicht.
 * `deltaStatus` liefert nur die vom Gerät mitgesendeten Felder und dient damit als geräteseitige Änderungsfilterung. Daraus wird keine offiziell definierte Aktualisierungsfrequenz einzelner Flex-Felder abgeleitet; eine öffentliche Fronius-Spezifikation dafür ist nicht belegt.
 
@@ -264,6 +264,14 @@ Steuert ausschließlich die elektrische `nrg`-Telemetrie und `pvBatterySoC`/`pvB
 * Es gibt keinen belegten expliziten Wattpilot-WebSocket-Status-Request; das Modul sendet deshalb kein `getAllValues` und erfindet kein Polling-Kommando. Fehlt im 30-Sekunden-Fenster ein gültiges `nrg`, wird höchstens ein kontrollierter Reconnect für diese Idle-Episode geplant. Danach bleiben bei `0` weitere gewöhnliche Idle-Werte passiv.
 * Fehlende Werte werden niemals als null interpretiert. Echte Nullwerte werden nur verarbeitet, wenn das Gerät sie gültig liefert.
 * Das Attribut steuert Energie nicht. `energyTotal` und `energySincePlugIn` werden nur bei einem tatsächlich geänderten formatierten Wert für den gemeinsamen Takt vorgemerkt; identische Statuswerte bleiben ohne Timestamp- oder Event-Update. Das Repository behauptet nicht, in welchem Zustand oder mit welcher Frequenz der Wattpilot `eto`/`wh` sendet. Diskrete Status-/Diagnosewerte bleiben sofort-bei-Änderung aktiv. `pvBatteryModeCode` ist ein solcher diskreter Statuswert und gehört nicht zum Batterie-Rate-Limit.
+
+### `diagnosticReadings` (0 oder 1)
+
+Steuert die zwölf optionalen Rohreadings zur Felderkundung, deren Namen mit `diag_` beginnen.
+
+* `0` (Standard): Diagnosefelder werden weder ausgewertet noch gepuffert. Vorhandene `diag_...`-Readings werden sofort gelöscht und ihr Cache-/Dirty-Zustand verworfen. Das Löschen des Attributs wirkt genauso.
+* `1`: Gültige skalare Werte der zwölf ausgewählten Protokollfelder werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
+* Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. Zahlen und Strings werden ohne Skalierung, Umrechnung, Rundung, Einheitenbehauptung oder Vorzeichendeutung übernommen; JSON-Booleans erscheinen als `0` oder `1`. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
 
 ### `disable` (0 oder 1)
 
@@ -304,12 +312,18 @@ Im Normalbetrieb sollte `auto` verwendet werden. Für Wattpilot Flex muss `Crypt
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 53 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
 | `state` | Lifecycle-Zustand: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed` oder `authNonceFailed`. |
-| `firmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. |
+| `firmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
+| `deviceType` | Exakter String aus dem Statusfeld `typ`. |
+| `deviceModel` | Exakter vom Gerät gemeldeter Modell-/Gruppenstring aus `grp`; keine erfundene Modellzuordnung. |
+| `deviceSubType` | Exakter Subtyp-String aus `styp`. |
+| `deviceVariant` | Unveränderter nicht negativer Ganzzahlwert aus `var`. |
+| `helloProtocol` | Unveränderter Ganzzahlwert aus `hello.protocol`. |
+| `statusProtocol` | Unveränderter Ganzzahlwert aus `status.proto`; keine angenommene Beziehung zu `helloProtocol`. |
 | `authHashMode` | Tatsächlich verwendetes Verfahren: `pbkdf2` oder `bcrypt`. |
 | `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error` oder `unknown:<Rohwert>`. |
 | `configForceState` | `neutral`, `off`, `on` oder `unknown:<Rohwert>`. |
@@ -339,6 +353,20 @@ Das Modul stellt exakt folgende 53 öffentlichen Readings bereit:
 | `pvBatterySoC` | Ladezustand des stationären PV-Speichers aus `fbuf_akkuSOC`, als Prozentwert von `0` bis `100` mit genau einer Nachkommastelle. Fehlende oder ungültige Werte verändern das Reading nicht. |
 | `pvBatteryPower` | Vorzeichenbehafteter Zahlenwert aus `fbuf_pAkku`, ausgegeben in Watt und grundsätzlich auf zwei Nachkommastellen formatiert. Die Vorzeichenrichtung für Laden und Entladen ist noch nicht durch einen kontrollierten Flex-Realtest bestätigt; das Modul deutet das Vorzeichen daher nicht um. |
 | `pvBatteryModeCode` | Unveränderter nicht negativer Ganzzahlcode aus `fbuf_akkuMode`. Mangels belastbarer Enum wird bewusst kein Klartextmodus erfunden. |
+| `deviceRebootCount` | Unveränderter nicht negativer Ganzzahlwert aus `rbc`, im normalen Intervall ohne Idle-Sperre. Die genaue Protokollbedeutung ist unbestätigt. |
+| `deviceUptime` | Unveränderter nicht negativer Ganzzahlwert aus `rbt`, im normalen Intervall beim Laden oder mit `update_while_idle=1`. Einheit und genaue Bedeutung sind unbestätigt. |
+| `diag_fbuf_pGrid` | Optionaler Rohskalar aus `fbuf_pGrid`; keine Behauptung zu Bedeutung, Einheit oder Vorzeichen. |
+| `diag_fbuf_pPv` | Optionaler Rohskalar aus `fbuf_pPv`; keine Behauptung zu Bedeutung oder Einheit. |
+| `diag_pvopt_averagePGrid` | Optionaler Rohskalar aus `pvopt_averagePGrid`; Aggregation und Semantik unbekannt. |
+| `diag_pvopt_averagePPv` | Optionaler Rohskalar aus `pvopt_averagePPv`; Aggregation und Semantik unbekannt. |
+| `diag_pvopt_averagePAkku` | Optionaler Rohskalar aus `pvopt_averagePAkku`; Aggregation, Abgrenzung und Vorzeichen unbekannt. |
+| `diag_pvopt_averagePOhmpilot` | Optionaler Rohskalar aus `pvopt_averagePOhmpilot`; Aggregation und Semantik unbekannt. |
+| `diag_pvopt_deltaP` | Optionaler Rohskalar aus `pvopt_deltaP`; verglichene Größen und Einheit unbekannt. |
+| `diag_pvopt_deltaA` | Optionaler Rohskalar aus `pvopt_deltaA`; verglichene Größen und Einheit unbekannt. |
+| `diag_pvopt_specialCase` | Optionaler Rohcode aus `pvopt_specialCase`; keine Enum wird behauptet. |
+| `diag_fbuf_pAcTotal` | Optionaler Rohskalar aus `fbuf_pAcTotal`; der aufbewahrte Mitschnitt enthält `null`, Typ und Semantik sind daher unbekannt. |
+| `diag_fbuf_ohmpilotState` | Optionaler Rohskalar aus `fbuf_ohmpilotState`; der aufbewahrte Mitschnitt enthält `null`, Typ und Semantik sind daher unbekannt. |
+| `diag_fbuf_ohmpilotTemperature` | Optionaler Rohskalar aus `fbuf_ohmpilotTemperature`; der aufbewahrte Mitschnitt enthält `null`, Typ, Einheit und Semantik sind daher unbekannt. |
 | `configPvBatteryChargeAboveSoC` | App-Einstellung „Charge above“ aus `fam`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery chargeAboveSoC <0-100>`. |
 | `configPvBatteryDischargeEnabled` | App-Schalter „Discharge until“ aus `pdte`, ausgegeben als `0` oder `1`; schreibbar über `set <name> pvBattery dischargeEnabled` mit `0` oder `1`. |
 | `configPvBatteryDischargeUntilSoC` | Zugehörige App-Einstellung „State of charge SoC“ aus `pdt`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery dischargeUntilSoC <0-100>`. |
@@ -356,7 +384,7 @@ Das Modul stellt exakt folgende 53 öffentlichen Readings bereit:
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. Sitzungsabbrüche verwenden stabile Gründe wie `connection lost`, `device disabled`, `credentials changed`, `authentication aborted`, `lifecycle timeout`, `reconnect requested`, `definition changed` oder `session replaced`. |
 
-Alle 24 `config...`-Readings werden nach gültiger Gerätebestätigung sofort veröffentlicht. Die diskreten Status-/Diagnosewerte `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, `chargingDecisionCode`, `chargingDecision`, `chargingDecisionInternalCode`, `chargingDecisionInternal` und `errorCode` werden ebenfalls sofort, aber nur bei einer tatsächlichen Änderung veröffentlicht; identische Wiederholungen erneuern weder Zeitstempel noch Event. Energie-, elektrische `nrg`- und stationäre Speichertelemetrie sind durch `interval` begrenzt. Sie behalten getrennte Latest-Value-Caches und Dirty-Felder, werden aber über denselben Takt und dieselbe FHEM-Reading-Transaktion veröffentlicht. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts dirty. Fehlende, `null`-, typfalsche oder unvollständige Felder lassen Readings unverändert und verschieben den Takt nicht.
+Alle 24 `config...`-Readings werden nach gültiger Gerätebestätigung sofort veröffentlicht. Identitätsreadings und die diskreten Status-/Diagnosewerte `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, `chargingDecisionCode`, `chargingDecision`, `chargingDecisionInternalCode`, `chargingDecisionInternal` und `errorCode` werden ebenfalls sofort, aber nur bei einer tatsächlichen Änderung veröffentlicht; identische Wiederholungen erneuern weder Zeitstempel noch Event. Energie-, elektrische `nrg`-, stationäre Speichertelemetrie, Gerätegesundheitswerte und aktivierte Rohdiagnosen sind durch `interval` begrenzt. Sie behalten getrennte Latest-Value-Caches und Dirty-Felder, werden aber über denselben Takt und dieselbe FHEM-Reading-Transaktion veröffentlicht. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts dirty. Fehlende, `null`-, typfalsche oder unvollständige Felder lassen Readings unverändert und verschieben den Takt nicht.
 
 Die Klartextwerte verwenden eine Kompatibilitätszuordnung aus der gepinnten offiziellen go-e-Enum für `modelStatus`. Für `msi` wird dieselbe Wertetabelle verwendet, weil die gepinnte Wattpilot-spezifische Quelle das Feld als interne Entscheidungsvariante beschreibt. Dies ist keine offizielle Fronius-Flex-Spezifikation; deshalb bleiben beide Rohcodes erhalten und nicht zugeordnete Werte ausdrücklich sichtbar. Die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von `cpDisabledRequest` sind für Wattpilot Flex nicht bestätigt. Insbesondere behauptet das Modul weder, dass `modelStatus` zwingend die abschließende/wirksame Entscheidung ist, noch dass `msi` zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus dieser Dokumentation darf keine Kausalkette abgeleitet werden.
 

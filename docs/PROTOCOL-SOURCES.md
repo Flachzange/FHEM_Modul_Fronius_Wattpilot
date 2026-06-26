@@ -114,3 +114,13 @@ For every proposed protocol-field change, record the source revision, applicable
 ## Runtime validation boundary in 2.1.0
 
 Version 2.1.0 distinguishes observed JSON kinds from Perl scalar text. Known numeric fields require decoded JSON numbers, known booleans require decoded JSON booleans, and string fields require decoded JSON strings. This is a defensive implementation contract, not a claim about undocumented device ranges. The top-level `fullStatus.partial` shape is preserved from the pinned legacy evidence and committed fixtures.
+
+
+## Identity, device-health, and optional raw diagnostics in version 2.1.7
+
+- The sanitized Wattpilot Flex Home 22 C6 capture with firmware 43.4 contains `typ="wattpilot_flex"`, `grp="Wattpilot Flex Home 22 C6"`, `styp="wattpilot_flex_c6"`, `var=22`, and `proto=4`. This establishes those exact field names, JSON kinds, and representative values for one capture only. Version 2.1.7 exposes them without model inference as `deviceType`, `deviceModel`, `deviceSubType`, `deviceVariant`, and `statusProtocol`.
+- A separate real runtime observation showed `hello.protocol=2` while the retained status capture contains `status.proto=4`. Version 2.1.7 therefore exposes `helloProtocol` and `statusProtocol` independently and makes no claim that they are equal, comparable, or versions of the same layer.
+- The same capture contains numeric `rbc=104` and `rbt=62068619`. Historical sources suggest reboot-count and time-since-boot candidates, but their exact meanings and the `rbt` unit are not established. Version 2.1.7 consequently publishes the unchanged non-negative integers as `deviceRebootCount` and `deviceUptime`, with no unit conversion or semantic guarantee.
+- The capture contains numeric `fbuf_pGrid`, `fbuf_pPv`, all seven selected `pvopt_...` fields, and `null` for `fbuf_pAcTotal`, `fbuf_ohmpilotState`, and `fbuf_ohmpilotTemperature`. Historical aliases are insufficient to establish meanings, units, signs, averaging windows, compared quantities, or code enums.
+- Version 2.1.7 exposes those twelve fields only behind `diagnosticReadings=1`, using the exact protocol wording after the `diag_` prefix. Valid JSON numbers and strings are copied without scaling or rounding; booleans become `0|1`; `null`, arrays, and objects are ignored. This is a field-research interface, not a promotion of historical candidates to protocol facts.
+- All new readings remain read-only. Missing fields and unsupported types preserve existing readings. The publication and cleanup rules are FHEM-side behavior and do not establish device emission frequency, requiredness, cross-firmware availability, or writability.

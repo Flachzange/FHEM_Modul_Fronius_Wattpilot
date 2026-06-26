@@ -99,7 +99,8 @@ for my $path (sort @test_files) {
 }
 
 my @public_readings = qw(
-    state firmwareVersion authHashMode carState configForceState configChargingCurrent
+    state firmwareVersion deviceType deviceModel deviceSubType deviceVariant helloProtocol statusProtocol
+    authHashMode carState configForceState configChargingCurrent
     configChargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
     temperatureCurrentLimit configMinimumChargingCurrent configPvSurplusStartPower
@@ -107,7 +108,11 @@ my @public_readings = qw(
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
     configMinimumChargingInterval pvBatterySoC pvBatteryPower
-    pvBatteryModeCode configPvBatteryChargeAboveSoC
+    pvBatteryModeCode deviceRebootCount deviceUptime
+    diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
+    diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
+    diag_pvopt_deltaA diag_pvopt_specialCase diag_fbuf_pAcTotal
+    diag_fbuf_ohmpilotState diag_fbuf_ohmpilotTemperature configPvBatteryChargeAboveSoC
     configPvBatteryDischargeEnabled configPvBatteryDischargeUntilSoC
     configPvBatteryDischargeTimeLimitEnabled configPvBatteryDischargeStartTime
     configPvBatteryDischargeStopTime configNextTripTime
