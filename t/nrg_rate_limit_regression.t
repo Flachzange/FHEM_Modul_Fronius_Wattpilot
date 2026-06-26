@@ -177,7 +177,7 @@ subtest 'battery-diagnostic-first ordering cannot starve nrg on the common tick'
     DevIo::run_due_timers(4_030);
     is(reading_value($hash, 'power'), '900.00',
         'fresh nrg is not starved by battery input');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -500,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00',
         'fresh battery diagnostics publish on the same tick');
     is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
         'nrg and diagnostics receive the same FHEM timestamp');
@@ -239,8 +239,8 @@ subtest 'observed fullStatus and matched responses use the common clock' => sub 
         'sanitized observed Flex fullStatus is accepted');
     is(reading_value($hash, 'voltageL1'), '230.00',
         'observed Flex voltage is initially published');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -1525,
-        'observed Flex raw battery diagnostic is initially published');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.00',
+        'observed Flex battery diagnostic is initially published with two decimals');
     is(clock_next($hash), 5_530,
         'observed fullStatus starts one common telemetry clock');
 
@@ -264,7 +264,7 @@ subtest 'observed fullStatus and matched responses use the common clock' => sub 
     DevIo::run_due_timers(5_530);
     is(reading_value($hash, 'power'), '30.00',
         'matched response nrg publishes on the common tick');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -1400,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1400.00',
         'matched response battery diagnostic publishes on the common tick');
     is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
         'response owners share one transaction timestamp');

@@ -183,7 +183,7 @@ subtest 'all telemetry owners flush together without cross-owner starvation' => 
     }), 'nrg input in the same cycle is cached');
     is(reading_value($hash, 'power'), '500.00',
         'nrg remains unchanged before the shared tick');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -500,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00',
         'diagnostic remains unchanged before the shared tick');
     is(reading_value($hash, 'energyTotal'), '100.00',
         'energy remains unchanged before the shared tick');
@@ -191,7 +191,7 @@ subtest 'all telemetry owners flush together without cross-owner starvation' => 
     DevIo::run_due_timers(2_030);
     is(reading_value($hash, 'power'), '600.00',
         'fresh nrg publishes on the shared tick');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -600,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-600.00',
         'fresh battery diagnostics publish on the shared tick');
     is(reading_value($hash, 'energyTotal'), '101.00',
         'changed energy publishes on the shared tick');
@@ -271,7 +271,7 @@ subtest 'idle gating applies only to nrg and diagnostics while energy stays chan
     DevIo::run_due_timers(3_130);
     is(reading_value($enabled, 'power'), '20.00',
         'idle nrg publishes on the common tick when enabled');
-    is(reading_value($enabled, 'diag_fbuf_pAkku'), -300,
+    is(reading_value($enabled, 'diag_fbuf_pAkku'), '-300.00',
         'idle diagnostics publishes on the common tick when enabled');
     is(reading_time($enabled, 'power'), reading_time($enabled, 'diag_fbuf_pAkku'),
         'idle nrg and diagnostics share the common tick timestamp');
@@ -431,7 +431,7 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
         nrg => nrg(600, 2),
     }), 'all owners become dirty before the boundary');
     is(reading_value($hash, 'power'), '500.00', 'nrg remains queued before interval zero');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -500, 'diagnostic remains queued before interval zero');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00', 'diagnostic remains queued before interval zero');
     is(reading_value($hash, 'energyTotal'), '100.00', 'energy remains queued before interval zero');
 
     $DevIo::NOW = 5_002;
@@ -439,7 +439,7 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
     is(DevIo::command_attr($hash->{NAME}, 'interval', 0), undef,
         'positive-to-zero transition is accepted');
     is(reading_value($hash, 'power'), '600.00', 'eligible dirty nrg flushes immediately');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -600, 'eligible dirty battery flushes immediately');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-600.00', 'eligible dirty battery flushes immediately');
     is(reading_value($hash, 'energyTotal'), '101.00', 'eligible changed energy flushes immediately');
     is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
         'nrg and diagnostics share the attribute-change transaction timestamp');
@@ -483,7 +483,7 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
         'changed energy remains eligible while idle');
     isnt(reading_value($hash, 'power'), '800.00',
         'ineligible ordinary idle nrg is not flushed by the attribute change');
-    isnt(reading_value($hash, 'diag_fbuf_pAkku'), -800,
+    isnt(reading_value($hash, 'diag_fbuf_pAkku'), '-800.00',
         'ineligible idle diagnostics is not flushed by the attribute change');
     ok(keys %{$hash->{helper}{telemetryPublication}{nrg}{dirty}},
         'ineligible idle nrg remains dirty and passive');
@@ -585,7 +585,7 @@ subtest 'positive interval changes replace one timer and preserve queued telemet
     DevIo::run_due_timers(5_548);
     is(reading_value($hash, 'power'), '110.00',
         'queued nrg publishes at the replacement boundary without new input');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -100,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-100.00',
         'queued battery diagnostics publish at the replacement boundary');
     is(reading_value($hash, 'energyTotal'), '1.00',
         'queued energy publishes at the replacement boundary');
@@ -724,7 +724,7 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
     }), 'first post-reload status activates the new policy');
     is(reading_value($hash, 'energyTotal'), '2.00',
         'post-reload energy uses the new energy owner');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -200,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-200.00',
         'post-reload diagnostics uses the new diagnostic owner');
     is(reading_value($hash, 'power'), '200.00',
         'post-reload electrical telemetry uses the new nrg owner');
@@ -815,8 +815,8 @@ subtest 'authoritative reading policy inventory is complete' => sub {
             "$key uses the common diagnostic idle gate");
         is($policy->{$key}{owner}, 'diagnostic',
             "$key uses the diagnostic owner");
-        is($policy->{$key}{formatter}, 'raw',
-            "$key preserves the validated raw scalar");
+        is($policy->{$key}{formatter}, 'diagnostic2',
+            "$key rounds JSON numbers while preserving strings and booleans");
     }
 };
 

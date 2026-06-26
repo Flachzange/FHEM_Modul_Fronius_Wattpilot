@@ -168,9 +168,11 @@ lowerCamelCase compatibility text reading. Each code/text pair is updated
 atomically in the same reading transaction. Unknown numeric values remain
 explicit as `unknown:<code>`. `pvBatteryModeCode` preserves a non-negative raw
 integer without inventing an enum. With diagnostics enabled, `fbuf_akkuSOC`
-and `fbuf_pAkku` are copied as raw scalar diagnostics without percentage
-validation, unit assignment, scaling, rounding, or sign interpretation. The
-relationship between `fbuf_pAkku` and `pvopt_averagePAkku` remains unknown.
+and `fbuf_pAkku` are exposed as raw scalar diagnostics without percentage
+validation, unit assignment, scaling, or sign interpretation. Numeric
+diagnostic values are formatted with exactly two decimal places; strings
+remain unchanged and booleans become `0|1`. The relationship between
+`fbuf_pAkku` and `pvopt_averagePAkku` remains unknown.
 
 Configuration fields are normalized independently of telemetry gates and are
 never changed optimistically by a Set command. Only device-supplied status

@@ -245,22 +245,22 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         car => 2,
         %{diagnostic_status()},
     }), 'enabled diagnostic status is accepted');
-    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.1256789',
-        'former battery SOC telemetry is now an unrounded optional diagnostic');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.9876543',
-        'former battery power telemetry is now an unrounded optional diagnostic');
+    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.13',
+        'former battery SOC telemetry is rounded to two decimals');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.99',
+        'former battery power telemetry is rounded to two decimals');
     # BEGIN 2.0 negative controls for removed public names
     ok(!exists $hash->{READINGS}{pvBatterySoC},
         'the former public battery SOC reading is not recreated');
     ok(!exists $hash->{READINGS}{pvBatteryPower},
         'the former public battery power reading is not recreated');
     # END 2.0 negative controls for removed public names
-    is(reading_value($hash, 'diag_fbuf_pGrid'), '125.1256789',
-        'numeric diagnostics are not rounded');
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '125.13',
+        'numeric diagnostics are rounded to two decimals');
     is(reading_value($hash, 'diag_fbuf_pPv'), '-1650.25',
         'signed diagnostics are not reinterpreted');
-    is(reading_value($hash, 'diag_pvopt_averagePGrid'), '1.23456789',
-        'small numeric detail is retained');
+    is(reading_value($hash, 'diag_pvopt_averagePGrid'), '1.23',
+        'numeric diagnostic detail is rounded consistently');
     is(reading_value($hash, 'diag_fbuf_pAcTotal'), 'raw-ac-value',
         'string diagnostics are copied unchanged');
     is(reading_value($hash, 'diag_fbuf_ohmpilotState'), 1,
@@ -276,11 +276,11 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         fbuf_ohmpilotState => [1, 2],
         fbuf_ohmpilotTemperature => undef,
     }), 'mixed diagnostic delta is accepted');
-    is(reading_value($hash, 'diag_fbuf_pGrid'), '125.1256789',
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '125.13',
         'changed numeric diagnostic waits for the interval');
     DevIo::run_due_timers(3_040);
-    is(reading_value($hash, 'diag_fbuf_pGrid'), '222.2222222',
-        'changed numeric diagnostic publishes at the interval');
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '222.22',
+        'changed numeric diagnostic publishes rounded at the interval');
     is(reading_value($hash, 'diag_fbuf_pAcTotal'), 'raw-ac-value',
         'object diagnostic input preserves the previous scalar');
     is(reading_value($hash, 'diag_fbuf_ohmpilotState'), 1,
@@ -295,14 +295,14 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         fbuf_pGrid => 333.3333333,
     }), 'idle diagnostic value is cached');
     DevIo::run_due_timers(3_070);
-    is(reading_value($hash, 'diag_fbuf_pGrid'), '222.2222222',
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '222.22',
         'all diagnostics stay gated while idle');
 
     is(DevIo::command_attr($hash->{NAME}, 'update_while_idle', 1), undef,
         'idle publication is enabled');
     DevIo::run_due_timers(3_100);
-    is(reading_value($hash, 'diag_fbuf_pGrid'), '333.3333333',
-        'the latest cached diagnostic publishes after the gate opens');
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '333.33',
+        'the latest cached diagnostic publishes rounded after the gate opens');
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 0), undef,
         'diagnosticReadings accepts zero');
@@ -335,8 +335,8 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         fbuf_pGrid => 555,
     }), 'diagnostic input is cached after re-enabling');
     DevIo::run_due_timers(3_160);
-    is(reading_value($hash, 'diag_fbuf_pGrid'), 555,
-        're-enabled diagnostics publish normally');
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '555.00',
+        're-enabled numeric diagnostics publish with two decimals');
     is(DevIo::command_delete_attr($hash->{NAME}, 'diagnosticReadings'), undef,
         'deleting the attribute is accepted');
     ok(!exists $hash->{READINGS}{diag_fbuf_pGrid},
@@ -347,6 +347,33 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
     like(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 2),
         qr/diagnosticReadings must be 0 or 1/,
         'other diagnosticReadings values are rejected');
+};
+
+
+subtest 'reload clears legacy diagnostic cache shape while preserving enabled readings' => sub {
+    my $hash = fresh_device('reloadEnabledDiagnostics');
+    $attr{$hash->{NAME}}{diagnosticReadings} = 1;
+    $hash->{READINGS}{diag_fbuf_pGrid} = { VAL => '12.34', TIME => 'old' };
+    $hash->{helper}{telemetryPublication}{diagnostic} = {
+        cache => { fbuf_pGrid => 12 },
+        dirty => { fbuf_pGrid => 1 },
+    };
+
+    my $module_hash = {};
+    main::Wattpilot_Initialize($module_hash);
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '12.34',
+        'reload preserves an enabled diagnostic reading');
+    ok(!exists $hash->{helper}{telemetryPublication}{diagnostic},
+        'reload discards the pre-format-wrapper diagnostic cache shape');
+
+    $attr{$hash->{NAME}}{interval} = 0;
+    $attr{$hash->{NAME}}{update_while_idle} = 1;
+    ok(parse_status($hash, 'deltaStatus', {
+        car => 2,
+        fbuf_pGrid => 15,
+    }), 'fresh diagnostic input repopulates the cache after reload');
+    is(reading_value($hash, 'diag_fbuf_pGrid'), '15.00',
+        'fresh post-reload numeric diagnostics use two-decimal formatting');
 };
 
 subtest 'reload removes stale diagnostics when the effective attribute is off' => sub {

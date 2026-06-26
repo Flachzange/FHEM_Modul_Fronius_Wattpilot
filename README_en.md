@@ -205,7 +205,7 @@ These additional setters use the existing secured `setValue` path. No reading is
 
 ### PV battery diagnostics
 
-The fields `fbuf_akkuSOC` and `fbuf_pAkku` are published only with `diagnosticReadings=1` as the raw readings `diag_fbuf_akkuSOC` and `diag_fbuf_pAkku`. They belong to the shared diagnostic owner, are neither scaled nor rounded, and receive no unit or sign interpretation. `diag_fbuf_pAkku` and `diag_pvopt_averagePAkku` come from two different protocol fields; their exact distinction, aggregation, unit, and sign convention remain unconfirmed. `pvBatteryModeCode` from `fbuf_akkuMode` remains a normal discrete status and publishes immediately only on actual change. The module deliberately provides no setters and invents no mode enum.
+The fields `fbuf_akkuSOC` and `fbuf_pAkku` are published only with `diagnosticReadings=1` as the raw readings `diag_fbuf_akkuSOC` and `diag_fbuf_pAkku`. They belong to the shared diagnostic owner; numeric values are rounded to exactly two decimal places without scaling and receive no unit or sign interpretation. `diag_fbuf_pAkku` and `diag_pvopt_averagePAkku` come from two different protocol fields; their exact distinction, aggregation, unit, and sign convention remain unconfirmed. `pvBatteryModeCode` from `fbuf_akkuMode` remains a normal discrete status and publishes immediately only on actual change. The module deliberately provides no setters and invents no mode enum.
 
 The module also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`: `fam` as `configPvBatteryChargeAboveSoC`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilSoC`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeStopTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status.
 
@@ -271,7 +271,7 @@ Controls the fourteen optional raw field-research readings whose names begin wit
 
 * `0` (Default): diagnostic fields are not evaluated or cached. Existing `diag_...` readings are deleted immediately and their dirty/cache state is cleared. Deleting the attribute has the same effect.
 * `1`: valid scalar values from the fourteen selected protocol fields are published through the normal `interval` mechanism. They are eligible while the vehicle is charging or when `update_while_idle=1`.
-* The protocol wording is retained exactly after the `diag_` prefix. Numbers and strings are copied without scaling, conversion, rounding, unit claims, or sign interpretation; JSON booleans become `0` or `1`. Missing fields, `null`, objects, arrays, and invalid values preserve the previous reading.
+* The protocol wording is retained exactly after the `diag_` prefix. JSON numbers are rounded to exactly two decimal places without scaling or conversion; strings remain unchanged and JSON booleans become `0` or `1`. No unit, meaning, or sign convention is inferred from that formatting. Missing fields, `null`, objects, arrays, and invalid values preserve the previous reading.
 
 ### `disable` (0 or 1)
 

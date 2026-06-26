@@ -79,10 +79,10 @@ subtest 'stationary battery SOC and power are optional raw diagnostics' => sub {
         fbuf_akkuSOC => 60.1234567,
         fbuf_pAkku => -1525.9876543,
     }), 'battery diagnostics are accepted after enabling');
-    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.1234567',
-        'SOC is copied without percentage validation or rounding');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.9876543',
-        'power is copied without unit or sign interpretation');
+    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.12',
+        'SOC is rounded to two decimals without percentage validation');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.99',
+        'power is rounded without unit or sign interpretation');
 
     # BEGIN 2.0 negative controls for removed public names
     ok(!exists $hash->{READINGS}{pvBatterySoC},
@@ -92,7 +92,7 @@ subtest 'stationary battery SOC and power are optional raw diagnostics' => sub {
     # END 2.0 negative controls for removed public names
 };
 
-subtest 'raw scalar rules preserve field-research detail' => sub {
+subtest 'diagnostic scalar rules round numbers and preserve other scalar kinds' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 0;
     $attr{$hash->{NAME}}{update_while_idle} = 1;
@@ -105,9 +105,9 @@ subtest 'raw scalar rules preserve field-research detail' => sub {
         fbuf_pAkku => -500.125,
     }), 'numeric baseline is accepted');
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '55.25',
-        'numeric SOC detail is retained');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.125',
-        'numeric power detail is retained');
+        'two-decimal numeric SOC remains unchanged');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.12',
+        'numeric power is rounded to two decimals');
 
     $DevIo::NOW = 201;
     ok(parse_status($hash, 'deltaStatus', {
@@ -154,8 +154,8 @@ subtest 'battery diagnostics share the common interval without cross-publication
         fbuf_akkuMode => 1,
         nrg => nrg(500),
     }), 'combined baseline starts the shared telemetry clock');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -500,
-        'initial battery diagnostic is published raw');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00',
+        'initial numeric battery diagnostic is published with two decimals');
     is(reading_value($hash, 'power'), '500.00',
         'initial electrical telemetry is published normally');
     is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
@@ -169,15 +169,15 @@ subtest 'battery diagnostics share the common interval without cross-publication
     }), 'battery-only input is cached before the common tick');
     is(reading_value($hash, 'pvBatteryModeCode'), 2,
         'battery mode remains immediate-on-change');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -500,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00',
         'diagnostic power waits for the common tick');
 
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(700) }),
         'fresh nrg in the same cycle is cached independently');
     DevIo::run_due_timers(1_030);
-    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '49.1234',
+    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '49.12',
         'latest raw SOC publishes on the common tick');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), '-700.5678',
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-700.57',
         'latest raw battery power publishes on the common tick');
     is(reading_value($hash, 'power'), '700.00',
         'fresh nrg publishes on the same common tick');
@@ -204,10 +204,10 @@ subtest 'idle gate and diagnostic removal apply to battery diagnostics' => sub {
     is(DevIo::command_attr($hash->{NAME}, 'update_while_idle', 1), undef,
         'idle publication can be enabled');
     DevIo::run_due_timers(2_030);
-    is(reading_value($hash, 'diag_fbuf_akkuSOC'), 40,
+    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '40.00',
         'cached SOC publishes after opening the idle gate');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), '250.126',
-        'cached power publishes without rounding');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '250.13',
+        'cached power publishes rounded to two decimals');
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 0), undef,
         'diagnostics can be disabled');
@@ -247,7 +247,7 @@ subtest 'matched response status follows the same diagnostic contract' => sub {
             fbuf_akkuMode => 2,
         },
     })), 'successful matched response is accepted');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), -600,
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-600.00',
         'response diagnostic remains cached before the tick');
     is(reading_value($hash, 'pvBatteryModeCode'), 2,
         'response mode change remains immediate');
@@ -255,7 +255,7 @@ subtest 'matched response status follows the same diagnostic contract' => sub {
     DevIo::run_due_timers(3_030);
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '61.75',
         'response SOC becomes visible at the tick');
-    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1200.875',
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1200.88',
         'response power becomes visible at the tick');
 };
 

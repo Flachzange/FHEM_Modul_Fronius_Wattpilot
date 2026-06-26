@@ -68,6 +68,18 @@ subtest 'reading inventory declares one intentional public format per reading' =
         )],
         'all two-decimal public readings are explicit in the existing inventory');
     is_deeply(
+        [sort grep { $policy->{$_}{formatter} eq 'diagnostic2' } keys %$policy],
+        [sort qw(
+            diag_fbuf_akku_soc diag_fbuf_p_akku diag_fbuf_p_grid
+            diag_fbuf_p_pv diag_pvopt_average_p_grid
+            diag_pvopt_average_p_pv diag_pvopt_average_p_akku
+            diag_pvopt_average_p_ohmpilot diag_pvopt_delta_p
+            diag_pvopt_delta_a diag_pvopt_special_case
+            diag_fbuf_p_ac_total diag_fbuf_ohmpilot_state
+            diag_fbuf_ohmpilot_temperature
+        )],
+        'all optional diagnostics use scalar-aware two-decimal formatting');
+    is_deeply(
         [sort grep { $policy->{$_}{formatter} eq 'decimal1' } keys %$policy],
         [],
         'no current public reading uses the legacy one-decimal formatter');
@@ -98,6 +110,19 @@ subtest 'decimal formatter retains trailing zeroes and removes rounded negative 
     is(main::Wattpilot_FormatReadingValue('device_uptime', 62_070_123),
         '17241:42',
         'uptime converts seconds to cumulative hours and minutes');
+    is(main::Wattpilot_FormatReadingValue('diag_fbuf_p_grid', 1.236),
+        '1.24',
+        'numeric diagnostics round to two decimal places');
+    is(main::Wattpilot_FormatReadingValue('diag_fbuf_p_grid', -0.004),
+        '0.00',
+        'numeric diagnostics normalize rounded negative zero');
+    is(main::Wattpilot_FormatReadingValue('diag_fbuf_p_ac_total', 'raw'),
+        'raw',
+        'diagnostic strings remain unchanged');
+    is(main::Wattpilot_FormatReadingValue(
+            'diag_fbuf_ohmpilot_state', JSON::true()),
+        1,
+        'diagnostic booleans remain zero-or-one values');
 };
 
 subtest 'fullStatus formats physical readings without changing discrete settings' => sub {

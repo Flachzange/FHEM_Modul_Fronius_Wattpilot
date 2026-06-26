@@ -205,7 +205,7 @@ Diese zusätzlichen Setter verwenden den bestehenden gesicherten `setValue`-Pfad
 
 ### PV-Speicher-Diagnose
 
-Die Felder `fbuf_akkuSOC` und `fbuf_pAkku` werden nur mit `diagnosticReadings=1` als rohe Readings `diag_fbuf_akkuSOC` und `diag_fbuf_pAkku` veröffentlicht. Sie gehören zum gemeinsamen Diagnose-Owner, werden weder skaliert noch gerundet und erhalten keine Einheiten- oder Vorzeichendeutung. `diag_fbuf_pAkku` und `diag_pvopt_averagePAkku` stammen aus zwei verschiedenen Protokollfeldern; ihre genaue Abgrenzung, Aggregation und Vorzeichenkonvention ist weiterhin nicht belegt. `pvBatteryModeCode` aus `fbuf_akkuMode` bleibt dagegen ein normaler diskreter Status und wird sofort nur bei tatsächlicher Änderung veröffentlicht. Für diese Werte gibt es bewusst keine Setter und keine erfundene Modus-Enum.
+Die Felder `fbuf_akkuSOC` und `fbuf_pAkku` werden nur mit `diagnosticReadings=1` als rohe Readings `diag_fbuf_akkuSOC` und `diag_fbuf_pAkku` veröffentlicht. Sie gehören zum gemeinsamen Diagnose-Owner; numerische Werte werden ohne Skalierung auf genau zwei Nachkommastellen gerundet, ohne eine Einheit oder Vorzeichenbedeutung zu behaupten. `diag_fbuf_pAkku` und `diag_pvopt_averagePAkku` stammen aus zwei verschiedenen Protokollfeldern; ihre genaue Abgrenzung, Aggregation und Vorzeichenkonvention ist weiterhin nicht belegt. `pvBatteryModeCode` aus `fbuf_akkuMode` bleibt dagegen ein normaler diskreter Status und wird sofort nur bei tatsächlicher Änderung veröffentlicht. Für diese Werte gibt es bewusst keine Setter und keine erfundene Modus-Enum.
 
 Das Modul bildet außerdem die gleichzeitig in App und `fullStatus` beobachteten PV-Speichereinstellungen ab: `fam` als `configPvBatteryChargeAboveSoC`, `pdte` als `configPvBatteryDischargeEnabled`, `pdt` als `configPvBatteryDischargeUntilSoC`, `pdle` als `configPvBatteryDischargeTimeLimitEnabled`, `pdls` als `configPvBatteryDischargeStartTime` und `pdlo` als `configPvBatteryDischargeStopTime`. Die beiden Zeitwerte werden aus ganzen Sekunden seit Mitternacht als `HH:MM` dargestellt. Die Zuordnung ist für Wattpilot Flex Home 22 C6 mit Firmware 43.4 durch die exakt übereinstimmenden App-Werte und den zeitgleichen Status belegt.
 
@@ -271,7 +271,7 @@ Steuert die vierzehn optionalen Rohreadings zur Felderkundung, deren Namen mit `
 
 * `0` (Standard): Diagnosefelder werden weder ausgewertet noch gepuffert. Vorhandene `diag_...`-Readings werden sofort gelöscht und ihr Cache-/Dirty-Zustand verworfen. Das Löschen des Attributs wirkt genauso.
 * `1`: Gültige skalare Werte der vierzehn ausgewählten Protokollfelder werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
-* Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. Zahlen und Strings werden ohne Skalierung, Umrechnung, Rundung, Einheitenbehauptung oder Vorzeichendeutung übernommen; JSON-Booleans erscheinen als `0` oder `1`. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
+* Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. JSON-Zahlen werden ohne Skalierung oder Umrechnung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und JSON-Booleans erscheinen als `0` oder `1`. Daraus werden weiterhin keine Einheit, Bedeutung oder Vorzeichenkonvention abgeleitet. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
 
 ### `disable` (0 oder 1)
 

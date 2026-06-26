@@ -127,33 +127,33 @@ my @WATTPILOT_READING_DEFINITION = (
     [qw(device_uptime uptime device_health
             status:rbt interval device device_uptime hours_minutes nonnegative_integer none)],
     [qw(diag_fbuf_akku_soc diag_fbuf_akkuSOC optional_diagnostic
-            status:fbuf_akkuSOC interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_akkuSOC interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_fbuf_p_akku diag_fbuf_pAkku optional_diagnostic
-            status:fbuf_pAkku interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_pAkku interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_fbuf_p_grid diag_fbuf_pGrid optional_diagnostic
-            status:fbuf_pGrid interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_pGrid interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_fbuf_p_pv diag_fbuf_pPv optional_diagnostic
-            status:fbuf_pPv interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_pPv interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_average_p_grid diag_pvopt_averagePGrid optional_diagnostic
-            status:pvopt_averagePGrid interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_averagePGrid interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_average_p_pv diag_pvopt_averagePPv optional_diagnostic
-            status:pvopt_averagePPv interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_averagePPv interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_average_p_akku diag_pvopt_averagePAkku optional_diagnostic
-            status:pvopt_averagePAkku interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_averagePAkku interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_average_p_ohmpilot diag_pvopt_averagePOhmpilot optional_diagnostic
-            status:pvopt_averagePOhmpilot interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_averagePOhmpilot interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_delta_p diag_pvopt_deltaP optional_diagnostic
-            status:pvopt_deltaP interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_deltaP interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_delta_a diag_pvopt_deltaA optional_diagnostic
-            status:pvopt_deltaA interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_deltaA interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_pvopt_special_case diag_pvopt_specialCase optional_diagnostic
-            status:pvopt_specialCase interval diagnostic diagnostic raw raw_scalar none)],
+            status:pvopt_specialCase interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_fbuf_p_ac_total diag_fbuf_pAcTotal optional_diagnostic
-            status:fbuf_pAcTotal interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_pAcTotal interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_fbuf_ohmpilot_state diag_fbuf_ohmpilotState optional_diagnostic
-            status:fbuf_ohmpilotState interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_ohmpilotState interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(diag_fbuf_ohmpilot_temperature diag_fbuf_ohmpilotTemperature optional_diagnostic
-            status:fbuf_ohmpilotTemperature interval diagnostic diagnostic raw raw_scalar none)],
+            status:fbuf_ohmpilotTemperature interval diagnostic diagnostic diagnostic2 raw_scalar none)],
     [qw(energy_total energyTotal telemetry
             status:eto interval none energy decimal2 number none)],
     [qw(energy_since_plug_in energySincePlugIn telemetry
@@ -473,6 +473,7 @@ sub Wattpilot_Initialize($) {
         next if ref($device_hash) ne 'HASH';
         next if ($device_hash->{TYPE} // '') ne 'Wattpilot';
         $device_hash->{VERSION} = $WATTPILOT_VERSION;
+        Wattpilot_ClearOptionalDiagnosticCache($device_hash);
         Wattpilot_ClearOptionalDiagnosticReadings($device_hash)
             if AttrVal($device_hash->{NAME}, 'diagnosticReadings', 0) ne '1';
     }
@@ -1127,6 +1128,17 @@ sub Wattpilot_IsJsonBoolean($) {
     return JSON::is_bool($value) ? 1 : 0;
 }
 
+sub Wattpilot_TagDiagnosticNumber($) {
+    my ($value) = @_;
+    my $number = 0 + $value;
+    return bless \$number, 'Wattpilot::DiagnosticNumber';
+}
+
+sub Wattpilot_IsDiagnosticNumber($) {
+    my ($value) = @_;
+    return ref($value) eq 'Wattpilot::DiagnosticNumber';
+}
+
 sub Wattpilot_MessageTypeForLog($) {
     my ($type) = @_;
     return 'redacted'
@@ -1223,10 +1235,14 @@ sub Wattpilot_NormalizeStatusValue($$) {
     }
 
     if ($kind eq 'raw_scalar') {
-        return $value ? 1 : 0 if Wattpilot_IsJsonBoolean($value);
+        return $value if Wattpilot_IsJsonBoolean($value);
         return $value if Wattpilot_IsJsonString($value);
-        return Wattpilot_ParseJsonFiniteNumber($value)
-            if Wattpilot_IsJsonNumber($value);
+        if (Wattpilot_IsJsonNumber($value)) {
+            my $number = Wattpilot_ParseJsonFiniteNumber($value);
+            return defined($number)
+                ? Wattpilot_TagDiagnosticNumber($number)
+                : undef;
+        }
         return undef;
     }
 
@@ -1475,6 +1491,14 @@ sub Wattpilot_FormatReadingValue($$) {
     my $formatter = $WATTPILOT_READING_POLICY{$reading_key}{formatter} // '';
     return Wattpilot_FormatDecimal($value, 2) if $formatter eq 'decimal2';
     return Wattpilot_FormatDecimal($value, 1) if $formatter eq 'decimal1';
+    if ($formatter eq 'diagnostic2') {
+        return Wattpilot_FormatDecimal($$value, 2)
+            if Wattpilot_IsDiagnosticNumber($value);
+        return $value ? 1 : 0 if Wattpilot_IsJsonBoolean($value);
+        return Wattpilot_FormatDecimal($value, 2)
+            if Wattpilot_IsJsonNumber($value);
+        return $value;
+    }
     if ($formatter eq 'hours_minutes') {
         my $hours = int($value / 3600);
         my $minutes = int(($value % 3600) / 60);
@@ -1634,11 +1658,17 @@ sub Wattpilot_CacheTelemetry($$) {
         if Wattpilot_DiagnosticReadingsEnabled($hash);
 }
 
-sub Wattpilot_ClearOptionalDiagnosticReadings($) {
+sub Wattpilot_ClearOptionalDiagnosticCache($) {
     my ($hash) = @_;
     return if ref($hash) ne 'HASH';
     delete $hash->{helper}{telemetryPublication}{$WATTPILOT_DIAGNOSTIC_OWNER}
         if ref($hash->{helper}{telemetryPublication}) eq 'HASH';
+}
+
+sub Wattpilot_ClearOptionalDiagnosticReadings($) {
+    my ($hash) = @_;
+    return if ref($hash) ne 'HASH';
+    Wattpilot_ClearOptionalDiagnosticCache($hash);
     for my $reading (@WATTPILOT_OPTIONAL_DIAGNOSTIC_READING) {
         delete $hash->{READINGS}{$reading};
     }
@@ -2987,7 +3017,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
   <p>Version 2.1.5 limits <code>chargingCurrent</code> to <code>6..min(32, configMaximumCurrentLimit)</code> after a usable <code>ama</code> value has been received for the current device hash. Missing, stale, malformed, non-integer, or out-of-range values keep the compatibility range <code>6..32</code>. FHEMWEB receives the same dynamic upper bound; rejected commands are not sent and <code>configChargingCurrent</code> remains device-confirmed. The same release also preserves exactly one reconnect owner after ordinary EOF or a WebSocket Close frame, treats the first valid authenticated partial or complete status as initialization, finalizes pending commands on session invalidation, applies the bounded Charging-to-Idle electrical refresh with both <code>update_while_idle</code> values, and flushes already queued eligible telemetry when <code>interval</code> becomes <code>0</code>.</p>
   <p>Version 2.1.6 replaces the shared telemetry timer immediately when <code>interval</code> changes between positive values while telemetry is dirty. The queued values remain rate-limited and publish at the new boundary even without another status message. Repeated changes keep exactly one timer, stale callbacks are harmless, idle-gated electrical and battery data remains passive, and a positive change with no dirty telemetry keeps the clock lazy.</p>
-  <p>Version 2.1.7 adds exact device identity and separate hello/status protocol readings, interval-controlled <code>deviceRebootCount</code> and <code>uptime</code>, and fourteen optional unformatted field-research readings behind <code>diagnosticReadings</code>. The <code>rbt</code> value is interpreted as seconds from the maintainer live-device observation and rendered as cumulative hours and minutes in <code>H:MM</code>. The former standalone stationary-battery SOC/power readings are replaced by raw <code>diag_fbuf_akkuSOC</code> and <code>diag_fbuf_pAkku</code>. Optional diagnostics are removed immediately when disabled and make no semantic, unit, sign, aggregation, or enum claims.</p>
+  <p>Version 2.1.7 adds exact device identity and separate hello/status protocol readings, interval-controlled <code>deviceRebootCount</code> and <code>uptime</code>, and fourteen optional scalar field-research readings behind <code>diagnosticReadings</code>. The <code>rbt</code> value is interpreted as seconds from the maintainer live-device observation and rendered as cumulative hours and minutes in <code>H:MM</code>. The former standalone stationary-battery SOC/power readings are replaced by raw <code>diag_fbuf_akkuSOC</code> and <code>diag_fbuf_pAkku</code>. Optional diagnostics are removed immediately when disabled and make no semantic, unit, sign, aggregation, or enum claims.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3123,7 +3153,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
         <code>0</code> keeps ordinary electrical <code>nrg</code>, <code>uptime</code>, and enabled optional diagnostics passive while not charging; <code>1</code> admits real incoming idle values from those owners on the shared telemetry clock. With either value, charging-to-idle starts one bounded electrical refresh: one valid device-supplied <code>nrg</code> in the transition message or grace window may bypass the clock, otherwise at most one controlled reconnect is used. Changing the attribute during the episode neither duplicates nor cancels it. The attribute does not gate energy: <code>eto</code>/<code>wh</code> are queued only when their formatted public values actually change, so identical snapshots do not renew timestamps. No device emission frequency is claimed, no polling command is invented, and no zero value is synthesized.</li>
     <li><code>diagnosticReadings &lt;0|1&gt;</code><br>
-        <code>0</code> is the default and immediately deletes all optional <code>diag_...</code> readings and clears their cache/dirty state; deleting the attribute has the same effect. <code>1</code> enables the fourteen raw scalar field-research readings on the normal <code>interval</code>, eligible while charging or with <code>update_while_idle=1</code>. Numbers and strings are copied without conversion or rounding, JSON booleans become <code>0|1</code>, and missing, <code>null</code>, object, array, or invalid values preserve the previous reading.</li>
+        <code>0</code> is the default and immediately deletes all optional <code>diag_...</code> readings and clears their cache/dirty state; deleting the attribute has the same effect. <code>1</code> enables the fourteen raw scalar field-research readings on the normal <code>interval</code>, eligible while charging or with <code>update_while_idle=1</code>. JSON numbers are formatted with exactly two decimal places, strings remain unchanged, and JSON booleans become <code>0|1</code>; missing, <code>null</code>, object, array, or invalid values preserve the previous reading.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -3159,7 +3189,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPhaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code>, or <code>unknown:&lt;raw-value&gt;</code> from <code>psm</code>.</li>
     <li><code>configThreePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts with exactly two decimal places.</li>
     <li><code>configPhaseSwitchDelay</code>, <code>configMinimumPhaseSwitchInterval</code>, <code>configMinimumChargeTime</code>, <code>configMinimumChargingPauseDuration</code>, <code>configMinimumChargingInterval</code><br>Non-negative finite values from <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code>, and <code>mci</code>, converted from protocol milliseconds to public seconds.</li>
-    <li><code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optional raw scalar field-research readings from the two stationary-battery-related protocol fields. They are not scaled or rounded. <code>diag_fbuf_pAkku</code> and <code>diag_pvopt_averagePAkku</code> are distinct fields; their exact distinction, aggregation, unit, and sign remain unconfirmed.</li>
+    <li><code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optional raw scalar field-research readings from the two stationary-battery-related protocol fields. Numeric values are rounded to exactly two decimal places without scaling; strings remain unchanged and booleans become <code>0|1</code>. <code>diag_fbuf_pAkku</code> and <code>diag_pvopt_averagePAkku</code> are distinct fields; their exact distinction, aggregation, unit, and sign remain unconfirmed.</li>
     <li><code>pvBatteryModeCode</code><br>Unmodified non-negative integer code from <code>fbuf_akkuMode</code>. No text enum is invented.</li>
     <li><code>deviceRebootCount</code><br>Raw non-negative <code>rbc</code> value on the normal interval without idle gating. Exact semantics remain unverified.</li>
     <li><code>uptime</code><br>Non-negative <code>rbt</code> value interpreted as seconds from the maintainer live-device observation and rendered as cumulative hours and minutes in <code>H:MM</code>. Remaining seconds are discarded; publication uses the normal interval while charging or with <code>update_while_idle=1</code>.</li>
@@ -3256,7 +3286,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.4 ersetzt die sieben einzelnen Setter für Phasenumschaltung und Mindestladen durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
   <p>Version 2.1.5 begrenzt <code>chargingCurrent</code> nach Empfang eines nutzbaren <code>ama</code>-Werts für den aktuellen Device-Hash auf <code>6..min(32, configMaximumCurrentLimit)</code>. Fehlende, noch nicht bestätigte, fehlerhafte, nicht ganzzahlige oder außerhalb des nutzbaren Bereichs liegende Werte behalten den Kompatibilitätsbereich <code>6..32</code>. FHEMWEB erhält dieselbe dynamische Obergrenze; abgelehnte Befehle werden nicht gesendet und <code>configChargingCurrent</code> bleibt gerätebestätigt. Dieselbe Version bewahrt nach normalem EOF oder WebSocket-Close genau einen Reconnect-Eigentümer, behandelt den ersten gültigen authentifizierten partiellen oder vollständigen Status als Initialisierung, beendet ausstehende Befehle bei Sitzungsinvalidierung, führt den begrenzten Charging-zu-Idle-Refresh bei beiden <code>update_while_idle</code>-Werten aus und veröffentlicht bereits gepufferte zulässige Telemetrie sofort, wenn <code>interval</code> auf <code>0</code> wechselt.</p>
   <p>Version 2.1.6 ersetzt den gemeinsamen Telemetrie-Timer sofort, wenn <code>interval</code> zwischen positiven Werten geändert wird und Telemetrie als geändert vorgemerkt ist. Die gepufferten Werte bleiben intervallgesteuert und werden auch ohne weiteres Statuspaket am neuen Zeitpunkt veröffentlicht. Wiederholte Änderungen behalten genau einen Timer, veraltete Callbacks bleiben wirkungslos, im Idle gesperrte elektrische und Batteriedaten bleiben passiv und ohne Dirty-Daten bleibt die Clock weiterhin lazy.</p>
-  <p>Version 2.1.7 ergänzt exakte Geräteidentität, getrennte Hello-/Status-Protokollreadings, intervallgesteuerte <code>deviceRebootCount</code> und <code>uptime</code> sowie vierzehn optionale unformatierte Felderkundungsreadings hinter <code>diagnosticReadings</code>. Der <code>rbt</code>-Wert wird aufgrund der Realgerätbeobachtung des Maintainers als Sekunden interpretiert und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben. Die bisherigen eigenständigen stationären Speicher-SOC-/Leistungsreadings werden durch rohe <code>diag_fbuf_akkuSOC</code> und <code>diag_fbuf_pAkku</code> ersetzt. Optionale Diagnosen werden beim Abschalten sofort gelöscht und behaupten weder Semantik, Einheit, Vorzeichen, Aggregation noch Enum.</p>
+  <p>Version 2.1.7 ergänzt exakte Geräteidentität, getrennte Hello-/Status-Protokollreadings, intervallgesteuerte <code>deviceRebootCount</code> und <code>uptime</code> sowie vierzehn optionale skalare Felderkundungsreadings hinter <code>diagnosticReadings</code>. Der <code>rbt</code>-Wert wird aufgrund der Realgerätbeobachtung des Maintainers als Sekunden interpretiert und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben. Die bisherigen eigenständigen stationären Speicher-SOC-/Leistungsreadings werden durch rohe <code>diag_fbuf_akkuSOC</code> und <code>diag_fbuf_pAkku</code> ersetzt. Optionale Diagnosen werden beim Abschalten sofort gelöscht und behaupten weder Semantik, Einheit, Vorzeichen, Aggregation noch Enum.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3392,7 +3422,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
         <code>0</code> belässt gewöhnliche elektrische <code>nrg</code>-Telemetrie, <code>uptime</code> und aktivierte optionale Diagnosen im Idle passiv; <code>1</code> verarbeitet echte Idle-Werte dieser Owner im gemeinsamen Telemetrietakt. Bei beiden Werten startet Charging-zu-Idle genau einen begrenzten elektrischen Refresh: Ein gültiges Geräte-<code>nrg</code> in der Übergangsnachricht oder im Zeitfenster darf den Takt einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Eine Attributänderung während der Episode dupliziert oder beendet sie nicht. Das Attribut sperrt Energie nicht: <code>eto</code>/<code>wh</code> werden nur vorgemerkt, wenn sich ihr formatierter öffentlicher Wert tatsächlich ändert; identische Statuswerte erneuern keine Zeitstempel. Es wird keine Geräte-Sendefrequenz behauptet, kein Polling-Kommando erfunden und kein Nullwert synthetisiert.</li>
     <li><code>diagnosticReadings &lt;0|1&gt;</code><br>
-        <code>0</code> ist Standard und löscht sofort alle optionalen <code>diag_...</code>-Readings sowie deren Cache-/Dirty-Zustand; das Löschen des Attributs wirkt genauso. <code>1</code> aktiviert die vierzehn rohen skalaren Felderkundungsreadings im normalen <code>interval</code>, zulässig beim Laden oder mit <code>update_while_idle=1</code>. Zahlen und Strings werden ohne Umrechnung oder Rundung übernommen, JSON-Booleans erscheinen als <code>0|1</code>; fehlende, <code>null</code>-, Objekt-, Array- oder ungültige Werte erhalten das bisherige Reading.</li>
+        <code>0</code> ist Standard und löscht sofort alle optionalen <code>diag_...</code>-Readings sowie deren Cache-/Dirty-Zustand; das Löschen des Attributs wirkt genauso. <code>1</code> aktiviert die vierzehn rohen skalaren Felderkundungsreadings im normalen <code>interval</code>, zulässig beim Laden oder mit <code>update_while_idle=1</code>. JSON-Zahlen werden mit genau zwei Nachkommastellen formatiert, Strings bleiben unverändert und JSON-Booleans erscheinen als <code>0|1</code>; fehlende, <code>null</code>-, Objekt-, Array- oder ungültige Werte erhalten das bisherige Reading.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -3428,7 +3458,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPhaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code> oder <code>unknown:&lt;Rohwert&gt;</code> aus <code>psm</code>.</li>
     <li><code>configThreePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt mit genau zwei Nachkommastellen.</li>
     <li><code>configPhaseSwitchDelay</code>, <code>configMinimumPhaseSwitchInterval</code>, <code>configMinimumChargeTime</code>, <code>configMinimumChargingPauseDuration</code>, <code>configMinimumChargingInterval</code><br>Nicht negative, endliche Werte aus <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code> und <code>mci</code>, von Protokoll-Millisekunden in öffentliche Sekunden umgerechnet.</li>
-    <li><code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optionale rohe skalare Felderkundungsreadings aus den beiden stationären Speicher-bezogenen Protokollfeldern. Sie werden weder skaliert noch gerundet. <code>diag_fbuf_pAkku</code> und <code>diag_pvopt_averagePAkku</code> sind unterschiedliche Felder; ihre genaue Abgrenzung, Aggregation, Einheit und Vorzeichenkonvention bleiben unbestätigt.</li>
+    <li><code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optionale rohe skalare Felderkundungsreadings aus den beiden stationären Speicher-bezogenen Protokollfeldern. Numerische Werte werden ohne Skalierung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und Booleans erscheinen als <code>0|1</code>. <code>diag_fbuf_pAkku</code> und <code>diag_pvopt_averagePAkku</code> sind unterschiedliche Felder; ihre genaue Abgrenzung, Aggregation, Einheit und Vorzeichenkonvention bleiben unbestätigt.</li>
     <li><code>pvBatteryModeCode</code><br>Unveränderter nicht negativer Ganzzahlcode aus <code>fbuf_akkuMode</code>. Es wird keine Klartext-Enum erfunden.</li>
     <li><code>deviceRebootCount</code><br>Roher nicht negativer <code>rbc</code>-Wert im normalen Intervall ohne Idle-Sperre. Die genaue Semantik bleibt unbestätigt.</li>
     <li><code>uptime</code><br>Nicht negativer <code>rbt</code>-Wert, aufgrund der Realgerätbeobachtung des Maintainers als Sekunden interpretiert und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben. Restsekunden werden verworfen; Aktualisierung im normalen Intervall beim Laden oder mit <code>update_while_idle=1</code>.</li>
