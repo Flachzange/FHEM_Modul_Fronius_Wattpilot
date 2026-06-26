@@ -70,7 +70,7 @@ my @old_exact_strings = (
     'Voltage_L1', 'Voltage_L2', 'Voltage_L3',
     'Current_L1', 'Current_L2', 'Current_L3',
     'Power_L1', 'Power_L2', 'Power_L3',
-    'pvBatterySoC', 'pvBatteryPower', 'deviceUptime',
+    'pvBatterySoC', 'pvBatteryPower', 'deviceUptime', 'rawJsonLog',
     'Password', 'Start', 'Stop', 'Default', 'Eco', 'NextTrip',
     'Unknown', 'password stored', 'password missing', 'credential error',
     'connection failed', 'auth_failed', 'auth_timeout',
@@ -257,6 +257,36 @@ like($commandref_de, qr/<code>cpDisabledRequest<\/code>.*Wattpilot Flex.*nicht b
     'German commandref documents the unconfirmed modelStatus/msi relationship');
 like($commandref_de, qr/<code>modelStatus<\/code>.*abschlie.*wirksame Entscheidung/s,
     'German commandref avoids a final-decision claim');
+like($commandref_en,
+    qr/<code>interval &lt;0-300 seconds&gt;<\/code>.*default is <code>0<\/code>/s,
+    'English commandref documents the free interval range and default');
+like($commandref_de,
+    qr/<code>interval &lt;0-300 Sekunden&gt;<\/code>.*Standard ist <code>0<\/code>/s,
+    'German commandref documents the free interval range and default');
+like($commandref_en,
+    qr/<code>update_while_idle &lt;0\|1&gt;<\/code>.*<code>0<\/code> is the default/s,
+    'English commandref documents the update_while_idle default');
+like($commandref_de,
+    qr/<code>update_while_idle &lt;0\|1&gt;<\/code>.*<code>0<\/code> ist Standard/s,
+    'German commandref documents the update_while_idle default');
+like($commandref_en,
+    qr/<code>authHashCost &lt;4-14&gt;<\/code>.*default is <code>8<\/code>.*affects bcrypt only/s,
+    'English commandref documents authHashCost scope and default');
+like($commandref_de,
+    qr/<code>authHashCost &lt;4-14&gt;<\/code>.*Standard ist <code>8<\/code>.*wirkt nur auf bcrypt/s,
+    'German commandref documents authHashCost scope and default');
+like($commandref_en,
+    qr/set &lt;name&gt; password.*Deleting the FHEM device removes the stored password and derived hash together/s,
+    'English commandref separates password replacement from device deletion');
+like($commandref_de,
+    qr/set &lt;name&gt; password.*Beim L.*schen des FHEM-Devices werden Passwort und abgeleiteter Hash gemeinsam entfernt/s,
+    'German commandref separates password replacement from device deletion');
+like($commandref_en,
+    qr/<code>authHashMode<\/code> updates when an authentication method is selected.*<code>lastCommandRequestId<\/code>.*command lifecycle events/s,
+    'English commandref distinguishes event-driven diagnostics from immediate-on-change status');
+like($commandref_de,
+    qr/<code>authHashMode<\/code> wird bei der Auswahl eines Authentifizierungsverfahrens aktualisiert.*<code>lastCommandRequestId<\/code>.*Befehls-Lifecycle/s,
+    'German commandref distinguishes event-driven diagnostics from immediate-on-change status');
 like($readme_en, qr/The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed/s,
     'English README preserves the decision-field uncertainty');
 like($readme_de, qr/`cpDisabledRequest`.*Wattpilot Flex.*nicht best/s,

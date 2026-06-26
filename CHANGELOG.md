@@ -11,6 +11,7 @@
 - Expands the authoritative reading inventory from 53 to 73 public readings and the consumed scalar status schema from 36 to 55 fields, with complete documentation and regression coverage.
 - Derives scalar interval mappings and ordinary scalar-owner order from that same reading inventory, removes the parallel device-health/uptime/diagnostic field tables, and uses one strict formatter dispatcher for immediate and interval status readings. Unknown formatter classifications now fail explicitly instead of silently passing values through; public names, values, cadence, and protocol behavior are unchanged.
 - Advertises `interval` as a free-value attribute instead of a FHEMWEB slider while retaining strict integer validation from 0 through 300.
+- Renames the raw-payload diagnostic attribute from `rawJsonLog` to `rawJSONLog` for consistent acronym capitalization. The former name is not retained as an alias.
 
 ## [v2.1.6] - 2026-06-26
 
