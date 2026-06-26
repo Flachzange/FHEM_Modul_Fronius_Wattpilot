@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.4 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.5 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.1.4; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.1.5; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.4 uses the exact `config` prefix for every configuration reading. The grouped Set commands change only the public command path; protocol keys and confirmed readings remain unchanged. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.5 uses the exact `config` prefix for every configuration reading. The grouped Set commands keep their established protocol mappings, and `chargingCurrent` additionally uses a usable device-confirmed `configMaximumCurrentLimit` only as a local FHEM upper bound. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -82,7 +82,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 
 ### `fullStatus`
 
-The observed wrapper carries `partial` beside `status`, not inside it. Version 2.1.0 preserves that envelope boolean separately. `partial:true` applies valid status members incrementally and does not complete initialization; a non-partial full status completes the sequence. Missing fields never reset existing readings.
+The observed wrapper carries `partial` beside `status`, not inside it. The module preserves that envelope boolean separately. From version 2.1.5, the first valid authenticated `fullStatus` or `deltaStatus`, including `partial:true`, establishes the session and cancels the initialization timeout. `partial` controls snapshot completeness only: supplied members apply incrementally and missing fields never reset existing readings.
 
 - Direction: device → client.
 - Observed fields: `type:"fullStatus"`, `partial:false`, and `status` with 558 direct keys.
@@ -223,7 +223,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
 
 
-The names below describe the current version-2.1.4 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.5 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -251,13 +251,15 @@ The names below describe the current version-2.1.4 implementation. They describe
 
 The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` between `modelStatus` and `msi` are not confirmed for Wattpilot Flex. The documentation therefore does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, they must be treated as two device-supplied diagnostic values; no causal chain is inferred.
 
-Version 2.1.1 applies the same reading policy to complete and partial `fullStatus`, `deltaStatus`, and matched response `status`. Configuration fields are immediate after valid device confirmation. `car`, `alw`, `modelStatus`, `msi`, `err`, `amt`, and `fbuf_akkuMode` are immediate-on-change, so identical public values do not renew timestamps or create events. Cumulative energy (`eto`/`wh`), electrical `nrg`, and stationary-battery SOC/power keep separate `energy`, `nrg`, and `battery` latest-value caches and dirty fields but share one interval clock and one FHEM reading transaction. Only valid input changes its own owner; unrelated owners never republish stale cache values. `update_while_idle` gates only electrical and stationary-battery telemetry. Energy is queued only when its formatted public value actually changes; this is module behavior and does not claim when the device emits `eto`/`wh`. Missing, `null`, invalid, or incomplete fields preserve readings and do not move the shared clock.
+Version 2.1.1 applies the same reading policy to complete and partial `fullStatus`, `deltaStatus`, and matched response `status`. Configuration fields are immediate after valid device confirmation. `car`, `alw`, `modelStatus`, `msi`, `err`, `amt`, and `fbuf_akkuMode` are immediate-on-change, so identical public values do not renew timestamps or create events. Cumulative energy (`eto`/`wh`), electrical `nrg`, and stationary-battery SOC/power keep separate `energy`, `nrg`, and `battery` latest-value caches and dirty fields but share one interval clock and one FHEM reading transaction. Only valid input changes its own owner; unrelated owners never republish stale cache values. `update_while_idle` gates only electrical and stationary-battery telemetry. Energy is queued only when its formatted public value actually changes; this is module behavior and does not claim when the device emits `eto`/`wh`. Missing, `null`, invalid, or incomplete fields preserve readings and do not move the shared clock. Changing or deleting a positive `interval` to the effective value `0` flushes all currently eligible dirty owners immediately in one transaction; idle-gated electrical and battery owners remain dirty/passive. The bounded Charging-to-Idle `nrg` refresh applies with both `update_while_idle` values, while ordinary later idle telemetry remains gated when the attribute is `0`.
 
 Version 2.1.2 keeps those protocol and publication semantics unchanged while standardizing public measured and calculated values to exactly two decimal places. Rounded negative zero becomes positive zero; documented percentages, integers, clocks, and durations remain explicit formatting exceptions.
 
 Version 2.1.3 keeps the same public protocol and publication behavior while deriving ordinary scalar status validation/formatting and one-value Set-command metadata from compact declarative inventories. Special handling for `nrg`, car transitions, decision pairs, stationary-battery telemetry, grouped `pvBattery`, local `password`, and lifecycle-only `reconnect` remains explicit.
 
 Version 2.1.4 groups the already verified `psm`/`mpwst`/`mptwt`/`spl3` writes under `phaseSwitch` and the `fmt`/`mci`/`mcpd` writes under `minimumCharging`. This is a public FHEM command-organization change only; it does not add protocol evidence or change field semantics.
+
+Version 2.1.5 uses the already published, device-confirmed `configMaximumCurrentLimit` value from `ama` as a local FHEM upper bound for writes to `amp` when the value is an integer from 6 through 32. The effective `chargingCurrent` range and FHEMWEB slider are `6..min(32, configMaximumCurrentLimit)`. Before `ama` has been received for the current device hash, and for missing, malformed, non-integer, or out-of-range readings, the module keeps the compatibility range `6..32`. This does not add an `ama` setter, prove new protocol writability, or make the third-party current-limit interpretation an official Fronius Flex API fact.
 
 ## Complete observed status-key reference
 

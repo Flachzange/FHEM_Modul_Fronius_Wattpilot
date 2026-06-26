@@ -20,7 +20,7 @@ It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, valida
 
 `t/pv_battery_settings.t` protects the version-2.0.9 grouped setter implementation for issue #52. It loads a minimal sanitized fixture derived from one simultaneous Flex 43.4 app/status observation, verifies the six exact `configPvBattery...` names, checks fullStatus and deltaStatus updates, preserves existing readings for missing, null, type-invalid, out-of-range, and non-minute clock values, and covers `00:00` and `24:00` read boundaries. It additionally proves that exactly one top-level `pvBattery` command is exposed, validates all six subcommands, exact protocol keys and JSON types, strict percentage and clock syntax, no write for invalid input, no optimistic reading update, successful status confirmation, and unchanged confirmed readings after a failed response.
 
-`t/idle_connection_lifecycle.t` covers the lifecycle behavior introduced in version 1.6.0 and retained by version 2.0.0, using deterministic synthetic time. It verifies both `update_while_idle` values, charging-to-idle `nrg` in the transition message, `nrg` within the 30-second idle window, one rate-limit bypass, authoritative zero values, unchanged readings for missing `nrg`, exactly one refresh reconnect per idle episode, re-arming after a later charging phase, authentication and initialization timeouts, one delayed timeout retry, no timeout retry loop, no retry after `authError`, the `connecting`/`authenticating`/`initializing`/`connected` progression, message-level `partial:true` fullStatus initialization followed by a final non-partial message, one timer per timer kind, stale timer and DevIo callbacks after disable or shutdown, guarded `DevIo_OpenDev`, ReadyFn reopen semantics, DevIo-owned transport reconnect state, and synchronous ShutdownFn cleanup.
+`t/idle_connection_lifecycle.t` covers the lifecycle behavior introduced in version 1.6.0 and tightened in version 2.1.5, using deterministic synthetic time. It verifies both `update_while_idle` values, the bounded Charging-to-Idle refresh even when ordinary idle telemetry is disabled, transition-message and grace-window `nrg`, one rate-limit bypass, authoritative zero values, unchanged readings for missing `nrg`, exactly one refresh reconnect per idle episode, attribute changes that neither duplicate nor cancel an active episode, and re-arming only after a later charging phase. It also covers authentication and initialization timeouts, the first valid authenticated partial `fullStatus` as initialization completion, malformed and pre-authentication status rejection, stale timeout suppression, ordinary EOF with DevIo ReadyFn/`DevIoJustClosed` ownership, ownerless WebSocket Close with one module reconnect, repeated-close deduplication, stale reconnect suppression after disable, asynchronous-open ownership, and synchronous ShutdownFn cleanup.
 
 `t/nrg_rate_limit_regression.t` protects charging and idle electrical telemetry on the shared telemetry clock. It covers both `update_while_idle` values, exact interval boundaries, `interval=0`, current car-state ordering, fullStatus, deltaStatus, matched-response paths, invalid/incomplete arrays, and the bounded one-shot charging-to-idle refresh plus reconnect fallback. It explicitly proves that battery or configuration input neither republishes cached electrical values nor starves the next fresh `nrg` publication.
 
@@ -29,7 +29,7 @@ It checks Perl syntax, loads the module with controlled FHEM/DevIo stubs, valida
 `t/pv_battery_telemetry.t` covers the version-2.0.6 read-only stationary-PV-battery readings under the version-2.1.1 publication contract. It verifies fullStatus, deltaStatus, and matched-response handling; SOC bounds from 0 through 100; signed finite power formatting to two decimal places without sign reinterpretation; raw non-negative mode-code preservation; omission, `null`, wrong-type, NaN, infinity, and overflow rejection; interface exposure; and the deliberate absence of battery setters. SOC/power use a separate battery latest-value cache and idle gate while sharing the common telemetry clock, whereas `pvBatteryModeCode` is immediate-on-change. Battery input never republishes cached electrical values, all eligible dirty owners share one transaction timestamp, and `interval=0` disables rate limiting.
 
 
-`t/reading_update_policy.t` is the authoritative version-2.1.1 policy regression. It verifies one shared `telemetry_flush` timer, one common interval boundary, same-transaction timestamps across eligible dirty owners, separate caches/dirty fields without cross-owner starvation, change-only energy publication, both idle-gate settings, exact-boundary and `interval=0` behavior, interval-attribute reset, stale-callback rejection, session cleanup, immediate-on-change discrete readings, immediate device-confirmed configuration, and complete policy-inventory exposure.
+`t/reading_update_policy.t` is the authoritative publication-policy regression. It verifies one shared `telemetry_flush` timer, one common interval boundary, same-transaction timestamps across eligible dirty owners, separate caches/dirty fields without cross-owner starvation, change-only energy publication, both idle-gate settings, exact-boundary and `interval=0` behavior, positive-to-zero and deleted-attribute immediate flushes, preservation of ineligible idle `nrg`/battery dirty state, interval reset, stale-callback rejection, session cleanup, immediate-on-change discrete readings, immediate device-confirmed configuration, and complete policy-inventory exposure.
 
 `t/pv_surplus_start_power.t` covers issue #43 end to end: `fullStatus` and `deltaStatus` parsing, missing/`null`/negative/wrong-type/overflow preservation, finite non-negative setter validation, secured `fst` request encoding, no optimistic reading update, successful device-confirmed updates, failed responses, successful responses without `fst`, and type-invalid response status.
 
@@ -121,6 +121,36 @@ spans in Markdown table rows. Both READMEs were additionally parsed with a GFM
 table parser; all four tables in each file have consistent column counts. The
 complete local suite passes with 26 test files and 3,006 tests. This is
 documentation and test-guard work only; the module version remains 2.1.4.
+
+Version 2.1.5 adds `t/charging_current_limit.t`. It verifies the dynamic
+`chargingCurrent` upper bound from a device-confirmed
+`configMaximumCurrentLimit`: 16 A accepts 16 and rejects 17/32 without an
+outgoing frame, 32 A preserves the established range, and missing,
+not-yet-confirmed, malformed, non-integer, below-range, and above-range values
+fall back to 32. The test also checks the FHEMWEB slider, exact dynamic Usage
+text, definition-session invalidation, and the absence of optimistic
+`configChargingCurrent` updates.
+
+The same version adds `t/session_command_finalization.t` and extends the
+lifecycle, DevIo, and publication regressions for issues #80 through #84. The
+DevIo stub is aligned with FHEM mirror revision
+`0ae38bf79d19d8d598c065bf84b3990b33063c4b`: ordinary EOF invokes the
+DevIo-owned disconnected/ReadyFn path and sets `DevIoJustClosed`, while a
+WebSocket Close frame directly closes the transport and leaves no ReadyFn or
+`NEXT_OPEN` owner. Tests prove that only the ownerless path gets a module timer,
+that no closed callback enters authentication, and that stale or repeated
+callbacks cannot create parallel opens. Pending commands are finalized for
+connection loss, disable, credential changes, authentication abort, lifecycle
+timeout, manual reconnect, and session replacement; late responses are ignored,
+while undefine/shutdown suppress new diagnostics. Partial authenticated status,
+the bounded Idle refresh with both attribute values, and immediate eligible
+telemetry flush on effective `interval=0` are covered independently.
+
+The complete local regression suite passes with 28 test files and 3,154 tests.
+No running-FHEM, live-network fault-injection, or physical-device test was
+performed for these 2.1.5 lifecycle/publication changes. They alter local FHEM
+ownership and timing only and add no Wattpilot protocol field or writability
+claim.
 
 For the version-2.0.5 development run, the complete suite passed with 18 test files and 2,498 tests. The isolated container did not contain the CPAN `JSON`, `Crypt::PBKDF2`, `Crypt::URandom`, or `Crypt::Bcrypt` packages, so that local run used temporary, external compatibility modules outside the repository. Those compatibility modules used `JSON::PP`, a real PBKDF2-HMAC-SHA512 implementation, `/dev/urandom`, and the system bcrypt implementation and passed the repository's fixed cryptographic vectors. They are not release files and do not replace the GitHub CI run with the declared dependencies.
 

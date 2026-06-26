@@ -1,5 +1,24 @@
 # Changelog
 
+## [v2.1.5] - 2026-06-25
+
+### Lifecycle and telemetry edge cases
+
+- A regular WebSocket Close frame now results in a truthful `disconnected` state and exactly one guarded module reconnect when DevIo has removed its own ReadyFn/NEXT_OPEN owner. Ordinary EOF/read loss continues to use the DevIo-owned ReadyFn path without a competing module timer. The implementation is pinned to FHEM mirror revision `0ae38bf79d19d8d598c065bf84b3990b33063c4b` and verifies that a `DevIoJustClosed` callback does not enter authentication without an open transport.
+- The first valid authenticated `fullStatus` or `deltaStatus`, including `fullStatus` with `partial=true`, now completes initialization and cancels the initialization timeout. The `partial` flag controls snapshot completeness only; omitted fields still preserve existing readings.
+- Session invalidation now centralizes pending-command finalization. Connection loss, disable, credential changes, authentication abort, lifecycle timeout, manual reconnect, definition replacement, and related session changes cancel the request timer, clear all pending entries, and expose one terminal redacted result for the newest request. Undefine and shutdown clear internal state without creating new command-reading events.
+- The bounded Charging-to-Idle electrical refresh now runs with both `update_while_idle=0` and `1`. With `0`, only the one authoritative transition/grace-window `nrg` bypass is allowed; later ordinary Idle `nrg` and battery telemetry remain passive. Attribute changes do not duplicate or cancel an active refresh episode.
+- Changing or deleting `interval` to an effective value of `0` now cancels the old shared clock and immediately publishes all currently eligible dirty telemetry owners in one FHEM reading transaction. Idle-gated electrical and battery data remains dirty/passive, while changed energy remains independently eligible.
+- Added deterministic coverage for both DevIo reconnect-ownership paths, stale callbacks, partial initialization, all pending-command termination causes, both Idle-gate modes, attribute changes during refresh, and positive-to-zero/deleted interval transitions.
+
+### Dynamic charging-current upper bound
+
+- `chargingCurrent` now uses a device-confirmed `configMaximumCurrentLimit` as its local upper bound when that reading contains an integer from 6 through 32. The effective accepted range is `6..min(32, configMaximumCurrentLimit)`.
+- Values above the effective limit are rejected before request creation and WebSocket output. The Usage response includes the accepted range, and FHEMWEB receives a matching dynamic slider maximum.
+- Missing, not-yet-confirmed, malformed, non-integer, or out-of-range maximum-current readings retain the established compatibility range `6..32`; persisted readings are not trusted until `ama` has been received for the current device hash.
+- The setter still sends only protocol key `amp` and never changes `configChargingCurrent` optimistically. The change adds no `ama` setter and does not promote third-party field evidence to an official Fronius Flex API claim.
+- Added focused regression coverage for 16 A and 32 A limits, stale/missing/invalid/out-of-range fallback, dynamic Set discovery, exact error ranges, suppressed output on rejection, and device-confirmed reading ownership.
+
 ## [v2.1.4] - 2026-06-25
 
 ### Grouped phase-switch and minimum-charging setters

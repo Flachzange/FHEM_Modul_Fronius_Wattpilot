@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.4';
+my $WATTPILOT_VERSION = '2.1.5';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -48,6 +48,8 @@ my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
+my $WATTPILOT_CHARGING_CURRENT_MINIMUM = 6;
+my $WATTPILOT_CHARGING_CURRENT_MAXIMUM = 32;
 # key, public name, category, source, publication, idle gate, owner,
 # formatter, incoming validator, formatter detail
 my @WATTPILOT_READING_DEFINITION = (
@@ -556,12 +558,12 @@ sub Wattpilot_CloseDevIoForContext($;$) {
     }
 }
 
-sub Wattpilot_InvalidateSession($;$) {
-    my ($hash, $close_ctx) = @_;
+sub Wattpilot_InvalidateSession($;$$) {
+    my ($hash, $close_ctx, $command_reason) = @_;
     my $open_ctx = $hash->{helper}{openInFlight};
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
+    Wattpilot_ClearConnectionState($hash, $command_reason);
     Wattpilot_CloseDevIoForContext(
         $hash, defined($close_ctx) ? $close_ctx : $open_ctx);
     return $open_ctx;
@@ -645,6 +647,7 @@ sub Wattpilot_ClearDefinitionSessionState($) {
     delete $hash->{helper}{idleRefreshAwaitingReconnectNrg};
     delete $hash->{helper}{pendingReconnectAfterOpen};
     delete $hash->{helper}{car_state};
+    delete $hash->{helper}{maximumCurrentLimitReceived};
     delete $hash->{helper}{telemetryPublication};
     delete $hash->{helper}{telemetryClock};
     delete $hash->{LAST_UPDATE};
@@ -666,12 +669,11 @@ sub Wattpilot_Define($$) {
             $old_serial, $definition->{serial});
 
     if ($is_modify && $definition_changed) {
-        Wattpilot_AbortPendingRequests($hash, 'definition changed');
         Wattpilot_ClearDefinitionSessionState($hash);
         Wattpilot_InvalidateSession($hash, {
             devioName => $hash->{NAME},
             devioDevice => $old_device_name,
-        });
+        }, 'definition changed');
     } elsif (!$is_modify) {
         Wattpilot_NextLifecycleGeneration($hash);
     }
@@ -703,7 +705,7 @@ sub Wattpilot_Undefine($$) {
     my ($hash, $name) = @_;
 
     $hash->{helper}{undefined} = 1;
-    Wattpilot_InvalidateSession($hash);
+    Wattpilot_InvalidateSession($hash, undef, 'session removed');
     RemoveInternalTimer($hash);
 
     return undef;
@@ -713,7 +715,7 @@ sub Wattpilot_Delete($$) {
     my ($hash, $name) = @_;
 
     $hash->{helper}{deleting} = 1;
-    Wattpilot_InvalidateSession($hash);
+    Wattpilot_InvalidateSession($hash, undef, 'session removed');
     RemoveInternalTimer($hash);
     my $error = Wattpilot_DeleteStoredSecrets($hash);
     Wattpilot_RestoreAfterFailedDelete($hash, $name) if defined $error;
@@ -727,14 +729,14 @@ sub Wattpilot_RestoreAfterFailedDelete($$) {
     delete $hash->{helper}{deleting};
     delete $hash->{helper}{shuttingDown};
     delete $hash->{helper}{timeoutRetryUsed};
-    Wattpilot_InvalidateSession($hash);
+    Wattpilot_InvalidateSession($hash, undef, 'session replaced');
     Wattpilot_ApplyConfiguredState($hash, 2);
 }
 
 sub Wattpilot_Shutdown($) {
     my ($hash) = @_;
     $hash->{helper}{shuttingDown} = 1;
-    Wattpilot_InvalidateSession($hash);
+    Wattpilot_InvalidateSession($hash, undef, 'session removed');
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
     RemoveInternalTimer($hash);
     return undef;
@@ -752,7 +754,7 @@ sub Wattpilot_Rename($$) {
         devioDevice => ref($open_ctx) eq 'HASH'
             ? ($open_ctx->{devioDevice} // $hash->{DeviceName})
             : $hash->{DeviceName},
-    });
+    }, 'session replaced');
 
     Wattpilot_ApplyConfiguredState($hash, 1, undef, $was_active);
     return undef; # CommandRename ignores RenameFn replies in the audited FHEM revision.
@@ -776,7 +778,7 @@ sub Wattpilot_StartOpen($$) {
     my ($hash, $reopen) = @_;
     return 0 if !Wattpilot_IsRuntimeActive($hash);
     return 0 if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
-    Wattpilot_ClearConnectionState($hash);
+    Wattpilot_ClearConnectionState($hash, 'connection lost');
     
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connecting}, 1);
@@ -827,6 +829,14 @@ sub Wattpilot_StartOpen($$) {
                 if !defined($hash->{NEXT_OPEN}) || $hash->{NEXT_OPEN} <= gettimeofday();
             return;
         }
+        if (!DevIo_IsOpen($hash)) {
+            readingsSingleUpdate(
+                $hash, $WATTPILOT_READING_NAME{state},
+                $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1)
+                if Wattpilot_IsRuntimeActive($hash)
+                && ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected};
+            return;
+        }
         Wattpilot_DoInit($hash);
     });
 }
@@ -868,7 +878,7 @@ sub Wattpilot_LifecycleTimeout($) {
 
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
+    Wattpilot_ClearConnectionState($hash, 'lifecycle timeout');
     delete $hash->{helper}{openInFlight};
     DevIo_CloseDev($hash);
 
@@ -882,11 +892,24 @@ sub Wattpilot_Read($) {
     my $buf = DevIo_SimpleRead($hash);
 
     if (!defined($buf)) {
+        my $devio_owns_reconnect = $hash->{DevIoJustClosed} ? 1 : 0;
+        my $idle_refresh_pending = $hash->{helper}{idleRefreshPending} ? 1 : 0;
         Wattpilot_NextLifecycleGeneration($hash);
-        Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
-        Wattpilot_CancelTimer($hash, 'idle_refresh');
+        Wattpilot_CancelAllTimers($hash);
+        if ($idle_refresh_pending && !$hash->{helper}{idleRefreshAttempted}) {
+            $hash->{helper}{idleRefreshAttempted} = 1;
+            $hash->{helper}{idleRefreshAwaitingReconnectNrg} = 1;
+        }
+        delete $hash->{helper}{idleRefreshPending};
         delete $hash->{helper}{openInFlight};
-        Wattpilot_ClearConnectionState($hash);
+        Wattpilot_ClearConnectionState($hash, 'connection lost');
+        if (Wattpilot_IsRuntimeActive($hash)) {
+            readingsSingleUpdate(
+                $hash, $WATTPILOT_READING_NAME{state},
+                $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1)
+                if ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected};
+            Wattpilot_ScheduleConnect($hash, 1) if !$devio_owns_reconnect;
+        }
         return "";
     }
     return "" if $buf eq "";
@@ -1217,7 +1240,7 @@ sub Wattpilot_DispatchMessage($$) {
         Log3 $name, 4, "Wattpilot ($name) - Hello received";
     } elsif ($type eq 'authRequired') {
         Log3 $name, 4, "Wattpilot ($name) - Auth Required";
-        Wattpilot_ClearCommandState($hash);
+        Wattpilot_ClearCommandState($hash, 'authentication aborted');
         Wattpilot_SendAuth($hash, $json);
     } elsif ($type eq 'authSuccess') {
         if (!$hash->{helper}{authPending}) {
@@ -1262,8 +1285,7 @@ sub Wattpilot_DispatchMessage($$) {
         Wattpilot_UpdateReadings($hash, $status, $message);
         Wattpilot_MarkInitialized($hash)
             if $hash->{helper}{authenticated}
-            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{initializing}
-            && ($type eq 'deltaStatus' || !$partial);
+            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{initializing};
     } elsif ($type eq 'response') {
         if (exists($json->{success})
             && !Wattpilot_IsJsonBoolean($json->{success})) {
@@ -1301,26 +1323,8 @@ sub Wattpilot_MarkInitialized($) {
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connected}, 1);
 }
 
-sub Wattpilot_NrgReadingsNeedIdleRefresh($) {
+sub Wattpilot_StartIdleRefreshWindow($) {
     my ($hash) = @_;
-    for my $reading (
-        @WATTPILOT_READING_NAME{qw(
-            power current_l1 current_l2 current_l3
-            power_l1 power_l2 power_l3
-        )}) {
-        return 1 if !exists($hash->{READINGS}{$reading}{VAL});
-        my $value = $hash->{READINGS}{$reading}{VAL};
-        return 1 if defined($value) && $value =~ /^-?(?:\d+(?:\.\d*)?|\.\d+)$/ && $value != 0;
-    }
-    return 0;
-}
-
-sub Wattpilot_StartIdleRefreshWindow($;$) {
-    my ($hash, $update_while_idle_override) = @_;
-    my $update_while_idle = defined($update_while_idle_override)
-        ? $update_while_idle_override
-        : AttrVal($hash->{NAME}, "update_while_idle", 0);
-    return if $update_while_idle ne "1";
     return if !DevIo_IsOpen($hash);
     return if $hash->{helper}{idleRefreshAttempted};
     return if $hash->{helper}{idleRefreshPending};
@@ -1353,11 +1357,7 @@ sub Wattpilot_IdleRefreshTimeout($) {
     $hash->{helper}{idleRefreshAwaitingReconnectNrg} = 1;
     Log3 $hash->{NAME}, 3,
         "Wattpilot ($hash->{NAME}) - idle refresh fallback closes the session once for this idle episode";
-    Wattpilot_NextLifecycleGeneration($hash);
-    Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
-    Wattpilot_ClearConnectionState($hash);
-    delete $hash->{helper}{openInFlight};
-    DevIo_CloseDev($hash);
+    Wattpilot_InvalidateSession($hash, undef, 'connection lost');
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
     Wattpilot_ScheduleConnect($hash, 1);
 }
@@ -1415,6 +1415,8 @@ sub Wattpilot_UpdateInternalStatus($$) {
     my ($hash, $status) = @_;
     $hash->{helper}{car_state} = int($status->{car})
         if defined $status->{car};
+    $hash->{helper}{maximumCurrentLimitReceived} = 1
+        if defined $status->{ama};
 }
 
 sub Wattpilot_UpdateImmediateReadings($$) {
@@ -1951,8 +1953,21 @@ sub Wattpilot_BcryptSerialRawSalt($$) {
 
 
 
-sub Wattpilot_AbortPendingRequests($$) {
-    my ($hash, $reason) = @_;
+sub Wattpilot_CommandReadingsMayBePublished($) {
+    my ($hash) = @_;
+    return 0 if ref($hash) ne 'HASH';
+    my $helper = ref($hash->{helper}) eq 'HASH' ? $hash->{helper} : {};
+    return 0 if $helper->{undefined}
+        || $helper->{deleting}
+        || $helper->{shuttingDown};
+    return 0 if !defined($hash->{NAME})
+        || !defined($defs{$hash->{NAME}})
+        || $defs{$hash->{NAME}} != $hash;
+    return 1;
+}
+
+sub Wattpilot_AbortPendingRequests($$;$) {
+    my ($hash, $reason, $publish) = @_;
     my $pending = $hash->{helper}{pendingRequests};
     return if ref($pending) ne 'HASH' || !keys %$pending;
 
@@ -1962,8 +1977,10 @@ sub Wattpilot_AbortPendingRequests($$) {
     } keys %$pending;
     Wattpilot_CancelTimer($hash, 'command_timeout');
     delete $hash->{helper}{pendingRequests};
-    Wattpilot_SetCommandReadings(
-        $hash, $request_id, 'failed', $reason);
+    $publish = Wattpilot_CommandReadingsMayBePublished($hash)
+        if !defined $publish;
+    Wattpilot_SetCommandReadings($hash, $request_id, 'failed', $reason)
+        if $publish;
 }
 
 sub Wattpilot_AbortPendingRequestsForReconnect($) {
@@ -1989,7 +2006,7 @@ sub Wattpilot_ManualReconnect($) {
     delete $hash->{helper}{pendingReconnectAfterOpen};
     Wattpilot_StopIdleRefresh($hash);
     delete $hash->{helper}{idleRefreshAttempted};
-    Wattpilot_InvalidateSession($hash);
+    Wattpilot_InvalidateSession($hash, undef, 'reconnect requested');
     Wattpilot_ApplyConfiguredState($hash, 0);
     return undef;
 }
@@ -2081,16 +2098,42 @@ sub Wattpilot_SetGroupedCommand($$@) {
         $hash, $schema->{protocolKey}, $protocol_value);
 }
 
-sub Wattpilot_ParseSetCommandValue($$) {
-    my ($parser, $value) = @_;
+sub Wattpilot_EffectiveChargingCurrentMaximum($) {
+    my ($hash) = @_;
+    return $WATTPILOT_CHARGING_CURRENT_MAXIMUM
+        if ref($hash) ne 'HASH'
+        || ref($hash->{helper}) ne 'HASH'
+        || !$hash->{helper}{maximumCurrentLimitReceived};
+
+    my $reading = $WATTPILOT_READING_NAME{maximum_current_limit};
+    return $WATTPILOT_CHARGING_CURRENT_MAXIMUM
+        if ref($hash->{READINGS}) ne 'HASH'
+        || ref($hash->{READINGS}{$reading}) ne 'HASH';
+    my $value = $hash->{READINGS}{$reading}{VAL};
+    return $WATTPILOT_CHARGING_CURRENT_MAXIMUM
+        if !defined($value)
+        || ref($value)
+        || $value !~ /^\d+$/
+        || $value < $WATTPILOT_CHARGING_CURRENT_MINIMUM
+        || $value > $WATTPILOT_CHARGING_CURRENT_MAXIMUM;
+    return int($value);
+}
+
+sub Wattpilot_ParseSetCommandValue($$;$) {
+    my ($parser, $value, $hash) = @_;
     return undef if !defined $value;
 
     return int($WATTPILOT_FORCE_COMMAND_VALUE{$value})
         if $parser eq 'force_state'
         && exists $WATTPILOT_FORCE_COMMAND_VALUE{$value};
-    return int($value)
-        if $parser eq 'charging_current'
-        && $value =~ /^(?:[6-9]|[12]\d|3[0-2])$/;
+    if ($parser eq 'charging_current') {
+        my $maximum = Wattpilot_EffectiveChargingCurrentMaximum($hash);
+        return int($value)
+            if $value =~ /^\d+$/
+            && $value >= $WATTPILOT_CHARGING_CURRENT_MINIMUM
+            && $value <= $maximum;
+        return undef;
+    }
     return $WATTPILOT_CHARGING_MODE_VALUE{$value}
         if $parser eq 'charging_mode'
         && exists $WATTPILOT_CHARGING_MODE_VALUE{$value};
@@ -2113,17 +2156,26 @@ sub Wattpilot_ParseSetCommandValue($$) {
     return undef;
 }
 
-sub Wattpilot_SetOptions() {
+sub Wattpilot_SetOptions(;$) {
+    my ($hash) = @_;
     return join(' ', map {
         my $schema = $WATTPILOT_COMMAND_SCHEMA{$_->[0]};
+        my $widget = $schema->{widget};
+        $widget = 'slider,' . $WATTPILOT_CHARGING_CURRENT_MINIMUM
+            . ',1,' . Wattpilot_EffectiveChargingCurrentMaximum($hash)
+            if $_->[0] eq 'charging_current';
         $schema->{name}
-            . ($schema->{widget} eq 'none' ? '' : ':' . $schema->{widget});
+            . ($widget eq 'none' ? '' : ':' . $widget);
     } @WATTPILOT_COMMAND_DEFINITION);
 }
 
-sub Wattpilot_SetUsage($$) {
-    my ($name, $schema) = @_;
-    return "Usage: set $name $schema->{name} $schema->{usage}";
+sub Wattpilot_SetUsage($$$) {
+    my ($hash, $name, $schema) = @_;
+    my $usage = $schema->{usage};
+    $usage = '<' . $WATTPILOT_CHARGING_CURRENT_MINIMUM . '-'
+        . Wattpilot_EffectiveChargingCurrentMaximum($hash) . '>'
+        if $schema->{parser} eq 'charging_current';
+    return "Usage: set $name $schema->{name} $usage";
 }
 
 sub Wattpilot_Set($@) {
@@ -2131,7 +2183,7 @@ sub Wattpilot_Set($@) {
     my $name = $hash->{NAME};
     my $cmd = $a[1] // '';
     my $val = $a[2];
-    my $set_options = Wattpilot_SetOptions();
+    my $set_options = Wattpilot_SetOptions($hash);
 
     return "Unknown argument $cmd, choose one of $set_options"
         if $cmd eq '?';
@@ -2157,21 +2209,21 @@ sub Wattpilot_Set($@) {
         return $password_err if defined $password_err;
 
         delete $hash->{helper}{timeoutRetryUsed};
-        Wattpilot_InvalidateSession($hash);
+        Wattpilot_InvalidateSession($hash, undef, 'credentials changed');
         Wattpilot_ApplyConfiguredState($hash, 1);
         return undef;
     }
 
     my $schema = $WATTPILOT_COMMAND_BY_NAME{$cmd};
     if ($schema && $schema->{parser} ne 'special') {
-        return Wattpilot_SetUsage($name, $schema)
+        return Wattpilot_SetUsage($hash, $name, $schema)
             if @a != 3 || !defined $val;
         my $protocol_value = Wattpilot_ParseSetCommandValue(
-            $schema->{parser}, $val);
+            $schema->{parser}, $val, $hash);
         if (!defined $protocol_value) {
             return "Unknown mode $val"
                 if $schema->{invalid} eq 'unknown_mode';
-            return Wattpilot_SetUsage($name, $schema);
+            return Wattpilot_SetUsage($hash, $name, $schema);
         }
         return Wattpilot_SendSecure(
             $hash, $schema->{protocolKey}, $protocol_value);
@@ -2260,20 +2312,26 @@ sub Wattpilot_NormalizeRequestId($) {
     return $normalized =~ /^\d+$/ ? int($normalized) : undef;
 }
 
-sub Wattpilot_ClearCommandState($) {
-    my ($hash) = @_;
+sub Wattpilot_ClearCommandState($;$) {
+    my ($hash, $reason) = @_;
     my $pending = $hash->{helper}{pendingRequests};
-    Wattpilot_CancelTimer($hash, 'command_timeout')
-        if ref($pending) eq 'HASH' && keys %$pending;
-    delete $hash->{helper}{pendingRequests};
+    if (ref($pending) eq 'HASH' && keys %$pending) {
+        $reason //= Wattpilot_CommandReadingsMayBePublished($hash)
+            ? 'session replaced'
+            : 'session removed';
+        Wattpilot_AbortPendingRequests($hash, $reason);
+    } else {
+        Wattpilot_CancelTimer($hash, 'command_timeout');
+        delete $hash->{helper}{pendingRequests};
+    }
     delete $hash->{helper}{authenticated};
     delete $hash->{helper}{authPending};
     delete $hash->{helper}{authHashMode};
 }
 
-sub Wattpilot_ClearConnectionState($) {
-    my ($hash) = @_;
-    Wattpilot_ClearCommandState($hash);
+sub Wattpilot_ClearConnectionState($;$) {
+    my ($hash, $command_reason) = @_;
+    Wattpilot_ClearCommandState($hash, $command_reason);
     delete $hash->{helper}{deviceType};
     delete $hash->{helper}{protocol};
     delete $hash->{helper}{jsonBuffer};
@@ -2292,7 +2350,7 @@ sub Wattpilot_AbortAuthentication($$) {
     my ($hash, $state) = @_;
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
-    Wattpilot_ClearConnectionState($hash);
+    Wattpilot_ClearConnectionState($hash, 'authentication aborted');
     delete $hash->{helper}{openInFlight};
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $state, 1);
     DevIo_CloseDev($hash);
@@ -2376,7 +2434,7 @@ sub Wattpilot_Ready($) {
     return 0 if !Wattpilot_IsRuntimeActive($hash);
     return 0 if ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected}
         && ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{connection_failed};
-    Wattpilot_ClearConnectionState($hash);
+    Wattpilot_ClearConnectionState($hash, 'connection lost');
     return 0 if defined($hash->{helper}{timers}{connect});
     return Wattpilot_StartOpen($hash, 1) ? 1 : 0;
 }
@@ -2392,14 +2450,14 @@ sub Wattpilot_Attr(@) {
 
     if($attrName eq "disable") {
         if($cmd eq "set" && $attrVal eq "1") {
-            Wattpilot_InvalidateSession($hash);
+            Wattpilot_InvalidateSession($hash, undef, 'device disabled');
             RemoveInternalTimer($hash, 'Wattpilot_Connect');
             RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
             delete $hash->{helper}{pendingReconnectAfterOpen};
             readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disabled}, 1);
         } elsif($cmd eq "del" || $attrVal eq "0") {
             delete $hash->{helper}{timeoutRetryUsed};
-            Wattpilot_InvalidateSession($hash);
+            Wattpilot_InvalidateSession($hash, undef, 'session replaced');
             Wattpilot_ApplyConfiguredState($hash, 1, 0);
         }
     }
@@ -2407,7 +2465,7 @@ sub Wattpilot_Attr(@) {
     if (($attrName eq "authHash" || $attrName eq "authHashCost")
         && ($cmd eq "set" || $cmd eq "del")) {
         delete $hash->{helper}{timeoutRetryUsed};
-        Wattpilot_InvalidateSession($hash);
+        Wattpilot_InvalidateSession($hash, undef, 'credentials changed');
         RemoveInternalTimer($hash, 'Wattpilot_Connect');
         RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
         my $hash_error = Wattpilot_InvalidateStoredPasswordHash($hash);
@@ -2430,18 +2488,11 @@ sub Wattpilot_Attr(@) {
 
     if ($attrName eq "interval" && ($cmd eq "set" || $cmd eq "del")) {
         Wattpilot_ResetTelemetryClock($hash);
-    }
-
-    if ($attrName eq "update_while_idle") {
-        my $enabled = $cmd eq "set" && defined($attrVal) && $attrVal eq "1";
-        if ($enabled) {
-            if (($hash->{helper}{car_state} // 0) != 2
-                && !$hash->{helper}{idleRefreshAttempted}
-                && Wattpilot_NrgReadingsNeedIdleRefresh($hash)) {
-                Wattpilot_StartIdleRefreshWindow($hash, 1);
-            }
-        } else {
-            Wattpilot_StopIdleRefresh($hash);
+        my $effective_interval = $cmd eq "set" ? 0 + $attrVal : 0;
+        if ($effective_interval <= 0 && Wattpilot_HasEligibleTelemetry($hash)) {
+            readingsBeginUpdate($hash);
+            Wattpilot_FlushAllTelemetry($hash);
+            readingsEndUpdate($hash, 1);
         }
     }
 
@@ -2749,6 +2800,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.2 formats public measured and calculated values with exactly two decimal places and trailing zeroes. Rounded negative zero is published as positive zero. Percentages, integral settings and codes, clocks, and durations remain explicit exceptions; <code>pvBatterySoC</code> intentionally keeps one decimal place.</p>
   <p>Version 2.1.3 derives incoming status validation, immediate public formatting, Set discovery, ordinary Set parsing, protocol keys, and Usage text from two small declarative inventories. Special lifecycle, authentication, grouped <code>pvBattery</code>, <code>password</code>, <code>reconnect</code>, telemetry-cache, and car-transition behavior remains explicit. Public names, payloads, cadence, and reading semantics are unchanged.</p>
   <p>Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
+  <p>Version 2.1.5 limits <code>chargingCurrent</code> to <code>6..min(32, configMaximumCurrentLimit)</code> after a usable <code>ama</code> value has been received for the current device hash. Missing, stale, malformed, non-integer, or out-of-range values keep the compatibility range <code>6..32</code>. FHEMWEB receives the same dynamic upper bound; rejected commands are not sent and <code>configChargingCurrent</code> remains device-confirmed. The same release also preserves exactly one reconnect owner after ordinary EOF or a WebSocket Close frame, treats the first valid authenticated partial or complete status as initialization, finalizes pending commands on session invalidation, applies the bounded Charging-to-Idle electrical refresh with both <code>update_while_idle</code> values, and flushes already queued eligible telemetry when <code>interval</code> becomes <code>0</code>.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -2824,8 +2876,8 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>set &lt;name&gt; password &lt;secret&gt;</code><br>
         Stores the password under stable FUUID-based keys and starts a controlled reconnect. Rename does not rewrite credentials. Password replacement and deletion use two-key transactions with rollback. Storage errors remain distinguishable from a missing password.</li>
-    <li><code>set &lt;name&gt; chargingCurrent &lt;6-32&gt;</code><br>
-        Sends protocol key <code>amp</code>. Only integer values from 6 through 32 are accepted.</li>
+    <li><code>set &lt;name&gt; chargingCurrent &lt;6-effectiveMaximum&gt;</code><br>
+        Sends protocol key <code>amp</code>. The effective upper bound is <code>min(32, configMaximumCurrentLimit)</code> after the current device hash has received a usable integer <code>ama</code> value from 6 through 32. Until then, or when the reading is missing, malformed, non-integer, or outside that range, the compatibility range remains 6 through 32. FHEMWEB uses the same dynamic slider maximum. Rejected values produce no protocol command, and the setter does not update <code>configChargingCurrent</code> optimistically.</li>
     <li><code>set &lt;name&gt; forceState &lt;neutral|off|on&gt;</code><br>
         Sends <code>frc=0</code>, <code>frc=1</code>, or <code>frc=2</code>.</li>
     <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
@@ -2880,9 +2932,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Values outside the documented choices and ranges are rejected before FHEM stores them.</li>
     <li><code>interval &lt;seconds&gt;</code><br>
-        Rate-limits cumulative energy, electrical <code>nrg</code>, and stationary-battery SOC/power telemetry on one shared clock. Every data owner retains only its newest valid values and its own dirty fields; each tick publishes all eligible dirty owners in one FHEM reading transaction. Input from one owner never publishes or advances another owner. Energy becomes dirty only when the formatted public value actually differs from the published reading. <code>0</code> disables rate limiting and publishes eligible dirty values immediately. Invalid or incomplete input neither becomes dirty nor moves the shared clock. Configuration readings remain immediate, and discrete status/diagnostic readings are immediate-on-change. <code>deltaStatus</code> supplies device-side field filtering, but no official per-field Flex update frequency is inferred from it because no public Fronius local-WebSocket specification for such frequencies is evidenced.</li>
+        Rate-limits cumulative energy, electrical <code>nrg</code>, and stationary-battery SOC/power telemetry on one shared clock. Every data owner retains only its newest valid values and its own dirty fields; each tick publishes all eligible dirty owners in one FHEM reading transaction. Input from one owner never publishes or advances another owner. Energy becomes dirty only when the formatted public value actually differs from the published reading. <code>0</code> disables rate limiting and publishes eligible dirty values immediately. Changing a positive value to <code>0</code>, or deleting the attribute, cancels the previous timer and immediately flushes every currently eligible dirty owner in one transaction; idle-gated electrical and battery data remains dirty/passive. Invalid or incomplete input neither becomes dirty nor moves the shared clock. Configuration readings remain immediate, and discrete status/diagnostic readings are immediate-on-change. The first valid authenticated <code>fullStatus</code> or <code>deltaStatus</code>, including <code>partial=true</code>, completes initialization; partial controls snapshot completeness only. <code>deltaStatus</code> supplies device-side field filtering, but no official per-field Flex update frequency is inferred from it because no public Fronius local-WebSocket specification for such frequencies is evidenced.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> keeps electrical <code>nrg</code> and stationary-battery SOC/power passive while not charging. <code>1</code> admits real incoming idle values on the shared telemetry clock. After charging-to-idle, one valid device-supplied <code>nrg</code> may bypass the clock once; otherwise at most one controlled reconnect is used. The attribute does not gate energy: <code>eto</code>/<code>wh</code> are queued only when their formatted public values actually change, so identical snapshots do not renew timestamps. No device emission frequency is claimed, no polling command is invented, and no zero value is synthesized.</li>
+        <code>0</code> keeps ordinary electrical <code>nrg</code> and stationary-battery SOC/power passive while not charging; <code>1</code> admits real incoming idle values on the shared telemetry clock. With either value, charging-to-idle starts one bounded electrical refresh: one valid device-supplied <code>nrg</code> in the transition message or grace window may bypass the clock, otherwise at most one controlled reconnect is used. Changing the attribute during the episode neither duplicates nor cancels it. The attribute does not gate energy: <code>eto</code>/<code>wh</code> are queued only when their formatted public values actually change, so identical snapshots do not renew timestamps. No device emission frequency is claimed, no polling command is invented, and no zero value is synthesized.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Disables the module and closes the connection when set to <code>1</code>.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -2975,7 +3027,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
     <li><code>power</code><br>Value from <code>nrg[11]</code>, interpreted as total watts.</li>
     <li><code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, <code>lastCommandError</code><br>
-        Correlation and result of the most recent secured command. Status values are <code>pending</code>, <code>success</code>, <code>failed</code>, or <code>timeout</code>.</li>
+        Correlation and result of the most recent secured command. Status values are <code>pending</code>, <code>success</code>, <code>failed</code>, or <code>timeout</code>. If a live session is invalidated before a response arrives, all pending requests and their timeout are cleared and the newest request becomes <code>failed</code> with a stable redacted reason such as <code>connection lost</code>, <code>device disabled</code>, <code>credentials changed</code>, <code>authentication aborted</code>, <code>lifecycle timeout</code>, <code>reconnect requested</code>, <code>definition changed</code>, or <code>session replaced</code>. Undefine and shutdown suppress new diagnostic events.</li>
   </ul>
 </ul>
 
@@ -3009,6 +3061,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.2 formatiert öffentliche Mess- und Rechenwerte mit genau zwei Nachkommastellen einschließlich nachgestellter Nullen. Gerundetes negatives Null wird als positives Null ausgegeben. Prozentwerte, ganzzahlige Einstellungen und Codes, Uhrzeiten und Dauern bleiben ausdrückliche Ausnahmen; <code>pvBatterySoC</code> behält bewusst eine Nachkommastelle.</p>
   <p>Version 2.1.3 leitet die Validierung eingehender Statusfelder, die unmittelbare öffentliche Formatierung, die Set-Discovery, das Parsen gewöhnlicher Set-Befehle, Protokollschlüssel und Usage-Texte aus zwei kleinen deklarativen Inventaren ab. Spezielle Lifecycle-, Authentifizierungs-, gruppierte <code>pvBattery</code>-, <code>password</code>-, <code>reconnect</code>-, Telemetrie-Cache- und Car-Transition-Logik bleibt ausdrücklich sichtbar. Öffentliche Namen, Payloads, Taktung und Reading-Semantik ändern sich nicht.</p>
   <p>Version 2.1.4 ersetzt die sieben einzelnen Setter für Phasenumschaltung und Mindestladen durch die gruppierten Befehle <code>phaseSwitch</code> und <code>minimumCharging</code>. Protokollschlüssel, öffentliche Einheiten, Validierung und bestätigte <code>config...</code>-Readings bleiben unverändert. Für die entfernten einzelnen Set-Namen gibt es keine Aliase.</p>
+  <p>Version 2.1.5 begrenzt <code>chargingCurrent</code> nach Empfang eines nutzbaren <code>ama</code>-Werts für den aktuellen Device-Hash auf <code>6..min(32, configMaximumCurrentLimit)</code>. Fehlende, noch nicht bestätigte, fehlerhafte, nicht ganzzahlige oder außerhalb des nutzbaren Bereichs liegende Werte behalten den Kompatibilitätsbereich <code>6..32</code>. FHEMWEB erhält dieselbe dynamische Obergrenze; abgelehnte Befehle werden nicht gesendet und <code>configChargingCurrent</code> bleibt gerätebestätigt. Dieselbe Version bewahrt nach normalem EOF oder WebSocket-Close genau einen Reconnect-Eigentümer, behandelt den ersten gültigen authentifizierten partiellen oder vollständigen Status als Initialisierung, beendet ausstehende Befehle bei Sitzungsinvalidierung, führt den begrenzten Charging-zu-Idle-Refresh bei beiden <code>update_while_idle</code>-Werten aus und veröffentlicht bereits gepufferte zulässige Telemetrie sofort, wenn <code>interval</code> auf <code>0</code> wechselt.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3084,8 +3137,8 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>set &lt;name&gt; password &lt;secret&gt;</code><br>
         Speichert das Passwort unter stabilen FUUID-basierten Schlüsseln und startet einen kontrollierten Reconnect. Rename schreibt Credentials nicht um. Passwortänderung und Löschung verwenden Zwei-Schlüssel-Transaktionen mit Rollback. Speicherfehler bleiben von einem fehlenden Passwort unterscheidbar.</li>
-    <li><code>set &lt;name&gt; chargingCurrent &lt;6-32&gt;</code><br>
-        Sendet den Protokollschlüssel <code>amp</code>. Akzeptiert werden nur ganze Werte von 6 bis 32.</li>
+    <li><code>set &lt;name&gt; chargingCurrent &lt;6-effektivesMaximum&gt;</code><br>
+        Sendet den Protokollschlüssel <code>amp</code>. Die effektive Obergrenze ist <code>min(32, configMaximumCurrentLimit)</code>, nachdem der aktuelle Device-Hash einen nutzbaren ganzzahligen <code>ama</code>-Wert von 6 bis 32 empfangen hat. Bis dahin sowie bei fehlendem, fehlerhaftem, nicht ganzzahligem oder außerhalb dieses Bereichs liegendem Reading bleibt der Kompatibilitätsbereich 6 bis 32 bestehen. FHEMWEB verwendet dieselbe dynamische Slider-Obergrenze. Abgelehnte Werte erzeugen keinen Protokollbefehl, und der Setter aktualisiert <code>configChargingCurrent</code> nicht optimistisch.</li>
     <li><code>set &lt;name&gt; forceState &lt;neutral|off|on&gt;</code><br>
         Sendet <code>frc=0</code>, <code>frc=1</code> oder <code>frc=2</code>.</li>
     <li><code>set &lt;name&gt; chargingMode &lt;default|eco|nextTrip&gt;</code><br>
@@ -3140,9 +3193,9 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li>Werte außerhalb der dokumentierten Auswahl- und Wertebereiche werden abgewiesen, bevor FHEM sie speichert.</li>
     <li><code>interval &lt;Sekunden&gt;</code><br>
-        Begrenzt kumulative Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie über einen gemeinsamen Takt. Jeder Dateneigentümer behält nur seine neuesten gültigen Werte und eigene Dirty-Felder; jeder Tick veröffentlicht alle zulässigen geänderten Eigentümer in einer FHEM-Reading-Transaktion. Eine Gruppe veröffentlicht oder verschiebt niemals eine andere. Energie wird nur dirty, wenn sich der formatierte öffentliche Wert gegenüber dem veröffentlichten Reading tatsächlich ändert. <code>0</code> deaktiviert das Rate-Limit und veröffentlicht zulässige geänderte Werte sofort. Ungültige oder unvollständige Eingaben werden nicht dirty und verschieben den Takt nicht. Konfigurationsreadings bleiben sofort, diskrete Status-/Diagnosewerte sofort-bei-Änderung. <code>deltaStatus</code> liefert eine geräteseitige Feldfilterung; daraus wird keine offizielle Aktualisierungsfrequenz einzelner Flex-Felder abgeleitet, weil keine öffentliche Fronius-Local-WebSocket-Spezifikation dafür belegt ist.</li>
+        Begrenzt kumulative Energie-, elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie über einen gemeinsamen Takt. Jeder Dateneigentümer behält nur seine neuesten gültigen Werte und eigene Dirty-Felder; jeder Tick veröffentlicht alle zulässigen geänderten Eigentümer in einer FHEM-Reading-Transaktion. Eine Gruppe veröffentlicht oder verschiebt niemals eine andere. Energie wird nur dirty, wenn sich der formatierte öffentliche Wert gegenüber dem veröffentlichten Reading tatsächlich ändert. <code>0</code> deaktiviert das Rate-Limit und veröffentlicht zulässige geänderte Werte sofort. Wird ein positiver Wert auf <code>0</code> geändert oder das Attribut gelöscht, wird der alte Timer beendet und jede aktuell zulässige Dirty-Gruppe sofort in einer gemeinsamen Transaktion veröffentlicht; Idle-gesperrte elektrische und Batteriedaten bleiben dirty/passiv. Ungültige oder unvollständige Eingaben werden nicht dirty und verschieben den Takt nicht. Konfigurationsreadings bleiben sofort, diskrete Status-/Diagnosewerte sofort-bei-Änderung. Der erste gültige authentifizierte <code>fullStatus</code> oder <code>deltaStatus</code>, einschließlich <code>partial=true</code>, beendet die Initialisierung; partial steuert nur die Snapshot-Vollständigkeit. <code>deltaStatus</code> liefert eine geräteseitige Feldfilterung; daraus wird keine offizielle Aktualisierungsfrequenz einzelner Flex-Felder abgeleitet, weil keine öffentliche Fronius-Local-WebSocket-Spezifikation dafür belegt ist.</li>
     <li><code>update_while_idle &lt;0|1&gt;</code><br>
-        <code>0</code> belässt elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie im Idle passiv. <code>1</code> verarbeitet echte Idle-Werte im gemeinsamen Telemetrietakt. Nach Charging-zu-Idle darf ein gültiges Geräte-<code>nrg</code> den Takt einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Das Attribut sperrt Energie nicht: <code>eto</code>/<code>wh</code> werden nur vorgemerkt, wenn sich ihr formatierter öffentlicher Wert tatsächlich ändert; identische Statuswerte erneuern keine Zeitstempel. Es wird keine Geräte-Sendefrequenz behauptet, kein Polling-Kommando erfunden und kein Nullwert synthetisiert.</li>
+        <code>0</code> belässt gewöhnliche elektrische <code>nrg</code>- und stationäre Speicher-SOC-/Leistungstelemetrie im Idle passiv; <code>1</code> verarbeitet echte Idle-Werte im gemeinsamen Telemetrietakt. Bei beiden Werten startet Charging-zu-Idle genau einen begrenzten elektrischen Refresh: Ein gültiges Geräte-<code>nrg</code> in der Übergangsnachricht oder im Zeitfenster darf den Takt einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Eine Attributänderung während der Episode dupliziert oder beendet sie nicht. Das Attribut sperrt Energie nicht: <code>eto</code>/<code>wh</code> werden nur vorgemerkt, wenn sich ihr formatierter öffentlicher Wert tatsächlich ändert; identische Statuswerte erneuern keine Zeitstempel. Es wird keine Geräte-Sendefrequenz behauptet, kein Polling-Kommando erfunden und kein Nullwert synthetisiert.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         Deaktiviert das Modul und trennt bei <code>1</code> die Verbindung.</li>
     <li><code>rawJsonLog &lt;0|1&gt;</code><br>
@@ -3235,7 +3288,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>
     <li><code>power</code><br>Wert aus <code>nrg[11]</code>, als Gesamtleistung in Watt interpretiert.</li>
     <li><code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, <code>lastCommandError</code><br>
-        Korrelation und Ergebnis des letzten gesicherten Befehls. Statuswerte sind <code>pending</code>, <code>success</code>, <code>failed</code> oder <code>timeout</code>.</li>
+        Korrelation und Ergebnis des letzten gesicherten Befehls. Statuswerte sind <code>pending</code>, <code>success</code>, <code>failed</code> oder <code>timeout</code>. Wird eine aktive Sitzung vor der Antwort invalidiert, werden alle ausstehenden Requests und ihr Timeout entfernt; der neueste Request endet als <code>failed</code> mit einem stabilen redigierten Grund wie <code>connection lost</code>, <code>device disabled</code>, <code>credentials changed</code>, <code>authentication aborted</code>, <code>lifecycle timeout</code>, <code>reconnect requested</code>, <code>definition changed</code> oder <code>session replaced</code>. Undefine und Shutdown unterdrücken neue Diagnose-Events.</li>
   </ul>
 </ul>
 
@@ -3250,7 +3303,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.4",
+  "version": "v2.1.5",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

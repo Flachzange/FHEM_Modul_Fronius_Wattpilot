@@ -23,14 +23,14 @@ The repository `joscha82/wattpilot` at commit `4712ba3b8409fda55303870c047038b1b
 - `authRequired` contains `token1` and `token2` without a `hash` field;
 - the password-derived value is generated with PBKDF2-HMAC-SHA512 using the serial as salt and 100000 iterations;
 - writes are sent as `setValue` and, when `secured` is true, wrapped in `securedMsg` with an HMAC and an `sm`-suffixed request ID;
-- `fullStatus.partial:true` may split initialization across multiple messages;
+- `fullStatus.partial:true` may split a snapshot across multiple messages; the first valid authenticated status already establishes the session;
 - the first twelve positions of `nrg` contain the electrical values used by the current FHEM readings.
 
 These are reproducible implementation statements, not official documentation. The synthetic fixture [`../t/fixtures/legacy-protocol2-session.json`](../t/fixtures/legacy-protocol2-session.json) preserves the non-identifying protocol shape used by the regression test. The serial required for deterministic PBKDF2 testing exists only inside the test code, because repository privacy checks deliberately reject identifier fields in ordinary synthetic fixtures.
 
 ## Regression contract for the current module
 
-A legacy `fullStatus` may be split across messages with top-level `partial:true`. Such messages update supplied fields but do not by themselves complete initialization. Completion requires the final non-partial full status; `deltaStatus` retains the established compatibility fallback. The `partial` member is envelope metadata and is not a status field.
+A legacy `fullStatus` may be split across messages with top-level `partial:true`. The first valid authenticated `fullStatus` or `deltaStatus`, including a partial full status, establishes initialization and cancels the lifecycle timeout. Later chunks update only supplied fields; omitted fields remain unchanged. The `partial` member is envelope metadata describing snapshot completeness and is not a status field.
 
 Version 1.5.0 hardens authentication and input validation while the following behavior remains protected by automated tests:
 
