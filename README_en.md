@@ -203,9 +203,9 @@ The grouped `minimumCharging` command converts the public seconds to exact whole
 
 These additional setters use the existing secured `setValue` path. No reading is changed optimistically; only a device response or later status confirms the value. Field assignments use the documented combination of current Fronius operating documentation, pinned API sources, and the sanitized Flex 43.4 observation. The extended energy and phase parameters described here were changed individually on a Wattpilot Flex Home 22 C6 with firmware 43.4, confirmed through device readback, and restored to their original values.
 
-### PV battery telemetry
+### PV battery diagnostics
 
-The readings `pvBatterySoC`, `pvBatteryPower`, and `pvBatteryModeCode` refer exclusively to the stationary PV battery, not the vehicle traction battery. They are read from `fbuf_akkuSOC`, `fbuf_pAkku`, and `fbuf_akkuMode`. `pvBatterySoC` and `pvBatteryPower` use a separate latest-value cache and dirty fields while sharing the common telemetry clock with `nrg` and energy; battery input never republishes stale electrical values. `pvBatteryModeCode` is a discrete status and publishes immediately only on actual change. `pvBatterySoC` is formatted with exactly one decimal place. The module deliberately provides no setters and invents neither an unverified mode enum nor an unverified power-sign meaning.
+The fields `fbuf_akkuSOC` and `fbuf_pAkku` are published only with `diagnosticReadings=1` as the raw readings `diag_fbuf_akkuSOC` and `diag_fbuf_pAkku`. They belong to the shared diagnostic owner, are neither scaled nor rounded, and receive no unit or sign interpretation. `diag_fbuf_pAkku` and `diag_pvopt_averagePAkku` come from two different protocol fields; their exact distinction, aggregation, unit, and sign convention remain unconfirmed. `pvBatteryModeCode` from `fbuf_akkuMode` remains a normal discrete status and publishes immediately only on actual change. The module deliberately provides no setters and invents no mode enum.
 
 The module also exposes the stationary-PV-battery settings observed simultaneously in the app and `fullStatus`: `fam` as `configPvBatteryChargeAboveSoC`, `pdte` as `configPvBatteryDischargeEnabled`, `pdt` as `configPvBatteryDischargeUntilSoC`, `pdle` as `configPvBatteryDischargeTimeLimitEnabled`, `pdls` as `configPvBatteryDischargeStartTime`, and `pdlo` as `configPvBatteryDischargeStopTime`. The two clock values are rendered from whole seconds after midnight as `HH:MM`. The mapping is evidenced on one Wattpilot Flex Home 22 C6 running firmware 43.4 by exact agreement between the app values and the simultaneous status.
 
@@ -244,11 +244,11 @@ You can adjust the module's behavior via "Attributes".
 
 ### `interval` (in seconds)
 
-Controls publication of all interval readings: energy, electrical and stationary-battery telemetry, `deviceRebootCount`, `deviceUptime`, and optional `diag_...` readings.
+Controls publication of all interval readings: energy, electrical telemetry, `deviceRebootCount`, `uptime`, and enabled optional `diag_...` readings.
 
 * Default: `0` (no rate limit).
 * Recommendation: `10` or `60`.
-* Energy, electrical `nrg` telemetry, stationary-battery telemetry, device-health values, and optional diagnostics keep separate latest-value caches and dirty fields but use one shared interval clock. A tick publishes all eligible dirty groups in the same FHEM reading transaction and with the same timestamp. No group can block another group or refresh its reading timestamps with stale cached values.
+* Energy, electrical `nrg` telemetry, device-health values, `uptime`, and optional diagnostics keep separate latest-value caches and dirty fields but use one shared interval clock. A tick publishes all eligible dirty groups in the same FHEM reading transaction and with the same timestamp. No group can block another group or refresh its reading timestamps with stale cached values.
 * Inside the interval, each group retains only its latest valid state. Energy becomes dirty only when its formatted public value actually changes; identical `eto`/`wh` values renew neither timestamps nor events. Missing, `null`, wrong-type, or incomplete values do not become dirty and do not move the shared clock.
 * All 24 `config...` readings remain immediate after valid device confirmation. Identity readings, `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, the four charging-decision readings, and `errorCode` publish immediately, but only when their public value changes.
 * `fullStatus`, partial `fullStatus`, `deltaStatus`, and matched response `status` use the same policy. The first valid authenticated `fullStatus` or `deltaStatus` input completes initialization; `partial=true` describes snapshot completeness only. `interval=0` disables rate limiting. Changing a positive value to `0`, or deleting the attribute, immediately publishes already queued dirty owners that are currently eligible.
@@ -256,21 +256,21 @@ Controls publication of all interval readings: energy, electrical and stationary
 
 ### `update_while_idle` (0 or 1)
 
-Controls electrical `nrg`, `pvBatterySoC`/`pvBatteryPower`, `deviceUptime`, and enabled optional diagnostics while the car is **not** charging.
+Controls electrical `nrg`, `uptime`, and enabled optional diagnostics while the car is **not** charging.
 
-* `0` (Default): both high-frequency telemetry groups remain passive while idle, **except** for the bounded one-time Charging-to-Idle refresh.
-* `1`: real incoming idle values from all gated owners (`nrg`, stationary battery, `deviceUptime`, and enabled optional diagnostics) are additionally processed on the shared telemetry clock.
+* `0` (Default): the gated owners (`nrg`, `uptime`, and enabled optional diagnostics) remain passive while idle, **except** for the bounded one-time Charging-to-Idle electrical refresh.
+* `1`: real incoming idle values from all gated owners (`nrg`, `uptime`, and enabled optional diagnostics) are additionally processed on the shared telemetry clock.
 * With either attribute value, after `car=2` changes to a valid non-charging state, one real `nrg` in the same message or within 30 seconds may bypass the clock once so only device-supplied values can correct stale readings. Changing the attribute during that episode neither creates a second timer nor cancels the existing refresh.
 * No evidenced explicit Wattpilot WebSocket status request is known; the module therefore sends no `getAllValues` and invents no polling command. If no valid `nrg` arrives in the 30-second window, at most one controlled reconnect is scheduled for that idle episode. With `0`, later ordinary Idle values remain passive afterwards.
 * Missing values are never interpreted as zero. Real zero values are processed only when supplied validly by the device.
-* This attribute does not control energy. `energyTotal` and `energySincePlugIn` are queued for the shared clock only when their formatted value actually changes; identical status values cause no timestamp or event update. The repository does not claim in which state or at what frequency the Wattpilot sends `eto`/`wh`. Discrete status/diagnostic readings remain immediate-on-change. `pvBatteryModeCode` is such a discrete status value and is not part of the battery rate limit.
+* This attribute does not control energy. `energyTotal` and `energySincePlugIn` are queued for the shared clock only when their formatted value actually changes; identical status values cause no timestamp or event update. The repository does not claim in which state or at what frequency the Wattpilot sends `eto`/`wh`. Discrete status/diagnostic readings remain immediate-on-change. `pvBatteryModeCode` is such a discrete status value and is not part of the optional diagnostic cadence.
 
 ### `diagnosticReadings` (0 or 1)
 
-Controls the twelve optional raw field-research readings whose names begin with `diag_`.
+Controls the fourteen optional raw field-research readings whose names begin with `diag_`.
 
 * `0` (Default): diagnostic fields are not evaluated or cached. Existing `diag_...` readings are deleted immediately and their dirty/cache state is cleared. Deleting the attribute has the same effect.
-* `1`: valid scalar values from the twelve selected protocol fields are published through the normal `interval` mechanism. They are eligible while the vehicle is charging or when `update_while_idle=1`.
+* `1`: valid scalar values from the fourteen selected protocol fields are published through the normal `interval` mechanism. They are eligible while the vehicle is charging or when `update_while_idle=1`.
 * The protocol wording is retained exactly after the `diag_` prefix. Numbers and strings are copied without scaling, conversion, rounding, unit claims, or sign interpretation; JSON booleans become `0` or `1`. Missing fields, `null`, objects, arrays, and invalid values preserve the previous reading.
 
 ### `disable` (0 or 1)
@@ -348,11 +348,11 @@ The module exposes exactly these 73 public readings:
 | `configChargingPauseAllowed` | Boolean field `fap`, exposed as `0` or `1`. |
 | `configMinimumChargingPauseDuration` | `mcpd` converted from milliseconds to seconds. |
 | `configMinimumChargingInterval` | `mci` converted from milliseconds to seconds. The name follows the API alias; the Fronius Flex manual calls the behavior Forced charging interval. |
-| `pvBatterySoC` | Stationary PV-battery state of charge from `fbuf_akkuSOC`, exposed as a percentage from `0` to `100` with exactly one decimal place. Missing or invalid values leave the reading unchanged. |
-| `pvBatteryPower` | Signed numeric value from `fbuf_pAkku`, exposed in watts and always formatted to two decimal places. The charge/discharge sign direction has not yet been confirmed by a controlled Flex live test, so the module does not reinterpret the sign. |
+| `diag_fbuf_akkuSOC` | Optional raw scalar from `fbuf_akkuSOC`; no percentage range, unit, or scaling is claimed. |
+| `diag_fbuf_pAkku` | Optional raw scalar from `fbuf_pAkku`; distinction from `diag_pvopt_averagePAkku`, aggregation, unit, and sign remain unconfirmed. |
 | `pvBatteryModeCode` | Unmodified non-negative integer code from `fbuf_akkuMode`. No text mode is invented because no reliable enum is available. |
 | `deviceRebootCount` | Raw non-negative integer from `rbc`, published on the normal interval without idle gating. The exact protocol meaning remains unverified. |
-| `deviceUptime` | Raw non-negative integer from `rbt`, published on the normal interval while charging or with `update_while_idle=1`. Its unit and exact meaning remain unverified. |
+| `uptime` | Non-negative `rbt` value interpreted as seconds from the live-device observation and rendered as cumulative hours and minutes in `H:MM`. Remaining seconds are discarded; publication uses the normal interval while charging or with `update_while_idle=1`. |
 | `diag_fbuf_pGrid` | Optional raw scalar from `fbuf_pGrid`; no meaning, unit, or sign convention is claimed. |
 | `diag_fbuf_pPv` | Optional raw scalar from `fbuf_pPv`; no meaning or unit is claimed. |
 | `diag_pvopt_averagePGrid` | Optional raw scalar from `pvopt_averagePGrid`; aggregation and semantics remain unknown. |
@@ -382,7 +382,7 @@ The module exposes exactly these 73 public readings:
 | `lastCommandStatus` | `pending`, `success`, `failed`, or `timeout`. |
 | `lastCommandError` | Concise redacted error or result text. Session termination uses stable reasons such as `connection lost`, `device disabled`, `credentials changed`, `authentication aborted`, `lifecycle timeout`, `reconnect requested`, `definition changed`, or `session replaced`. |
 
-All 24 `config...` readings publish immediately after valid device confirmation. Identity readings and the discrete status/diagnostic readings `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, `chargingDecisionCode`, `chargingDecision`, `chargingDecisionInternalCode`, `chargingDecisionInternal`, and `errorCode` also publish immediately, but only on actual change; identical repetitions refresh neither timestamp nor event. Energy, electrical `nrg`, stationary-battery telemetry, device-health values, and enabled raw diagnostics are limited by `interval`. They keep separate latest-value caches and dirty fields but publish on the same clock and in the same FHEM reading transaction. Energy becomes dirty only when its formatted public value changes. Missing, `null`, wrong-type, or incomplete fields preserve readings and do not move the clock.
+All 24 `config...` readings publish immediately after valid device confirmation. Identity readings and the discrete status/diagnostic readings `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, `chargingDecisionCode`, `chargingDecision`, `chargingDecisionInternalCode`, `chargingDecisionInternal`, and `errorCode` also publish immediately, but only on actual change; identical repetitions refresh neither timestamp nor event. Energy, electrical `nrg`, device-health values, `uptime`, and enabled raw diagnostics are limited by `interval`. They keep separate latest-value caches and dirty fields but publish on the same clock and in the same FHEM reading transaction. Energy becomes dirty only when its formatted public value changes. Missing, `null`, wrong-type, or incomplete fields preserve readings and do not move the clock.
 
 The text values use a compatibility mapping from the pinned official go-e `modelStatus` enum. The same value table is applied to `msi` because the pinned Wattpilot-specific source describes it as an internal decision variant. This is not an official Fronius Flex specification; both raw codes therefore remain available and unmapped values stay explicit. The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` are not confirmed for Wattpilot Flex. In particular, the module does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, treat them as two device-supplied diagnostic values and do not infer a causal chain from this documentation.
 

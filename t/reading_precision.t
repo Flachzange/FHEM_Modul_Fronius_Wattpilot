@@ -61,7 +61,7 @@ subtest 'reading inventory declares one intentional public format per reading' =
         [sort grep { $policy->{$_}{formatter} eq 'decimal2' } keys %$policy],
         [sort qw(
             pv_surplus_start_power three_phase_switch_power
-            pv_battery_power energy_total energy_since_plug_in
+            energy_total energy_since_plug_in
             voltage_l1 voltage_l2 voltage_l3
             current_l1 current_l2 current_l3
             power_l1 power_l2 power_l3 power
@@ -69,8 +69,12 @@ subtest 'reading inventory declares one intentional public format per reading' =
         'all two-decimal public readings are explicit in the existing inventory');
     is_deeply(
         [sort grep { $policy->{$_}{formatter} eq 'decimal1' } keys %$policy],
-        ['pv_battery_soc'],
-        'stationary-battery SOC is the sole one-decimal percentage exception');
+        [],
+        'no current public reading uses the legacy one-decimal formatter');
+    is_deeply(
+        [sort grep { $policy->{$_}{formatter} eq 'hours_minutes' } keys %$policy],
+        ['device_uptime'],
+        'uptime is the explicit cumulative hours-and-minutes formatter');
     is(scalar(grep {
             !defined($policy->{$_}{formatter})
             || $policy->{$_}{formatter} eq ''
@@ -90,7 +94,10 @@ subtest 'decimal formatter retains trailing zeroes and removes rounded negative 
     is(main::Wattpilot_FormatDecimal(-0.006, 2), '-0.01',
         'a genuinely negative rounded value keeps its sign');
     is(main::Wattpilot_FormatDecimal(42.54, 1), '42.5',
-        'the explicit SOC exception retains one decimal place');
+        'the decimal helper still supports one decimal place');
+    is(main::Wattpilot_FormatReadingValue('device_uptime', 62_070_123),
+        '17241:42',
+        'uptime converts seconds to cumulative hours and minutes');
 };
 
 subtest 'fullStatus formats physical readings without changing discrete settings' => sub {
@@ -99,8 +106,6 @@ subtest 'fullStatus formats physical readings without changing discrete settings
         car => 2,
         fst => 1400,
         spl3 => 6900.5,
-        fbuf_akkuSOC => 42.54,
-        fbuf_pAkku => -0.004,
         eto => 123456,
         wh => 7,
         nrg => nrg_values(),
@@ -113,8 +118,6 @@ subtest 'fullStatus formats physical readings without changing discrete settings
     my %expected = (
         configPvSurplusStartPower => '1400.00',
         configThreePhaseSwitchPower => '6900.50',
-        pvBatterySoC => '42.5',
-        pvBatteryPower => '0.00',
         energyTotal => '123.46',
         energySincePlugIn => '7.00',
         voltageL1 => '230.00',
@@ -149,21 +152,17 @@ subtest 'deltaStatus and matched response use the same formatting path' => sub {
         car => 2,
         fst => 1000,
         spl3 => 5000,
-        fbuf_pAkku => 1,
         nrg => nrg_values(),
     }), 'baseline fullStatus is accepted');
 
     ok(parse_status($hash, 'deltaStatus', {
         fst => 1500.555,
         spl3 => 6000.555,
-        fbuf_pAkku => -12.345,
     }), 'fractional deltaStatus is accepted');
     is(reading_value($hash, 'configPvSurplusStartPower'), '1500.56',
         'deltaStatus start power uses two decimals');
     is(reading_value($hash, 'configThreePhaseSwitchPower'), '6000.56',
         'deltaStatus switching power uses two decimals');
-    is(reading_value($hash, 'pvBatteryPower'), '-12.35',
-        'deltaStatus battery power uses two decimals');
 
     $DevIo::NOW = 2_000;
     $hash->{helper}{pendingRequests}{7} = {
@@ -176,32 +175,29 @@ subtest 'deltaStatus and matched response use the same formatting path' => sub {
         status => {
             fst => 1e3,
             spl3 => 7000,
-            fbuf_pAkku => 12,
         },
     })), 'matched response status is accepted');
     is(reading_value($hash, 'configPvSurplusStartPower'), '1000.00',
         'scientific numeric response input formats identically');
     is(reading_value($hash, 'configThreePhaseSwitchPower'), '7000.00',
         'whole response input retains trailing zeroes');
-    is(reading_value($hash, 'pvBatteryPower'), '12.00',
-        'response battery telemetry uses the shared decimal formatter');
 };
 
 subtest 'fresh initialization and invalid input preserve the public contract' => sub {
     my $first = fresh_device();
     ok(parse_status($first, 'fullStatus', {
         car => 2, fst => 1550.5, spl3 => 5200.5,
-        fbuf_pAkku => -0.004, nrg => nrg_values(),
+        nrg => nrg_values(),
     }), 'first initialization is accepted');
 
     my $second = fresh_device();
     ok(parse_status($second, 'fullStatus', {
         car => 2, fst => 1550.5, spl3 => 5200.5,
-        fbuf_pAkku => -0.004, nrg => nrg_values(),
+        nrg => nrg_values(),
     }), 'fresh post-reconnect initialization is accepted');
     for my $reading (qw(
         configPvSurplusStartPower configThreePhaseSwitchPower
-        pvBatteryPower voltageL1 currentL1 power
+        voltageL1 currentL1 power
     )) {
         is(reading_value($second, $reading), reading_value($first, $reading),
             "$reading is formatted identically after fresh initialization");
@@ -210,14 +206,11 @@ subtest 'fresh initialization and invalid input preserve the public contract' =>
     ok(parse_status($second, 'deltaStatus', {
         fst => '1000',
         spl3 => '5200.5',
-        fbuf_pAkku => 'NaN',
     }), 'type-invalid numeric strings are processed safely');
     is(reading_value($second, 'configPvSurplusStartPower'), '1550.50',
         'invalid start power preserves the confirmed reading');
     is(reading_value($second, 'configThreePhaseSwitchPower'), '5200.50',
         'invalid switching power preserves the confirmed reading');
-    is(reading_value($second, 'pvBatteryPower'), '0.00',
-        'invalid battery power preserves normalized zero');
 };
 
 done_testing;

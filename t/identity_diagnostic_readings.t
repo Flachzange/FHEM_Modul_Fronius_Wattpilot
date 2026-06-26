@@ -13,6 +13,8 @@ my $root = File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..'));
 require File::Spec->catfile($root, '72_Wattpilot.pm');
 
 my @diag_readings = qw(
+    diag_fbuf_akkuSOC
+    diag_fbuf_pAkku
     diag_fbuf_pGrid
     diag_fbuf_pPv
     diag_pvopt_averagePGrid
@@ -78,6 +80,8 @@ sub updates_for {
 
 sub diagnostic_status {
     return {
+        fbuf_akkuSOC => 60.1256789,
+        fbuf_pAkku => -1525.9876543,
         fbuf_pGrid => 125.1256789,
         fbuf_pPv => -1650.25,
         pvopt_averagePGrid => 1.23456789,
@@ -182,7 +186,7 @@ subtest 'device health readings share interval timing with separate idle gates' 
     }), 'idle health status is accepted');
     is(reading_value($hash, 'deviceRebootCount'), 104,
         'reboot count publishes during idle');
-    ok(!exists $hash->{READINGS}{deviceUptime},
+    ok(!exists $hash->{READINGS}{uptime},
         'uptime remains gated while idle');
 
     $DevIo::NOW = 2_029;
@@ -193,17 +197,17 @@ subtest 'device health readings share interval timing with separate idle gates' 
     DevIo::run_due_timers(2_030);
     is(reading_value($hash, 'deviceRebootCount'), 105,
         'reboot count publishes at the normal interval while idle');
-    ok(!exists $hash->{READINGS}{deviceUptime},
+    ok(!exists $hash->{READINGS}{uptime},
         'uptime remains gated at the interval boundary');
 
     is(DevIo::command_attr($hash->{NAME}, 'update_while_idle', 1), undef,
         'idle updates can be enabled');
     $DevIo::NOW = 2_059;
     ok(parse_status($hash, 'deltaStatus', { rbt => 62_070_123 }),
-        'latest uptime is cached without conversion');
+        'latest uptime in seconds is cached');
     DevIo::run_due_timers(2_060);
-    is(reading_value($hash, 'deviceUptime'), 62_070_123,
-        'uptime publishes as the unscaled raw integer when idle updates are enabled');
+    is(reading_value($hash, 'uptime'), '17241:42',
+        'uptime publishes as cumulative hours and minutes when idle updates are enabled');
 
     my $charging = fresh_device('chargingHealthWallbox');
     $attr{$charging->{NAME}}{interval} = 30;
@@ -213,8 +217,8 @@ subtest 'device health readings share interval timing with separate idle gates' 
         car => 2,
         rbt => 77_777,
     }), 'charging health status is accepted');
-    is(reading_value($charging, 'deviceUptime'), 77_777,
-        'charging opens the uptime idle gate');
+    is(reading_value($charging, 'uptime'), '21:36',
+        'charging opens the uptime idle gate and drops remaining seconds');
 };
 
 subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and removable' => sub {
@@ -241,6 +245,16 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         car => 2,
         %{diagnostic_status()},
     }), 'enabled diagnostic status is accepted');
+    is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.1256789',
+        'former battery SOC telemetry is now an unrounded optional diagnostic');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.9876543',
+        'former battery power telemetry is now an unrounded optional diagnostic');
+    # BEGIN 2.0 negative controls for removed public names
+    ok(!exists $hash->{READINGS}{pvBatterySoC},
+        'the former public battery SOC reading is not recreated');
+    ok(!exists $hash->{READINGS}{pvBatteryPower},
+        'the former public battery power reading is not recreated');
+    # END 2.0 negative controls for removed public names
     is(reading_value($hash, 'diag_fbuf_pGrid'), '125.1256789',
         'numeric diagnostics are not rounded');
     is(reading_value($hash, 'diag_fbuf_pPv'), '-1650.25',

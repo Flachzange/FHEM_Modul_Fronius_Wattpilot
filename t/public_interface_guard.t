@@ -70,6 +70,7 @@ my @old_exact_strings = (
     'Voltage_L1', 'Voltage_L2', 'Voltage_L3',
     'Current_L1', 'Current_L2', 'Current_L3',
     'Power_L1', 'Power_L2', 'Power_L3',
+    'pvBatterySoC', 'pvBatteryPower', 'deviceUptime',
     'Password', 'Start', 'Stop', 'Default', 'Eco', 'NextTrip',
     'Unknown', 'password stored', 'password missing', 'credential error',
     'connection failed', 'auth_failed', 'auth_timeout',
@@ -107,9 +108,8 @@ my @public_readings = qw(
     configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
-    configMinimumChargingInterval pvBatterySoC pvBatteryPower
-    pvBatteryModeCode deviceRebootCount deviceUptime
-    diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
+    configMinimumChargingInterval pvBatteryModeCode deviceRebootCount uptime
+    diag_fbuf_akkuSOC diag_fbuf_pAkku diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
     diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
     diag_pvopt_deltaA diag_pvopt_specialCase diag_fbuf_pAcTotal
     diag_fbuf_ohmpilotState diag_fbuf_ohmpilotTemperature configPvBatteryChargeAboveSoC

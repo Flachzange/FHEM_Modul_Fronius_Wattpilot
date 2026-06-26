@@ -79,7 +79,9 @@ FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `Und
 | `telemetryClock` | shared telemetry interval boundary and one typed `telemetry_flush` timer; reset on interval changes and session invalidation |
 | `telemetryPublication.energy` | cumulative-energy latest-value cache and dirty fields; dirty only when the formatted public value changes; no artificial idle gate |
 | `telemetryPublication.nrg` | electrical `nrg` latest-value cache and dirty fields; controlled by the electrical idle gate |
-| `telemetryPublication.battery` | stationary-battery SOC/power latest-value cache and dirty fields; controlled by the battery idle gate |
+| `telemetryPublication.device_health` | reboot-count latest-value cache and dirty field; not idle-gated |
+| `telemetryPublication.device_uptime` | `rbt` latest-value cache and dirty field; controlled by the shared charging/idle gate |
+| `telemetryPublication.diagnostic` | optional raw diagnostic latest-value cache and dirty fields; exists only while diagnostics are enabled |
 | `msg_id` | current device-hash request sequence |
 
 ## Status and reading pipeline
@@ -127,11 +129,10 @@ runtime `%WATTPILOT_READING_POLICY`:
   `pvBatteryModeCode`, both charging-decision code/text pairs, and `errorCode`
   are immediate-on-change; repeated identical public values neither renew
   their timestamps nor create events;
-- cumulative energy, electrical `nrg`, stationary-battery SOC/power, raw
-  device-health values, and enabled optional diagnostics are interval-controlled
-  by six data owners: `energy`, `nrg`, `battery`, `device_health`,
-  `device_uptime`, and `diagnostic`, which share one interval clock and one
-  typed flush timer.
+- cumulative energy, electrical `nrg`, raw device-health values, `uptime`,
+  and enabled optional diagnostics are interval-controlled by five data owners:
+  `energy`, `nrg`, `device_health`, `device_uptime`, and `diagnostic`, which
+  share one interval clock and one typed flush timer.
 
 Each owner stores only its newest valid values and a dirty-field set. The shared
 tick publishes all eligible dirty owners in one FHEM bulk-reading transaction,
@@ -144,19 +145,18 @@ become dirty and does not move the shared clock. `interval=0` disables rate
 limiting and immediately publishes eligible dirty values. A positive-to-zero
 attribute transition, and deletion to the effective default zero, first cancels
 the old timer/clock and then flushes every currently eligible dirty owner in one
-reading transaction. Idle-gated `nrg` or battery data remains dirty/passive. A
+reading transaction. Idle-gated `nrg`, uptime, or diagnostic data remains dirty/passive. A
 positive-to-positive transition also cancels the old timer/clock. When any owner
 is dirty, it immediately creates exactly one replacement clock from the
 attribute-change time using the new interval; it does not publish early, and
 stale callbacks cannot affect the replacement owner. With no dirty telemetry,
 the clock stays absent until later valid input starts it.
 
-`update_while_idle` applies only to the `electrical` and `battery` gates. While
-charging, electrical telemetry is eligible regardless of the attribute. While
-idle with `update_while_idle=1`, electrical and stationary-battery telemetry
-remain eligible on the shared clock. With `update_while_idle=0`, those two
-owners stay passive except for the bounded one-time charging-to-idle `nrg`
-refresh/reconnect path. That episode starts for both attribute values; changing
+`update_while_idle` applies to the `electrical`, `device_uptime`, and
+`diagnostic` gates. While charging, all three are eligible regardless of the
+attribute. While idle with `update_while_idle=1`, they remain eligible on the
+shared clock. With `update_while_idle=0`, those owners stay passive except for
+the bounded one-time charging-to-idle `nrg` refresh/reconnect path. That episode starts for both attribute values; changing
 `update_while_idle` while it is active neither duplicates its timer nor cancels
 its one-shot ownership. Energy is not artificially idle-gated: a changed
 late-arriving final value can still publish, while identical snapshots remain
@@ -167,10 +167,10 @@ silent. The repository does not claim when or how often the device sends
 lowerCamelCase compatibility text reading. Each code/text pair is updated
 atomically in the same reading transaction. Unknown numeric values remain
 explicit as `unknown:<code>`. `pvBatteryModeCode` preserves a non-negative raw
-integer without inventing an enum. `fbuf_akkuSOC` is accepted only as a finite
-percentage from 0 through 100 and formatted to one decimal place;
-`fbuf_pAkku` is preserved as a signed finite watt value formatted to two
-decimal places without assigning an unverified sign direction.
+integer without inventing an enum. With diagnostics enabled, `fbuf_akkuSOC`
+and `fbuf_pAkku` are copied as raw scalar diagnostics without percentage
+validation, unit assignment, scaling, rounding, or sign interpretation. The
+relationship between `fbuf_pAkku` and `pvopt_averagePAkku` remains unknown.
 
 Configuration fields are normalized independently of telemetry gates and are
 never changed optimistically by a Set command. Only device-supplied status
@@ -239,4 +239,4 @@ remain controlled adapters. No runtime abstraction is added to
 FHEM simulator is vendored.
 
 
-Optional diagnostic architecture: `diagnosticReadings=0` is the effective default and removes all twelve `diag_...` readings plus the `diagnostic` owner state. With value `1`, only validated JSON scalars are cached; objects, arrays, and `null` are ignored. The `diagnostic` and `device_uptime` owners use the same charging/`update_while_idle` eligibility rule, while `device_health` remains ungated.
+Optional diagnostic architecture: `diagnosticReadings=0` is the effective default and removes all fourteen `diag_...` readings plus the `diagnostic` owner state. With value `1`, only validated JSON scalars are cached; objects, arrays, and `null` are ignored. The `diagnostic` and `device_uptime` owners use the same charging/`update_while_idle` eligibility rule, while `device_health` remains ungated.

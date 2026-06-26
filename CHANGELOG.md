@@ -5,8 +5,8 @@
 ### Identity, device health, and optional raw diagnostics
 
 - Adds always-visible `deviceType`, `deviceModel`, `deviceSubType`, `deviceVariant`, `helloProtocol`, and `statusProtocol` readings. The two protocol values remain source-separated and exact device strings are not mapped to invented models.
-- Adds raw interval-controlled `deviceRebootCount` from `rbc` and `deviceUptime` from `rbt`. `deviceRebootCount` is not idle-gated; `deviceUptime` is eligible while charging or with `update_while_idle=1`. No unit conversion or unverified semantic claim is applied.
-- Adds boolean attribute `diagnosticReadings:0,1` with effective default `0`. Enabling it exposes twelve exact `diag_`-prefixed raw scalar fields for real-device investigation; numbers and strings are not rounded, scaled, or interpreted, while JSON booleans become `0|1`.
+- Adds interval-controlled `deviceRebootCount` from `rbc` and `uptime` from `rbt`. `deviceRebootCount` is not idle-gated. Based on the maintainer live-device observation, `rbt` is treated as seconds and `uptime` is rendered as cumulative hours and minutes in `H:MM`; remaining seconds are discarded. `uptime` is eligible while charging or with `update_while_idle=1`.
+- Adds boolean attribute `diagnosticReadings:0,1` with effective default `0`. Enabling it exposes fourteen exact `diag_`-prefixed raw scalar fields for real-device investigation, including `diag_fbuf_akkuSOC` and `diag_fbuf_pAkku` in place of the former standalone stationary-battery SOC/power readings; numbers and strings are not rounded, scaled, or interpreted, while JSON booleans become `0|1`.
 - Setting `diagnosticReadings=0` or deleting the attribute immediately removes all optional diagnostic readings and clears their cache/dirty state. Optional diagnostics share the normal interval and charging/`update_while_idle` gate.
 - Expands the authoritative reading inventory from 53 to 73 public readings and the consumed scalar status schema from 36 to 55 fields, with complete documentation and regression coverage.
 

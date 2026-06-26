@@ -203,9 +203,9 @@ Der gruppierte Befehl `minimumCharging` rechnet die öffentlichen Sekunden exakt
 
 Diese zusätzlichen Setter verwenden den bestehenden gesicherten `setValue`-Pfad. Es wird kein Reading optimistisch geändert; nur eine Geräteantwort oder ein späterer Status bestätigt den Wert. Die Feldzuordnungen beruhen auf der im Projekt dokumentierten Kombination aus aktueller Fronius-Bedienungsdokumentation, gepinnten API-Quellen und der bereinigten Flex-43.4-Beobachtung. Die hier beschriebenen erweiterten Energie- und Phasenparameter wurden mit einem Wattpilot Flex Home 22 C6, Firmware 43.4, einzeln geändert, per Geräte-Rückmeldung bestätigt und auf den Ausgangswert zurückgesetzt.
 
-### PV-Speicher-Telemetrie
+### PV-Speicher-Diagnose
 
-Die Readings `pvBatterySoC`, `pvBatteryPower` und `pvBatteryModeCode` beziehen sich ausschließlich auf den stationären PV-Speicher, nicht auf die Fahrzeugbatterie. Sie werden aus `fbuf_akkuSOC`, `fbuf_pAkku` und `fbuf_akkuMode` gelesen. `pvBatterySoC` und `pvBatteryPower` verwenden einen getrennten Latest-Value-Cache und Dirty-Felder, teilen aber den gemeinsamen Telemetrietakt mit `nrg` und Energie; ein Speichertelegramm veröffentlicht keine alten elektrischen Werte. `pvBatteryModeCode` ist ein diskreter Status und wird sofort nur bei tatsächlicher Änderung veröffentlicht. `pvBatterySoC` wird mit genau einer Nachkommastelle ausgegeben. Für diese drei Werte gibt es bewusst keine Setter; weder eine unbestätigte Modus-Enum noch eine unbestätigte Vorzeichenbedeutung wird erfunden.
+Die Felder `fbuf_akkuSOC` und `fbuf_pAkku` werden nur mit `diagnosticReadings=1` als rohe Readings `diag_fbuf_akkuSOC` und `diag_fbuf_pAkku` veröffentlicht. Sie gehören zum gemeinsamen Diagnose-Owner, werden weder skaliert noch gerundet und erhalten keine Einheiten- oder Vorzeichendeutung. `diag_fbuf_pAkku` und `diag_pvopt_averagePAkku` stammen aus zwei verschiedenen Protokollfeldern; ihre genaue Abgrenzung, Aggregation und Vorzeichenkonvention ist weiterhin nicht belegt. `pvBatteryModeCode` aus `fbuf_akkuMode` bleibt dagegen ein normaler diskreter Status und wird sofort nur bei tatsächlicher Änderung veröffentlicht. Für diese Werte gibt es bewusst keine Setter und keine erfundene Modus-Enum.
 
 Das Modul bildet außerdem die gleichzeitig in App und `fullStatus` beobachteten PV-Speichereinstellungen ab: `fam` als `configPvBatteryChargeAboveSoC`, `pdte` als `configPvBatteryDischargeEnabled`, `pdt` als `configPvBatteryDischargeUntilSoC`, `pdle` als `configPvBatteryDischargeTimeLimitEnabled`, `pdls` als `configPvBatteryDischargeStartTime` und `pdlo` als `configPvBatteryDischargeStopTime`. Die beiden Zeitwerte werden aus ganzen Sekunden seit Mitternacht als `HH:MM` dargestellt. Die Zuordnung ist für Wattpilot Flex Home 22 C6 mit Firmware 43.4 durch die exakt übereinstimmenden App-Werte und den zeitgleichen Status belegt.
 
@@ -244,11 +244,11 @@ Sie können das Verhalten des Moduls über "Attribute" anpassen.
 
 ### `interval` (in Sekunden)
 
-Legt fest, wie oft Telemetriereadings veröffentlicht werden: `energyTotal`, `energySincePlugIn`, `pvBatterySoC`, `pvBatteryPower` sowie die aus `nrg` abgeleiteten Spannungs-, Strom- und Leistungsreadings.
+Legt fest, wie oft Intervallreadings veröffentlicht werden: `energyTotal`, `energySincePlugIn`, `deviceRebootCount`, `uptime`, die aus `nrg` abgeleiteten Spannungs-, Strom- und Leistungsreadings sowie aktivierte `diag_...`-Readings.
 
 * Standard: `0` (kein Rate-Limit).
 * Empfehlung: `10` oder `60`.
-* Energie, elektrische `nrg`-Telemetrie und stationäre Speichertelemetrie besitzen getrennte Latest-Value-Caches und Dirty-Felder, verwenden aber einen gemeinsamen Intervalltakt. Ein Tick veröffentlicht alle zulässigen geänderten Gruppen in derselben FHEM-Reading-Transaktion und mit demselben Zeitstempel. Keine Gruppe kann eine andere blockieren oder deren Reading-Zeitstempel mit alten Cachewerten erneuern.
+* Energie, elektrische `nrg`-Telemetrie, Gerätegesundheit, `uptime` und optionale Diagnosen besitzen getrennte Latest-Value-Caches und Dirty-Felder, verwenden aber einen gemeinsamen Intervalltakt. Ein Tick veröffentlicht alle zulässigen geänderten Gruppen in derselben FHEM-Reading-Transaktion und mit demselben Zeitstempel. Keine Gruppe kann eine andere blockieren oder deren Reading-Zeitstempel mit alten Cachewerten erneuern.
 * Innerhalb des Intervalls wird je Gruppe nur der neueste gültige Stand gepuffert. Energie wird nur dirty, wenn sich der formatierte öffentliche Wert tatsächlich ändert; identische `eto`-/`wh`-Werte erneuern weder Zeitstempel noch Events. Fehlende, `null`-, typfalsche oder unvollständige Werte werden nicht dirty und verschieben den gemeinsamen Takt nicht.
 * Alle 24 `config...`-Readings bleiben nach gültiger Gerätebestätigung sofort. Identitätsreadings, `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `pvBatteryModeCode`, die vier Ladeentscheidungsreadings und `errorCode` werden sofort, aber nur bei tatsächlicher Wertänderung veröffentlicht.
 * `fullStatus`, partielles `fullStatus`, `deltaStatus` und zugeordnete Response-`status` verwenden dieselbe Policy. Der erste gültige authentifizierte `fullStatus`- oder `deltaStatus`-Input beendet die Initialisierung; `partial=true` beschreibt nur die Unvollständigkeit des Snapshots. `interval=0` deaktiviert die Rate-Limits. Wird ein positiver Wert auf `0` geändert oder das Attribut gelöscht, werden bereits gepufferte, aktuell zulässige Dirty-Gruppen sofort gemeinsam veröffentlicht.
@@ -256,10 +256,10 @@ Legt fest, wie oft Telemetriereadings veröffentlicht werden: `energyTotal`, `en
 
 ### `update_while_idle` (0 oder 1)
 
-Steuert ausschließlich die elektrische `nrg`-Telemetrie und `pvBatterySoC`/`pvBatteryPower`, wenn das Auto **nicht** lädt.
+Steuert die elektrische `nrg`-Telemetrie, `uptime` und aktivierte `diag_...`-Readings, wenn das Auto **nicht** lädt.
 
-* `0` (Standard): Beide hochfrequenten Telemetriegruppen bleiben im Idle-Zustand passiv, **außer** für den begrenzten einmaligen Charging-zu-Idle-Refresh.
-* `1`: Echte eingehende Idle-Werte von `nrg` und stationärem Speicher werden zusätzlich im gemeinsamen Telemetrietakt verarbeitet.
+* `0` (Standard): Die gegateten Owner bleiben im Idle-Zustand passiv, **außer** für den begrenzten einmaligen Charging-zu-Idle-Refresh von `nrg`.
+* `1`: Echte eingehende Idle-Werte von `nrg`, `uptime` und aktivierten Diagnosen werden zusätzlich im gemeinsamen Telemetrietakt verarbeitet.
 * Bei beiden Attributwerten darf beim Wechsel von `car=2` zu einem gültigen nicht ladenden Zustand ein echtes `nrg` in derselben Nachricht oder innerhalb von 30 Sekunden den Takt einmalig umgehen, damit ausschließlich vom Gerät gelieferte Werte veraltete Readings korrigieren. Eine Änderung des Attributs während dieser Episode erzeugt weder einen zweiten Timer noch bricht sie den bestehenden Refresh ab.
 * Es gibt keinen belegten expliziten Wattpilot-WebSocket-Status-Request; das Modul sendet deshalb kein `getAllValues` und erfindet kein Polling-Kommando. Fehlt im 30-Sekunden-Fenster ein gültiges `nrg`, wird höchstens ein kontrollierter Reconnect für diese Idle-Episode geplant. Danach bleiben bei `0` weitere gewöhnliche Idle-Werte passiv.
 * Fehlende Werte werden niemals als null interpretiert. Echte Nullwerte werden nur verarbeitet, wenn das Gerät sie gültig liefert.
@@ -267,10 +267,10 @@ Steuert ausschließlich die elektrische `nrg`-Telemetrie und `pvBatterySoC`/`pvB
 
 ### `diagnosticReadings` (0 oder 1)
 
-Steuert die zwölf optionalen Rohreadings zur Felderkundung, deren Namen mit `diag_` beginnen.
+Steuert die vierzehn optionalen Rohreadings zur Felderkundung, deren Namen mit `diag_` beginnen.
 
 * `0` (Standard): Diagnosefelder werden weder ausgewertet noch gepuffert. Vorhandene `diag_...`-Readings werden sofort gelöscht und ihr Cache-/Dirty-Zustand verworfen. Das Löschen des Attributs wirkt genauso.
-* `1`: Gültige skalare Werte der zwölf ausgewählten Protokollfelder werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
+* `1`: Gültige skalare Werte der vierzehn ausgewählten Protokollfelder werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
 * Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. Zahlen und Strings werden ohne Skalierung, Umrechnung, Rundung, Einheitenbehauptung oder Vorzeichendeutung übernommen; JSON-Booleans erscheinen als `0` oder `1`. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
 
 ### `disable` (0 oder 1)
@@ -350,11 +350,11 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | `configChargingPauseAllowed` | Boolesches Feld `fap`, ausgegeben als `0` oder `1`. |
 | `configMinimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
 | `configMinimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
-| `pvBatterySoC` | Ladezustand des stationären PV-Speichers aus `fbuf_akkuSOC`, als Prozentwert von `0` bis `100` mit genau einer Nachkommastelle. Fehlende oder ungültige Werte verändern das Reading nicht. |
-| `pvBatteryPower` | Vorzeichenbehafteter Zahlenwert aus `fbuf_pAkku`, ausgegeben in Watt und grundsätzlich auf zwei Nachkommastellen formatiert. Die Vorzeichenrichtung für Laden und Entladen ist noch nicht durch einen kontrollierten Flex-Realtest bestätigt; das Modul deutet das Vorzeichen daher nicht um. |
+| `diag_fbuf_akkuSOC` | Optionaler Rohskalar aus `fbuf_akkuSOC`; keine Prozentgrenze, Einheit oder Skalierung wird behauptet. |
+| `diag_fbuf_pAkku` | Optionaler Rohskalar aus `fbuf_pAkku`; Abgrenzung zu `diag_pvopt_averagePAkku`, Aggregation, Einheit und Vorzeichen bleiben unbestätigt. |
 | `pvBatteryModeCode` | Unveränderter nicht negativer Ganzzahlcode aus `fbuf_akkuMode`. Mangels belastbarer Enum wird bewusst kein Klartextmodus erfunden. |
 | `deviceRebootCount` | Unveränderter nicht negativer Ganzzahlwert aus `rbc`, im normalen Intervall ohne Idle-Sperre. Die genaue Protokollbedeutung ist unbestätigt. |
-| `deviceUptime` | Unveränderter nicht negativer Ganzzahlwert aus `rbt`, im normalen Intervall beim Laden oder mit `update_while_idle=1`. Einheit und genaue Bedeutung sind unbestätigt. |
+| `uptime` | Nicht negativer Wert aus `rbt`, aufgrund der Realgerätbeobachtung als Sekunden interpretiert und als kumulative Stunden und Minuten im Format `H:MM` ausgegeben. Restsekunden werden verworfen; Aktualisierung im normalen Intervall beim Laden oder mit `update_while_idle=1`. |
 | `diag_fbuf_pGrid` | Optionaler Rohskalar aus `fbuf_pGrid`; keine Behauptung zu Bedeutung, Einheit oder Vorzeichen. |
 | `diag_fbuf_pPv` | Optionaler Rohskalar aus `fbuf_pPv`; keine Behauptung zu Bedeutung oder Einheit. |
 | `diag_pvopt_averagePGrid` | Optionaler Rohskalar aus `pvopt_averagePGrid`; Aggregation und Semantik unbekannt. |

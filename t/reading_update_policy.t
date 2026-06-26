@@ -26,6 +26,7 @@ sub fresh_device {
         helper => { authenticated => 1 },
     };
     $defs{$hash->{NAME}} = $hash;
+    $attr{$hash->{NAME}}{diagnosticReadings} = 1;
     return $hash;
 }
 
@@ -163,8 +164,8 @@ subtest 'all telemetry owners flush together without cross-owner starvation' => 
         fbuf_pAkku => -500,
         nrg => nrg(500),
     }), 'combined charging baseline is accepted');
-    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
-        'initial nrg and battery values share one transaction timestamp');
+    is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
+        'initial nrg and diagnostics values share one transaction timestamp');
     is(reading_time($hash, 'power'), reading_time($hash, 'energyTotal'),
         'initial energy and nrg values share one transaction timestamp');
 
@@ -172,7 +173,7 @@ subtest 'all telemetry owners flush together without cross-owner starvation' => 
     ok(parse_status($hash, 'deltaStatus', {
         fbuf_akkuSOC => 49,
         fbuf_pAkku => -600,
-    }), 'battery-first input is cached');
+    }), 'diagnostic-first input is cached');
     ok(parse_status($hash, 'deltaStatus', {
         eto => 101_000,
         wh => 1_100,
@@ -182,20 +183,20 @@ subtest 'all telemetry owners flush together without cross-owner starvation' => 
     }), 'nrg input in the same cycle is cached');
     is(reading_value($hash, 'power'), '500.00',
         'nrg remains unchanged before the shared tick');
-    is(reading_value($hash, 'pvBatteryPower'), '-500.00',
-        'battery remains unchanged before the shared tick');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), -500,
+        'diagnostic remains unchanged before the shared tick');
     is(reading_value($hash, 'energyTotal'), '100.00',
         'energy remains unchanged before the shared tick');
 
     DevIo::run_due_timers(2_030);
     is(reading_value($hash, 'power'), '600.00',
         'fresh nrg publishes on the shared tick');
-    is(reading_value($hash, 'pvBatteryPower'), '-600.00',
-        'fresh battery telemetry publishes on the shared tick');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), -600,
+        'fresh battery diagnostics publish on the shared tick');
     is(reading_value($hash, 'energyTotal'), '101.00',
         'changed energy publishes on the shared tick');
-    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
-        'nrg and battery use the same tick timestamp');
+    is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
+        'nrg and diagnostics use the same tick timestamp');
     is(reading_time($hash, 'power'), reading_time($hash, 'energyTotal'),
         'energy and nrg use the same tick timestamp');
 
@@ -206,19 +207,19 @@ subtest 'all telemetry owners flush together without cross-owner starvation' => 
         $DevIo::NOW = $input_time;
         ok(parse_status($hash, 'deltaStatus', {
             fbuf_pAkku => -600 - 100 * $cycle,
-        }), "battery-first input for cycle $cycle is accepted");
+        }), "diagnostic-first input for cycle $cycle is accepted");
         ok(parse_status($hash, 'deltaStatus', {
             nrg => nrg($power, 2 + $cycle),
         }), "nrg input for cycle $cycle is accepted");
         DevIo::run_due_timers($tick);
         is(reading_value($hash, 'power'), sprintf('%.2f', $power),
             "fresh nrg cycle $cycle is never starved");
-        is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
+        is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
             "cycle $cycle shares one telemetry timestamp");
     }
 };
 
-subtest 'idle gating applies only to nrg and battery while energy stays change-only' => sub {
+subtest 'idle gating applies only to nrg and diagnostics while energy stays change-only' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;
@@ -235,8 +236,8 @@ subtest 'idle gating applies only to nrg and battery while energy stays change-o
         'initial energy value is published even from an idle fullStatus');
     ok(!exists $hash->{READINGS}{power},
         'idle nrg remains passive with update_while_idle zero');
-    ok(!exists $hash->{READINGS}{pvBatteryPower},
-        'idle battery remains passive with update_while_idle zero');
+    ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
+        'idle diagnostic remains passive with update_while_idle zero');
 
     $DevIo::NOW = 3_029;
     ok(parse_status($hash, 'deltaStatus', {
@@ -250,8 +251,8 @@ subtest 'idle gating applies only to nrg and battery while energy stays change-o
         'changed energy publishes on the shared tick while idle');
     ok(!exists $hash->{READINGS}{power},
         'idle nrg stays gated at the tick');
-    ok(!exists $hash->{READINGS}{pvBatteryPower},
-        'idle battery stays gated at the tick');
+    ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
+        'idle diagnostics stays gated at the tick');
 
     my $enabled = fresh_device();
     $attr{$enabled->{NAME}}{interval} = 30;
@@ -266,14 +267,14 @@ subtest 'idle gating applies only to nrg and battery while energy stays change-o
     ok(parse_status($enabled, 'deltaStatus', {
         fbuf_pAkku => -300,
         nrg => nrg(20),
-    }), 'fresh idle nrg and battery values are cached while enabled');
+    }), 'fresh idle nrg and diagnostics values are cached while enabled');
     DevIo::run_due_timers(3_130);
     is(reading_value($enabled, 'power'), '20.00',
         'idle nrg publishes on the common tick when enabled');
-    is(reading_value($enabled, 'pvBatteryPower'), '-300.00',
-        'idle battery publishes on the common tick when enabled');
-    is(reading_time($enabled, 'power'), reading_time($enabled, 'pvBatteryPower'),
-        'idle nrg and battery share the common tick timestamp');
+    is(reading_value($enabled, 'diag_fbuf_pAkku'), -300,
+        'idle diagnostics publishes on the common tick when enabled');
+    is(reading_time($enabled, 'power'), reading_time($enabled, 'diag_fbuf_pAkku'),
+        'idle nrg and diagnostics share the common tick timestamp');
 };
 
 subtest 'unrelated immediate status cannot flush cached telemetry early' => sub {
@@ -430,7 +431,7 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
         nrg => nrg(600, 2),
     }), 'all owners become dirty before the boundary');
     is(reading_value($hash, 'power'), '500.00', 'nrg remains queued before interval zero');
-    is(reading_value($hash, 'pvBatteryPower'), '-500.00', 'battery remains queued before interval zero');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), -500, 'diagnostic remains queued before interval zero');
     is(reading_value($hash, 'energyTotal'), '100.00', 'energy remains queued before interval zero');
 
     $DevIo::NOW = 5_002;
@@ -438,15 +439,15 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
     is(DevIo::command_attr($hash->{NAME}, 'interval', 0), undef,
         'positive-to-zero transition is accepted');
     is(reading_value($hash, 'power'), '600.00', 'eligible dirty nrg flushes immediately');
-    is(reading_value($hash, 'pvBatteryPower'), '-600.00', 'eligible dirty battery flushes immediately');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), -600, 'eligible dirty battery flushes immediately');
     is(reading_value($hash, 'energyTotal'), '101.00', 'eligible changed energy flushes immediately');
-    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
-        'nrg and battery share the attribute-change transaction timestamp');
+    is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
+        'nrg and diagnostics share the attribute-change transaction timestamp');
     is(reading_time($hash, 'power'), reading_time($hash, 'energyTotal'),
         'all flushed owners share one transaction timestamp');
     ok(!exists $hash->{helper}{telemetryClock}, 'interval zero removes the shared clock');
     ok(!exists $hash->{helper}{timers}{telemetry_flush}, 'interval zero removes timer ownership');
-    for my $owner (qw(nrg battery energy)) {
+    for my $owner (qw(nrg diagnostic energy)) {
         ok(!keys %{$hash->{helper}{telemetryPublication}{$owner}{dirty}},
             "interval zero clears eligible $owner dirty state");
     }
@@ -482,12 +483,12 @@ subtest 'interval transition to zero flushes all currently eligible dirty owners
         'changed energy remains eligible while idle');
     isnt(reading_value($hash, 'power'), '800.00',
         'ineligible ordinary idle nrg is not flushed by the attribute change');
-    isnt(reading_value($hash, 'pvBatteryPower'), '-800.00',
-        'ineligible idle battery is not flushed by the attribute change');
+    isnt(reading_value($hash, 'diag_fbuf_pAkku'), -800,
+        'ineligible idle diagnostics is not flushed by the attribute change');
     ok(keys %{$hash->{helper}{telemetryPublication}{nrg}{dirty}},
         'ineligible idle nrg remains dirty and passive');
-    ok(keys %{$hash->{helper}{telemetryPublication}{battery}{dirty}},
-        'ineligible idle battery remains dirty and passive');
+    ok(keys %{$hash->{helper}{telemetryPublication}{diagnostic}{dirty}},
+        'ineligible idle diagnostic remains dirty and passive');
     ok(!keys %{$hash->{helper}{telemetryPublication}{energy}{dirty}},
         'eligible energy dirty state is consumed');
 
@@ -538,8 +539,8 @@ subtest 'positive interval changes replace one timer and preserve queued telemet
         'queued nrg is not published before the boundary');
     ok(!defined $hash->{READINGS}{energyTotal}{VAL},
         'new energy remains queued before the boundary');
-    ok(!exists $hash->{READINGS}{pvBatteryPower},
-        'new battery telemetry remains queued before the boundary');
+    ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
+        'new battery diagnostics remains queued before the boundary');
 
     $DevIo::NOW = 5_502;
     is(DevIo::command_attr($hash->{NAME}, 'interval', 60), undef,
@@ -584,12 +585,12 @@ subtest 'positive interval changes replace one timer and preserve queued telemet
     DevIo::run_due_timers(5_548);
     is(reading_value($hash, 'power'), '110.00',
         'queued nrg publishes at the replacement boundary without new input');
-    is(reading_value($hash, 'pvBatteryPower'), '-100.00',
-        'queued battery telemetry publishes at the replacement boundary');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), -100,
+        'queued battery diagnostics publish at the replacement boundary');
     is(reading_value($hash, 'energyTotal'), '1.00',
         'queued energy publishes at the replacement boundary');
-    is(reading_time($hash, 'power'), reading_time($hash, 'pvBatteryPower'),
-        'replacement-boundary nrg and battery share one transaction timestamp');
+    is(reading_time($hash, 'power'), reading_time($hash, 'diag_fbuf_pAkku'),
+        'replacement-boundary nrg and diagnostics share one transaction timestamp');
     is(reading_time($hash, 'power'), reading_time($hash, 'energyTotal'),
         'all replacement-boundary owners share one transaction timestamp');
     is((scalar grep {
@@ -635,7 +636,7 @@ subtest 'positive interval changes replace one timer and preserve queued telemet
         eto => 101_000,
         fbuf_pAkku => -200,
         nrg => nrg(10),
-    }), 'idle energy, nrg, and battery become dirty');
+    }), 'idle energy, nrg, and diagnostics become dirty');
     $DevIo::NOW = 5_702;
     is(DevIo::command_attr($hash->{NAME}, 'interval', 60), undef,
         'idle positive-to-positive change is accepted');
@@ -646,12 +647,12 @@ subtest 'positive interval changes replace one timer and preserve queued telemet
         'eligible changed energy publishes at the new boundary while idle');
     ok(!exists $hash->{READINGS}{power},
         'ineligible idle nrg remains passive at the new boundary');
-    ok(!exists $hash->{READINGS}{pvBatteryPower},
-        'ineligible idle battery remains passive at the new boundary');
+    ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
+        'ineligible idle diagnostic remains passive at the new boundary');
     ok(keys %{$hash->{helper}{telemetryPublication}{nrg}{dirty}},
         'ineligible idle nrg remains dirty after the boundary');
-    ok(keys %{$hash->{helper}{telemetryPublication}{battery}{dirty}},
-        'ineligible idle battery remains dirty after the boundary');
+    ok(keys %{$hash->{helper}{telemetryPublication}{diagnostic}{dirty}},
+        'ineligible idle diagnostic remains dirty after the boundary');
     ok(!keys %{$hash->{helper}{telemetryPublication}{energy}{dirty}},
         'eligible energy dirty state is consumed at the boundary');
 };
@@ -669,19 +670,19 @@ subtest 'invalid or incomplete telemetry never advances cadence' => sub {
         nrg => nrg(100),
     }), 'valid telemetry baseline is accepted');
     my $next_flush = $hash->{helper}{telemetryClock}{nextFlush};
-    for my $owner (qw(nrg battery energy)) {
+    for my $owner (qw(nrg diagnostic energy)) {
         $hash->{helper}{telemetryPublication}{$owner}{dirty} = {};
     }
 
     $DevIo::NOW = 6_029;
     ok(parse_status($hash, 'deltaStatus', {
         eto => 'invalid',
-        fbuf_pAkku => 'invalid',
+        fbuf_pAkku => { invalid => 1 },
         nrg => [230, 231, 232],
     }), 'invalid telemetry delta is safely accepted after normalization');
     is($hash->{helper}{telemetryClock}{nextFlush}, $next_flush,
         'invalid input does not move the shared telemetry boundary');
-    for my $owner (qw(nrg battery energy)) {
+    for my $owner (qw(nrg diagnostic energy)) {
         ok(!keys %{$hash->{helper}{telemetryPublication}{$owner}{dirty}},
             "invalid input does not dirty the $owner owner");
     }
@@ -723,8 +724,8 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
     }), 'first post-reload status activates the new policy');
     is(reading_value($hash, 'energyTotal'), '2.00',
         'post-reload energy uses the new energy owner');
-    is(reading_value($hash, 'pvBatteryPower'), '-200.00',
-        'post-reload battery uses the new battery owner');
+    is(reading_value($hash, 'diag_fbuf_pAkku'), -200,
+        'post-reload diagnostics uses the new diagnostic owner');
     is(reading_value($hash, 'power'), '200.00',
         'post-reload electrical telemetry uses the new nrg owner');
     ok(!exists $hash->{LAST_UPDATE}
@@ -751,10 +752,10 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     is($interface->{telemetryCadence}{mode}, 'shared',
         'all interval-controlled telemetry uses one shared cadence');
     is_deeply($interface->{telemetryCadence}{owners}, [qw(
-        battery device_health device_uptime diagnostic energy nrg
-    )], 'the shared cadence derives all six telemetry owners from policy');
-    isnt($policy->{power}{owner}, $policy->{pv_battery_power}{owner},
-        'nrg and battery telemetry have different cadence owners');
+        device_health device_uptime diagnostic energy nrg
+    )], 'the shared cadence derives all five telemetry owners from policy');
+    isnt($policy->{power}{owner}, $policy->{diag_fbuf_p_akku}{owner},
+        'nrg and diagnostics have different cadence owners');
     isnt($policy->{energy_total}{owner}, $policy->{power}{owner},
         'energy and nrg telemetry have different cadence owners');
 
@@ -801,12 +802,12 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     is($policy->{device_reboot_count}{idleGate}, 'none',
         'deviceRebootCount is interval-controlled without an idle gate');
     is($policy->{device_uptime}{idleGate}, 'device',
-        'deviceUptime uses the charging/update_while_idle gate');
+        'uptime uses the charging/update_while_idle gate');
     my @optional_diagnostic = grep {
         $policy->{$_}{category} eq 'optional_diagnostic'
     } keys %$policy;
-    is(scalar @optional_diagnostic, 12,
-        'all twelve optional raw diagnostics are inventoried');
+    is(scalar @optional_diagnostic, 14,
+        'all fourteen optional raw diagnostics are inventoried');
     for my $key (@optional_diagnostic) {
         is($policy->{$key}{publication}, 'interval',
             "$key follows the shared interval");
