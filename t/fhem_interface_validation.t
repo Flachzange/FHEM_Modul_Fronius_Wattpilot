@@ -72,12 +72,16 @@ like($registration{AttrList}, qr/(?:^|\s)interval(?:\s|$)/,
     'interval is registered as a free-value attribute');
 unlike($registration{AttrList}, qr/interval:slider/,
     'interval no longer registers a FHEMWEB slider');
+like($registration{AttrList}, qr/(?:^|\s)rawJSONLog:0,1(?:\s|$)/,
+    'rawJSONLog is registered with the boolean widget');
+unlike($registration{AttrList}, qr/(?:^|\s)rawJsonLog(?::|\s|$)/,
+    'former rawJsonLog attribute name is absent from AttrList');
 
 my %valid_existing_value = (
     interval          => '30',
     update_while_idle => '0',
     disable           => '0',
-    rawJsonLog        => '0',
+    rawJSONLog        => '0',
     authHash          => 'auto',
     authHashCost      => '8',
 );
@@ -89,7 +93,7 @@ my @invalid_attributes = (
     [interval          => 'not-a-number', qr/interval must be an integer from 0 to 300/],
     [update_while_idle => '7',        qr/update_while_idle must be 0 or 1/],
     [disable           => 'true',     qr/disable must be 0 or 1/],
-    [rawJsonLog        => 'yes',      qr/rawJsonLog must be 0 or 1/],
+    [rawJSONLog        => 'yes',      qr/rawJSONLog must be 0 or 1/],
     [authHash          => 'sha256',   qr/authHash must be one of auto, pbkdf2, bcrypt/],
     [authHashCost      => '3',        qr/authHashCost must be an integer from 4 to 14/],
     [authHashCost      => '15',       qr/authHashCost must be an integer from 4 to 14/],
@@ -134,8 +138,8 @@ my @valid_attributes = (
     [update_while_idle => '1'],
     [disable           => '0'],
     [disable           => '1'],
-    [rawJsonLog        => '0'],
-    [rawJsonLog        => '1'],
+    [rawJSONLog        => '0'],
+    [rawJSONLog        => '1'],
     [authHash          => 'auto'],
     [authHash          => 'pbkdf2'],
     [authHash          => 'bcrypt'],
@@ -153,7 +157,7 @@ for my $case (@valid_attributes) {
 }
 
 for my $attribute (qw(
-    interval update_while_idle disable rawJsonLog authHash authHashCost
+    interval update_while_idle disable rawJSONLog authHash authHashCost
 )) {
     my $hash = fresh_device();
     is(main::Wattpilot_Attr('del', $hash->{NAME}, $attribute, undef), undef,

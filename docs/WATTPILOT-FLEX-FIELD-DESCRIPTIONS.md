@@ -199,7 +199,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `arv` | `appRecommendedVersion` | Recommended app version candidate | R | historical candidate |
 | `ccrv` | `chargeControllerRecommendedVersion` | Recommended charge-controller version candidate | R | historical candidate |
 | `fwc` | `firmwareCarControl` | CarControl firmware version candidate | R | historical candidate |
-| `fwv` | `firmwareVersion` | Wattpilot firmware version candidate | R | historical candidate |
+| `fwv` | `deviceFirmwareVersion` | Wattpilot firmware version candidate | R | historical candidate |
 | `mod` | `moduleHwPcbVersion` | Hardware PCB revision candidate | R | historical candidate |
 | `oem` | `oemManufacturer` | OEM manufacturer candidate | R | historical candidate |
 | `onv` | `otaNewestVersion` | Newest available OTA version candidate | R | historical candidate |
@@ -245,7 +245,7 @@ A future description change should update the applicable empirical field row or 
 |---|---|---|---|
 | `grp` | `deviceModel` | Exact non-empty device string; no model mapping | observed Flex field/type/value |
 | `styp` | `deviceSubType` | Exact non-empty device string; no subtype interpretation | observed Flex field/type/value |
-| `proto` | `statusProtocol` | Raw non-negative integer, separate from `helloProtocol` | observed Flex status plus separate hello observation |
+| `proto` | `deviceStatusProtocol` | Raw non-negative integer, separate from `deviceHelloProtocol` | observed Flex status plus separate hello observation |
 | `fbuf_pAcTotal` | `diag_fbuf_pAcTotal` | Optional raw scalar only; observed value is `null` | observed field/null only |
 | `fbuf_ohmpilotState` | `diag_fbuf_ohmpilotState` | Optional raw scalar only; observed value is `null` | observed field/null only |
 | `fbuf_ohmpilotTemperature` | `diag_fbuf_ohmpilotTemperature` | Optional raw scalar only; observed value is `null` | observed field/null only |

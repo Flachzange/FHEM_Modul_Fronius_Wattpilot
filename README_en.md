@@ -110,7 +110,7 @@ Normally the Wattpilot sends its serial in the `hello` message before authentica
 
 Set the password separately with `set <Name> password <secret>`; it is not stored in the definition.
 
-**Version display:** The Internal `VERSION` reports the module version. Firmware reported by the Wattpilot remains separate in the `firmwareVersion` reading.
+**Version display:** The Internal `VERSION` reports the module version. Firmware reported by the Wattpilot remains separate in the `deviceFirmwareVersion` reading.
 
 ### Example
 
@@ -263,7 +263,7 @@ Controls electrical `nrg`, `uptime`, and enabled optional diagnostics while the 
 * With either attribute value, after `car=2` changes to a valid non-charging state, one real `nrg` in the same message or within 30 seconds may bypass the clock once so only device-supplied values can correct stale readings. Changing the attribute during that episode neither creates a second timer nor cancels the existing refresh.
 * No evidenced explicit Wattpilot WebSocket status request is known; the module therefore sends no `getAllValues` and invents no polling command. If no valid `nrg` arrives in the 30-second window, at most one controlled reconnect is scheduled for that idle episode. With `0`, later ordinary Idle values remain passive afterwards.
 * Missing values are never interpreted as zero. Real zero values are processed only when supplied validly by the device.
-* This attribute does not control energy. `energyTotal` and `energySincePlugIn` are queued for the shared clock only when their formatted value actually changes; identical status values cause no timestamp or event update. The repository does not claim in which state or at what frequency the Wattpilot sends `eto`/`wh`. Discrete status/diagnostic readings remain immediate-on-change.
+* This attribute does not control energy. `energyTotal` and `energySincePlugIn` are queued for the shared clock only when their formatted value actually changes; identical status values cause no timestamp or event update. The repository does not claim in which state or at what frequency the Wattpilot sends `eto`/`wh`. The discrete status and charging-decision readings listed above remain immediate-on-change; optional `diag_...` readings remain interval- and idle-gated.
 
 ### `diagnosticReadings` (0 or 1)
 
@@ -288,11 +288,11 @@ Controls the verbosity of log entries in the FHEM log file.
 * `2`: Important events (e.g., login successful).
 * `3`: Logs sent commands.
 * `4`: Logs received data from Wattpilot.
-* `5`: Debugging. Complete JSON messages remain suppressed unless `rawJsonLog=1` is also set.
+* `5`: Debugging. Complete JSON messages remain suppressed unless `rawJSONLog=1` is also set.
 
-### `rawJsonLog` (0 or 1)
+### `rawJSONLog` (0 or 1)
 
-The default is `0`. Complete inbound and outbound JSON messages are logged only when both `rawJsonLog=1` and `verbose=5` are set. This includes authentication and `securedMsg` frames. Enabling the attribute emits a security warning: raw data can contain authentication, network, device, and operational data. Enable it only briefly for targeted diagnostics and never share raw output without sanitizing it first.
+The default is `0`. Complete inbound and outbound JSON messages are logged only when both `rawJSONLog=1` and `verbose=5` are set. This includes authentication and `securedMsg` frames. Enabling the attribute emits a security warning: raw data can contain authentication, network, device, and operational data. Enable it only briefly for targeted diagnostics and never share raw output without sanitizing it first.
 
 The module uses a central write path for outbound JSON. It suppresses DevIo's own level-5 payload log only for the synchronous write call without changing the FHEM `verbose` attribute globally or persistently. `DevIo_SimpleWrite(..., 2)` receives unpacked text; DevIo determines the WebSocket opcode from its connection and `$hash->{binary}`. Complete clear-text output from Wattpilot-owned logging is produced only by the explicit raw mode described above.
 
@@ -308,6 +308,10 @@ Selects the password hashing method.
 * `pbkdf2`: Forces PBKDF2. This is intended only for the evidenced legacy Wattpilot profile and is not a supported Flex method.
 * `bcrypt`: Forces bcrypt. This method is mandatory for Wattpilot Flex.
 
+### `authHashCost` (4 through 14)
+
+Sets the bcrypt cost factor for newly derived authentication hashes. The default is `8`. The attribute affects bcrypt only and does not change PBKDF2. Changing or deleting it invalidates the stored derived hash, ends the current session, and starts a new login when possible. Values outside the integer range `4` through `14` are rejected.
+
 ## 6. Readings (Values)
 
 The module exposes exactly these 73 public readings:
@@ -315,13 +319,13 @@ The module exposes exactly these 73 public readings:
 | Reading | Description |
 | :--- | :--- |
 | `state` | Lifecycle state: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed`, or `authNonceFailed`. |
-| `firmwareVersion` | Firmware/version string from the device `hello` message. Identical reconnect values do not renew the reading. |
+| `deviceFirmwareVersion` | Firmware/version string from the device `hello` message. Identical reconnect values do not renew the reading. |
 | `deviceType` | Exact string from status field `typ`. |
 | `deviceModel` | Exact device-reported model/group string from `grp`; no model mapping is invented. |
 | `deviceSubType` | Exact subtype string from `styp`. |
 | `deviceVariant` | Raw non-negative integer from `var`. |
-| `helloProtocol` | Raw integer from `hello.protocol`. |
-| `statusProtocol` | Raw integer from `status.proto`; no relationship to `helloProtocol` is assumed. |
+| `deviceHelloProtocol` | Raw integer from `hello.protocol`. |
+| `deviceStatusProtocol` | Raw integer from `status.proto`; no relationship to `deviceHelloProtocol` is assumed. |
 | `authHashMode` | Effective mode: `pbkdf2` or `bcrypt`. |
 | `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error`, or `unknown:<raw-value>`. |
 | `configForceState` | `neutral`, `off`, `on`, or `unknown:<raw-value>`. |
@@ -352,7 +356,7 @@ The module exposes exactly these 73 public readings:
 | `diag_fbuf_pAkku` | Optional raw scalar from `fbuf_pAkku`; distinction from `diag_pvopt_averagePAkku`, aggregation, unit, and sign remain unconfirmed. |
 | `diag_fbuf_akkuMode` | Optional raw scalar from `fbuf_akkuMode`; numeric values use two decimal places and no mode enum is invented. |
 | `deviceRebootCount` | Raw non-negative integer from `rbc`, published on the normal interval without idle gating. The exact protocol meaning remains unverified. |
-| `uptime` | Non-negative millisecond value from `rbt`, interpreted from the live-device observation as time since device start and divided by 1,000 before rendering cumulative hours and minutes in `H:MM`. Remaining seconds and milliseconds are discarded; publication uses the normal interval while charging or with `update_while_idle=1`. |
+| `uptime` | Non-negative raw value from `rbt` whose progression on the tested Flex was consistent with milliseconds. The module divides it by 1,000 and renders cumulative hours and minutes as `H:MM`; remaining seconds and milliseconds are discarded. The exact device process or lifecycle represented by the counter is unconfirmed. Publication uses the normal interval while charging or with `update_while_idle=1`. |
 | `diag_fbuf_pGrid` | Optional raw scalar from `fbuf_pGrid`; no meaning, unit, or sign convention is claimed. |
 | `diag_fbuf_pPv` | Optional raw scalar from `fbuf_pPv`; no meaning or unit is claimed. |
 | `diag_pvopt_averagePGrid` | Optional raw scalar from `pvopt_averagePGrid`; aggregation and semantics remain unknown. |

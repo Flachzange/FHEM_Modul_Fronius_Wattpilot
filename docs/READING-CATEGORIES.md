@@ -48,13 +48,13 @@ queries must be adapted explicitly.
 | Internal key | Public reading | Category | Source | Publication | Idle gate | Owner | Formatter | Invalid input | Reason |
 |---|---|---|---|---|---|---|---|---|---|
 | `state` | `state` | `lifecycle` | `event:connection` | `immediate` | `none` | `connection` | `lifecycle` | `preserve` | Module connection/authentication lifecycle. |
-| `firmware_version` | `firmwareVersion` | `identity` | `event:hello` | `immediate-on-change` | `none` | `identity` | `text` | `preserve` | Device firmware identity; identical reconnect values do not renew the reading. |
+| `firmware_version` | `deviceFirmwareVersion` | `identity` | `event:hello` | `immediate-on-change` | `none` | `identity` | `text` | `preserve` | Device firmware identity; identical reconnect values do not renew the reading. |
 | `device_type` | `deviceType` | `identity` | `status:typ` | `immediate-on-change` | `none` | `typ` | `text` | `preserve` | Exact status-level device-type identifier. |
 | `device_model` | `deviceModel` | `identity` | `status:grp` | `immediate-on-change` | `none` | `grp` | `text` | `preserve` | Exact device-reported model/group string; no model mapping is invented. |
 | `device_sub_type` | `deviceSubType` | `identity` | `status:styp` | `immediate-on-change` | `none` | `styp` | `text` | `preserve` | Exact status-level subtype identifier. |
 | `device_variant` | `deviceVariant` | `identity` | `status:var` | `immediate-on-change` | `none` | `var` | `integer` | `preserve` | Exact non-negative status-level variant number. |
-| `hello_protocol` | `helloProtocol` | `identity` | `event:hello` | `immediate-on-change` | `none` | `hello_protocol` | `integer` | `preserve` | Raw `hello.protocol`; deliberately separate from `statusProtocol`. |
-| `status_protocol` | `statusProtocol` | `identity` | `status:proto` | `immediate-on-change` | `none` | `proto` | `integer` | `preserve` | Raw `status.proto`; no relationship to `helloProtocol` is assumed. |
+| `hello_protocol` | `deviceHelloProtocol` | `identity` | `event:hello` | `immediate-on-change` | `none` | `hello_protocol` | `integer` | `preserve` | Raw `hello.protocol`; deliberately separate from `deviceStatusProtocol`. |
+| `status_protocol` | `deviceStatusProtocol` | `identity` | `status:proto` | `immediate-on-change` | `none` | `proto` | `integer` | `preserve` | Raw `status.proto`; no relationship to `deviceHelloProtocol` is assumed. |
 | `auth_hash_mode` | `authHashMode` | `diagnostic` | `event:authentication` | `immediate` | `none` | `authentication` | `enum` | `preserve` | Effective authentication method selected for the current session. |
 | `car_state` | `carState` | `status` | `status:car` | `immediate-on-change` | `none` | `car` | `enum` | `preserve` | Current vehicle/charging-port state. |
 | `force_state` | `configForceState` | `configuration` | `status:frc` | `immediate` | `none` | `frc` | `enum` | `preserve` | User-selectable force-state setting; Set command remains `forceState`. |

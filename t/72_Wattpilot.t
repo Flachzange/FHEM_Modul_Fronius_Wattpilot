@@ -338,39 +338,45 @@ main::Wattpilot_Parse($hash, $invalid);
 unlike(log_text(), qr/TOKEN-IN-INVALID-JSON|\Q$invalid\E/, 'JSON errors suppress the untrusted payload');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 4;
 main::Wattpilot_Parse($hash, $incoming);
-unlike(log_text(), qr/\Q$incoming\E/, 'rawJsonLog alone does not log inbound payload below verbose 5');
+unlike(log_text(), qr/\Q$incoming\E/, 'rawJSONLog alone does not log inbound payload below verbose 5');
+
+DevIo::reset_test_state();
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
+main::Wattpilot_Parse($hash, $incoming);
+like(log_text(), qr/\Q$incoming\E/, 'rawJSONLog with verbose 5 logs exact inbound payload');
 
 DevIo::reset_test_state();
 $DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 main::Wattpilot_Parse($hash, $incoming);
-like(log_text(), qr/\Q$incoming\E/, 'rawJsonLog with verbose 5 logs exact inbound payload');
+unlike(log_text(), qr/\Q$incoming\E/, 'former rawJsonLog name is not retained as a runtime alias');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 0;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 0;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
 mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 my $secured_outgoing = $DevIo::WRITES[0][1];
 my $secured_hex = unpack('H*', $secured_outgoing);
-is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged in clear text when rawJsonLog is disabled at verbose 5');
-unlike(log_text(), qr/\Q$secured_hex\E/, 'securedMsg is not logged in hex when rawJsonLog is disabled at verbose 5');
+is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged in clear text when rawJSONLog is disabled at verbose 5');
+unlike(log_text(), qr/\Q$secured_hex\E/, 'securedMsg is not logged in hex when rawJSONLog is disabled at verbose 5');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 4;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
 mark_command_ready($hash);
 main::Wattpilot_SendSecure($hash, 'amp', 16);
 $secured_outgoing = $DevIo::WRITES[0][1];
-is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged when rawJsonLog is enabled below verbose 5');
+is(payload_log_count($secured_outgoing), 0, 'securedMsg is not logged when rawJSONLog is enabled below verbose 5');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';
 mark_command_ready($hash);
@@ -387,26 +393,26 @@ main::Wattpilot_WriteJson($hash, '{"type":"syntheticTextFrame"}');
 is($main::attr{testWallbox}{verbose}, 5, 'JSON write restores an existing device verbose attribute exactly');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 0;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 0;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 $hash->{SERIAL} = '0000000000000001';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
 my $auth_outgoing = $DevIo::WRITES[0][1];
 my $auth_hex = unpack('H*', $auth_outgoing);
-is(payload_log_count($auth_outgoing), 0, 'authentication frame is not logged in clear text when rawJsonLog is disabled at verbose 5');
-unlike(log_text(), qr/\Q$auth_hex\E/, 'authentication frame is not logged in hex when rawJsonLog is disabled at verbose 5');
+is(payload_log_count($auth_outgoing), 0, 'authentication frame is not logged in clear text when rawJSONLog is disabled at verbose 5');
+unlike(log_text(), qr/\Q$auth_hex\E/, 'authentication frame is not logged in hex when rawJSONLog is disabled at verbose 5');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 4;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
 $auth_outgoing = $DevIo::WRITES[0][1];
-is(payload_log_count($auth_outgoing), 0, 'authentication frame is not logged when rawJsonLog is enabled below verbose 5');
+is(payload_log_count($auth_outgoing), 0, 'authentication frame is not logged when rawJSONLog is enabled below verbose 5');
 
 DevIo::reset_test_state();
-$DevIo::ATTR_VALUES{'testWallbox|rawJsonLog'} = 1;
+$DevIo::ATTR_VALUES{'testWallbox|rawJSONLog'} = 1;
 $DevIo::ATTR_VALUES{'testWallbox|verbose'} = 5;
 $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
 main::Wattpilot_SendAuth($hash, { hash => 'pbkdf2', token1 => 'TOKEN-ONE', token2 => 'TOKEN-TWO' });
@@ -518,7 +524,7 @@ ok(!exists $DevIo::KEY_VALUES{$stable_hash},
     'password rollback failure is not falsely reported as restored');
 
 DevIo::reset_test_state();
-main::Wattpilot_Attr('set', 'testWallbox', 'rawJsonLog', '1');
+main::Wattpilot_Attr('set', 'testWallbox', 'rawJSONLog', '1');
 like(log_text(), qr/WARNING.*sensitive authentication, network, device, and operational data/, 'enabling raw JSON logging emits a security warning');
 
 DevIo::reset_test_state();

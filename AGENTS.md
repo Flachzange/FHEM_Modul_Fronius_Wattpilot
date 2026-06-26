@@ -165,7 +165,7 @@ Requirements:
 - Preserve the read-error distinction through caller return values, readings, logs, retry decisions, and control flow. A storage failure must not be reported as a missing password or other missing configuration.
 - Add failure-injection tests at every relevant caller, not only at the low-level storage helper.
 - Normal operation, tests, fixtures, issues, documentation, and releases must not expose sensitive credentials, authentication data, device identifiers, private endpoints, or unsanitized captures.
-- The sole runtime exception is the explicitly enabled diagnostic mode requiring both device attributes `rawJsonLog=1` and `verbose=5`. It may log exact inbound and outbound JSON, including authentication and `securedMsg` frames, must warn when activated, must never activate automatically, and its output must be sanitized before reuse anywhere else.
+- The sole runtime exception is the explicitly enabled diagnostic mode requiring both device attributes `rawJSONLog=1` and `verbose=5`. It may log exact inbound and outbound JSON, including authentication and `securedMsg` frames, must warn when activated, must never activate automatically, and its output must be sanitized before reuse anywhere else.
 - Tests and fixtures must use minimal synthetic values and documentation address ranges.
 
 ## Test-double fidelity

@@ -110,7 +110,7 @@ Im Normalfall sendet der Wattpilot seine Seriennummer vor der Authentifizierung 
 
 Das Passwort wird separat mit `set <Name> password <secret>` gesetzt und nicht in der Definition gespeichert.
 
-**Versionsanzeige:** Das Internal `VERSION` zeigt die Modulversion. Die vom Wattpilot gemeldete Firmware steht separat im Reading `firmwareVersion`.
+**Versionsanzeige:** Das Internal `VERSION` zeigt die Modulversion. Die vom Wattpilot gemeldete Firmware steht separat im Reading `deviceFirmwareVersion`.
 
 ### Beispiel
 
@@ -263,7 +263,7 @@ Steuert die elektrische `nrg`-Telemetrie, `uptime` und aktivierte `diag_...`-Rea
 * Bei beiden Attributwerten darf beim Wechsel von `car=2` zu einem gültigen nicht ladenden Zustand ein echtes `nrg` in derselben Nachricht oder innerhalb von 30 Sekunden den Takt einmalig umgehen, damit ausschließlich vom Gerät gelieferte Werte veraltete Readings korrigieren. Eine Änderung des Attributs während dieser Episode erzeugt weder einen zweiten Timer noch bricht sie den bestehenden Refresh ab.
 * Es gibt keinen belegten expliziten Wattpilot-WebSocket-Status-Request; das Modul sendet deshalb kein `getAllValues` und erfindet kein Polling-Kommando. Fehlt im 30-Sekunden-Fenster ein gültiges `nrg`, wird höchstens ein kontrollierter Reconnect für diese Idle-Episode geplant. Danach bleiben bei `0` weitere gewöhnliche Idle-Werte passiv.
 * Fehlende Werte werden niemals als null interpretiert. Echte Nullwerte werden nur verarbeitet, wenn das Gerät sie gültig liefert.
-* Das Attribut steuert Energie nicht. `energyTotal` und `energySincePlugIn` werden nur bei einem tatsächlich geänderten formatierten Wert für den gemeinsamen Takt vorgemerkt; identische Statuswerte bleiben ohne Timestamp- oder Event-Update. Das Repository behauptet nicht, in welchem Zustand oder mit welcher Frequenz der Wattpilot `eto`/`wh` sendet. Diskrete Status-/Diagnosewerte bleiben sofort-bei-Änderung aktiv.
+* Das Attribut steuert Energie nicht. `energyTotal` und `energySincePlugIn` werden nur bei einem tatsächlich geänderten formatierten Wert für den gemeinsamen Takt vorgemerkt; identische Statuswerte bleiben ohne Timestamp- oder Event-Update. Das Repository behauptet nicht, in welchem Zustand oder mit welcher Frequenz der Wattpilot `eto`/`wh` sendet. Die oben genannten diskreten Status- und Ladeentscheidungsreadings bleiben sofort-bei-Änderung aktiv; die optionalen `diag_...`-Readings bleiben dagegen intervall- und idle-gesteuert.
 
 ### `diagnosticReadings` (0 oder 1)
 
@@ -288,11 +288,11 @@ Steuert die Ausführlichkeit der Log-Einträge im FHEM Logfile.
 * `2`: Wichtige Ereignisse (z.B. Login erfolgreich).
 * `3`: Protokolliert gesendete Befehle.
 * `4`: Protokolliert empfangene Daten vom Wattpilot.
-* `5`: Debugging. Vollständige JSON-Nachrichten bleiben ohne `rawJsonLog=1` unterdrückt.
+* `5`: Debugging. Vollständige JSON-Nachrichten bleiben ohne `rawJSONLog=1` unterdrückt.
 
-### `rawJsonLog` (0 oder 1)
+### `rawJSONLog` (0 oder 1)
 
-Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden ausschließlich protokolliert, wenn gleichzeitig `rawJsonLog=1` und `verbose=5` gesetzt sind. Das umfasst Authentifizierungs- und `securedMsg`-Frames. Beim Aktivieren wird eine Sicherheitswarnung ausgegeben: Diese Rohdaten können Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten. Nur kurzzeitig zur gezielten Diagnose aktivieren und Rohdaten niemals unbereinigt weitergeben.
+Standard ist `0`. Vollständige ein- und ausgehende JSON-Nachrichten werden ausschließlich protokolliert, wenn gleichzeitig `rawJSONLog=1` und `verbose=5` gesetzt sind. Das umfasst Authentifizierungs- und `securedMsg`-Frames. Beim Aktivieren wird eine Sicherheitswarnung ausgegeben: Diese Rohdaten können Authentifizierungs-, Netzwerk-, Geräte- und Betriebsdaten enthalten. Nur kurzzeitig zur gezielten Diagnose aktivieren und Rohdaten niemals unbereinigt weitergeben.
 
 Das Modul verwendet für ausgehende JSON-Nachrichten einen zentralen Schreibpfad. Dieser unterdrückt den DevIo-eigenen Level-5-Payload-Logeintrag nur während des synchronen Schreibaufrufs, ohne das FHEM-Attribut `verbose` dauerhaft oder global zu verändern. `DevIo_SimpleWrite(..., 2)` erhält dabei ungepackten Text; den WebSocket-Opcode bestimmt DevIo anhand seiner Verbindung und von `$hash->{binary}`. Ein vollständiger Klartext-Logeintrag aus dem Wattpilot-Modul entsteht ausschließlich über den oben beschriebenen Raw-Modus.
 
@@ -310,6 +310,10 @@ Wählt das Verfahren für die gerätespezifische Passwort-Hash-Ableitung.
 
 Im Normalbetrieb sollte `auto` verwendet werden. Für Wattpilot Flex muss `Crypt::Bcrypt` installiert sein. Eine manuelle Vorgabe ist vor allem für gezielte Diagnose oder ausdrücklich belegte Sonderfälle gedacht.
 
+### `authHashCost` (4 bis 14)
+
+Legt den bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes fest. Standard ist `8`. Das Attribut wirkt nur bei bcrypt; PBKDF2 wird dadurch nicht verändert. Eine Änderung oder das Löschen des Attributs verwirft den gespeicherten abgeleiteten Hash, beendet die aktuelle Sitzung und startet nach Möglichkeit eine neue Anmeldung. Werte außerhalb des ganzzahligen Bereichs `4` bis `14` werden abgewiesen.
+
 ## 6. Readings (Messwerte)
 
 Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
@@ -317,13 +321,13 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | Reading | Beschreibung |
 | :--- | :--- |
 | `state` | Lifecycle-Zustand: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed` oder `authNonceFailed`. |
-| `firmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
+| `deviceFirmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
 | `deviceType` | Exakter String aus dem Statusfeld `typ`. |
 | `deviceModel` | Exakter vom Gerät gemeldeter Modell-/Gruppenstring aus `grp`; keine erfundene Modellzuordnung. |
 | `deviceSubType` | Exakter Subtyp-String aus `styp`. |
 | `deviceVariant` | Unveränderter nicht negativer Ganzzahlwert aus `var`. |
-| `helloProtocol` | Unveränderter Ganzzahlwert aus `hello.protocol`. |
-| `statusProtocol` | Unveränderter Ganzzahlwert aus `status.proto`; keine angenommene Beziehung zu `helloProtocol`. |
+| `deviceHelloProtocol` | Unveränderter Ganzzahlwert aus `hello.protocol`. |
+| `deviceStatusProtocol` | Unveränderter Ganzzahlwert aus `status.proto`; keine angenommene Beziehung zu `deviceHelloProtocol`. |
 | `authHashMode` | Tatsächlich verwendetes Verfahren: `pbkdf2` oder `bcrypt`. |
 | `carState` | `unknown`, `idle`, `charging`, `waitingForCar`, `complete`, `error` oder `unknown:<Rohwert>`. |
 | `configForceState` | `neutral`, `off`, `on` oder `unknown:<Rohwert>`. |
@@ -354,7 +358,7 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | `diag_fbuf_pAkku` | Optionaler Rohskalar aus `fbuf_pAkku`; Abgrenzung zu `diag_pvopt_averagePAkku`, Aggregation, Einheit und Vorzeichen bleiben unbestätigt. |
 | `diag_fbuf_akkuMode` | Optionaler Rohskalar aus `fbuf_akkuMode`; numerische Werte erhalten zwei Nachkommastellen und es wird keine Modus-Enum erfunden. |
 | `deviceRebootCount` | Unveränderter nicht negativer Ganzzahlwert aus `rbc`, im normalen Intervall ohne Idle-Sperre. Die genaue Protokollbedeutung ist unbestätigt. |
-| `uptime` | Nicht negativer Millisekundenwert aus `rbt`, aufgrund der Realgerätbeobachtung als Zeit seit dem Gerätestart interpretiert und nach Division durch 1.000 als kumulative Stunden und Minuten im Format `H:MM` ausgegeben. Verbleibende Sekunden und Millisekunden werden verworfen; Aktualisierung im normalen Intervall beim Laden oder mit `update_while_idle=1`. |
+| `uptime` | Nicht negativer Rohwert aus `rbt`, dessen Fortschritt beim getesteten Flex mit Millisekunden konsistent war. Das Modul teilt ihn durch 1.000 und gibt kumulative Stunden und Minuten als `H:MM` aus; verbleibende Sekunden und Millisekunden werden verworfen. Welchen Geräteprozess oder Lifecycle der Zähler genau abbildet, ist nicht bestätigt. Aktualisierung im normalen Intervall beim Laden oder mit `update_while_idle=1`. |
 | `diag_fbuf_pGrid` | Optionaler Rohskalar aus `fbuf_pGrid`; keine Behauptung zu Bedeutung, Einheit oder Vorzeichen. |
 | `diag_fbuf_pPv` | Optionaler Rohskalar aus `fbuf_pPv`; keine Behauptung zu Bedeutung oder Einheit. |
 | `diag_pvopt_averagePGrid` | Optionaler Rohskalar aus `pvopt_averagePGrid`; Aggregation und Semantik unbekannt. |
@@ -384,7 +388,7 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | `lastCommandStatus` | `pending`, `success`, `failed` oder `timeout`. |
 | `lastCommandError` | Kurzer redigierter Fehler- oder Ergebnistext. Sitzungsabbrüche verwenden stabile Gründe wie `connection lost`, `device disabled`, `credentials changed`, `authentication aborted`, `lifecycle timeout`, `reconnect requested`, `definition changed` oder `session replaced`. |
 
-Alle 24 `config...`-Readings werden nach gültiger Gerätebestätigung sofort veröffentlicht. Identitätsreadings und die diskreten Status-/Diagnosewerte `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `chargingDecisionCode`, `chargingDecision`, `chargingDecisionInternalCode`, `chargingDecisionInternal` und `errorCode` werden ebenfalls sofort, aber nur bei einer tatsächlichen Änderung veröffentlicht; identische Wiederholungen erneuern weder Zeitstempel noch Event. Energie-, elektrische `nrg`-, stationäre Speichertelemetrie, Gerätegesundheitswerte und aktivierte Rohdiagnosen sind durch `interval` begrenzt. Sie behalten getrennte Latest-Value-Caches und Dirty-Felder, werden aber über denselben Takt und dieselbe FHEM-Reading-Transaktion veröffentlicht. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts dirty. Fehlende, `null`-, typfalsche oder unvollständige Felder lassen Readings unverändert und verschieben den Takt nicht.
+Alle 24 `config...`-Readings werden nach gültiger Gerätebestätigung sofort veröffentlicht. Identitätsreadings und die diskreten Status-/Diagnosewerte `carState`, `chargingAllowed`, `temperatureCurrentLimit`, `chargingDecisionCode`, `chargingDecision`, `chargingDecisionInternalCode`, `chargingDecisionInternal` und `errorCode` werden ebenfalls sofort, aber nur bei einer tatsächlichen Änderung veröffentlicht; identische Wiederholungen erneuern weder Zeitstempel noch Event. Energie-, elektrische `nrg`-, Gerätegesundheitswerte und aktivierte Rohdiagnosen sind durch `interval` begrenzt. Sie behalten getrennte Latest-Value-Caches und Dirty-Felder, werden aber über denselben Takt und dieselbe FHEM-Reading-Transaktion veröffentlicht. Energie wird nur bei einer tatsächlichen Änderung des formatierten öffentlichen Werts dirty. Fehlende, `null`-, typfalsche oder unvollständige Felder lassen Readings unverändert und verschieben den Takt nicht.
 
 Die Klartextwerte verwenden eine Kompatibilitätszuordnung aus der gepinnten offiziellen go-e-Enum für `modelStatus`. Für `msi` wird dieselbe Wertetabelle verwendet, weil die gepinnte Wattpilot-spezifische Quelle das Feld als interne Entscheidungsvariante beschreibt. Dies ist keine offizielle Fronius-Flex-Spezifikation; deshalb bleiben beide Rohcodes erhalten und nicht zugeordnete Werte ausdrücklich sichtbar. Die genaue Beziehung, Auswertungsreihenfolge, Priorität und eine mögliche Rolle von `cpDisabledRequest` sind für Wattpilot Flex nicht bestätigt. Insbesondere behauptet das Modul weder, dass `modelStatus` zwingend die abschließende/wirksame Entscheidung ist, noch dass `msi` zwingend eine Entscheidung vor der CP-Ebene darstellt. Weichen die Werte voneinander ab, sind sie als zwei vom Gerät gelieferte Diagnosewerte zu behandeln; aus dieser Dokumentation darf keine Kausalkette abgeleitet werden.
 

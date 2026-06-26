@@ -110,17 +110,19 @@ subtest 'identity readings keep their exact sources separate' => sub {
         version => '43.4',
         serial => '10000001',
     }), 'valid hello is accepted');
-    is(reading_value($hash, 'firmwareVersion'), '43.4',
-        'firmwareVersion comes from hello.version');
-    is(reading_value($hash, 'helloProtocol'), 2,
-        'helloProtocol comes from hello.protocol');
+    is(reading_value($hash, 'deviceFirmwareVersion'), '43.4',
+        'deviceFirmwareVersion comes from hello.version');
+    is(reading_value($hash, 'deviceHelloProtocol'), 2,
+        'deviceHelloProtocol comes from hello.protocol');
+    ok(!exists $hash->{READINGS}{firmwareVersion},
+        'former firmwareVersion development reading is not created');
     ok(!exists $hash->{READINGS}{deviceType},
         'hello.devicetype remains an internal compatibility value');
     is($hash->{helper}{deviceType}, 'wattpilot',
         'hello.devicetype remains available internally');
 
-    my $firmware_time = reading_time($hash, 'firmwareVersion');
-    my $protocol_time = reading_time($hash, 'helloProtocol');
+    my $firmware_time = reading_time($hash, 'deviceFirmwareVersion');
+    my $protocol_time = reading_time($hash, 'deviceHelloProtocol');
     my $update_start = scalar @DevIo::READING_UPDATES;
     $DevIo::NOW = 1_001;
     ok(parse_message($hash, {
@@ -129,13 +131,13 @@ subtest 'identity readings keep their exact sources separate' => sub {
         protocol => 2,
         version => '43.4',
     }), 'identical hello is accepted');
-    is(reading_time($hash, 'firmwareVersion'), $firmware_time,
+    is(reading_time($hash, 'deviceFirmwareVersion'), $firmware_time,
         'identical firmware does not renew its timestamp');
-    is(reading_time($hash, 'helloProtocol'), $protocol_time,
+    is(reading_time($hash, 'deviceHelloProtocol'), $protocol_time,
         'identical hello protocol does not renew its timestamp');
-    is(updates_for('firmwareVersion', $update_start), 0,
+    is(updates_for('deviceFirmwareVersion', $update_start), 0,
         'identical firmware produces no reading update');
-    is(updates_for('helloProtocol', $update_start), 0,
+    is(updates_for('deviceHelloProtocol', $update_start), 0,
         'identical hello protocol produces no reading update');
 
     $DevIo::NOW = 1_010;
@@ -154,13 +156,17 @@ subtest 'identity readings keep their exact sources separate' => sub {
         'deviceSubType preserves status.styp');
     is(reading_value($hash, 'deviceVariant'), 22,
         'deviceVariant preserves status.var');
-    is(reading_value($hash, 'statusProtocol'), 4,
-        'statusProtocol remains distinct from helloProtocol');
-    is(reading_value($hash, 'helloProtocol'), 2,
-        'status protocol does not overwrite helloProtocol');
+    is(reading_value($hash, 'deviceStatusProtocol'), 4,
+        'deviceStatusProtocol remains distinct from deviceHelloProtocol');
+    is(reading_value($hash, 'deviceHelloProtocol'), 2,
+        'status protocol does not overwrite deviceHelloProtocol');
+    ok(!exists $hash->{READINGS}{helloProtocol},
+        'former helloProtocol development reading is not created');
+    ok(!exists $hash->{READINGS}{statusProtocol},
+        'former statusProtocol development reading is not created');
 
     my %before = map { $_ => reading_value($hash, $_) } qw(
-        deviceType deviceModel deviceSubType deviceVariant statusProtocol
+        deviceType deviceModel deviceSubType deviceVariant deviceStatusProtocol
     );
     ok(parse_status($hash, 'deltaStatus', {
         typ => '',

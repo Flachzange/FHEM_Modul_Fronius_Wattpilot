@@ -214,7 +214,7 @@ main::Wattpilot_Parse($hello_hash, encode_json({
 }));
 ok(!exists $hello_hash->{helper}{deviceType}
     && !exists $hello_hash->{helper}{protocol}
-    && !exists $hello_hash->{READINGS}{firmwareVersion},
+    && !exists $hello_hash->{READINGS}{deviceFirmwareVersion},
     'hello fields with wrong JSON types are ignored');
 
 my $auth_hash = fresh_device();
