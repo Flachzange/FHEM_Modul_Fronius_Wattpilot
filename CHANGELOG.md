@@ -1,5 +1,14 @@
 # Changelog
 
+## [v2.1.6] - 2026-06-26
+
+### Positive interval timer replacement
+
+- Changing `interval` between positive values now replaces the shared telemetry clock immediately when any telemetry owner is dirty. The new boundary is measured from the accepted attribute change, so queued values cannot remain unpublished while waiting for another status message.
+- Positive-to-positive changes do not flush early, retain every owner cache and dirty field, preserve Idle eligibility, reject stale timer callbacks through the existing typed ownership context, and leave exactly one active `telemetry_flush` timer after repeated changes.
+- When no telemetry is dirty, the positive replacement clock remains absent until later valid telemetry input starts it, preserving the established lazy-start contract. The existing positive-to-zero and delete-to-zero immediate flush behavior is unchanged.
+- Extended `t/reading_update_policy.t` with queued publication without further input, repeated interval changes, stale callbacks, timer uniqueness, lazy no-dirty behavior, and Idle-gated owner coverage.
+
 ## [v2.1.5] - 2026-06-25
 
 ### Lifecycle and telemetry edge cases
