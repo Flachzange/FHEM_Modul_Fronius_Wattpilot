@@ -29,7 +29,7 @@ sub fresh_device {
 }
 
 my @public_readings = qw(
-    state deviceFirmwareVersion deviceType deviceModel deviceSubType deviceVariant deviceHelloProtocol deviceStatusProtocol authHashMode carState configForceState configChargingCurrent
+    state connectionLastReconnectReason connectionAutomaticReconnectCount deviceFirmwareVersion deviceType deviceModel deviceSubType deviceVariant deviceHelloProtocol deviceStatusProtocol authHashMode carState configForceState configChargingCurrent
     configChargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit
     temperatureCurrentLimit configMinimumChargingCurrent configPvSurplusStartPower
@@ -63,6 +63,7 @@ my @old_readings = qw(
 );
 
 my $hash = fresh_device();
+main::Wattpilot_InitializeConnectionDiagnostics($hash);
 $attr{$hash->{NAME}}{update_while_idle} = 1;
 $attr{$hash->{NAME}}{diagnosticReadings} = 1;
 main::readingsSingleUpdate($hash, 'state', 'connected', 1);
@@ -143,7 +144,7 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 86 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 88 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

@@ -23,7 +23,10 @@ sub fresh_device {
         DeviceName => 'ws:192.0.2.69:80/ws',
         STATE => 'connected',
         TEST_OPEN => 1,
-        helper => { authenticated => 1 },
+        helper => {
+            authenticated => 1,
+            deviceType => 'wattpilot_flex',
+        },
     };
     $defs{$hash->{NAME}} = $hash;
     $attr{$hash->{NAME}}{diagnosticReadings} = 1;
@@ -699,12 +702,19 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
 
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.9',
+    is($hash->{VERSION}, '2.1.11',
+
         'reload-style Initialize refreshes the module version');
     is($hash->{FD}, 69,
         'reload-style Initialize preserves the open transport');
     is($hash->{helper}{timers}{connect}, $timer,
         'reload-style Initialize preserves existing timer ownership');
+    ok(ref($hash->{helper}{timers}{inbound_watchdog}) eq 'HASH',
+        'reload-style Initialize adds one watchdog to an already connected session');
+    is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'none',
+        'reload-style Initialize adds the persistent reconnect reason');
+    is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 0,
+        'reload-style Initialize adds the persistent reconnect counter');
     is($hash->{helper}{lifecycleGeneration}, 7,
         'reload-style Initialize preserves lifecycle generation');
 

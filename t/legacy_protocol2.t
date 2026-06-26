@@ -56,7 +56,8 @@ is(main::Wattpilot_Define(
     'legacy profile definition succeeds');
 main::Wattpilot_Parse($hash, encode_json($fixture->{hello}));
 is($hash->{SERIAL}, '10000001', 'configured serial remains available for legacy PBKDF2');
-is($hash->{VERSION}, '2.1.9', 'legacy hello preserves the module VERSION Internal');
+is($hash->{VERSION}, '2.1.11', 'legacy hello preserves the module VERSION Internal');
+
 is($hash->{READINGS}{deviceFirmwareVersion}{VAL}, '36.3',
     'legacy hello exposes device firmware separately');
 is(main::Wattpilot_GetAuthHashMode($hash, $fixture->{authRequired}), 'pbkdf2',
@@ -88,6 +89,8 @@ main::Wattpilot_Parse($hash, encode_json($fixture->{fullStatus}[0]));
 is($hash->{READINGS}{configChargingCurrent}{VAL}, 16, 'partial legacy fullStatus updates amp');
 is($hash->{READINGS}{carState}{VAL}, 'idle', 'partial legacy fullStatus updates car');
 main::Wattpilot_Parse($hash, encode_json($fixture->{fullStatus}[1]));
+ok(!exists $hash->{helper}{timers}{inbound_watchdog},
+    'legacy protocol-2 profile is not assigned an unverified inbound timeout');
 is($hash->{READINGS}{configChargingCurrent}{VAL}, 16, 'completion keeps omitted amp unchanged');
 is($hash->{READINGS}{voltageL1}{VAL}, '230.00', 'legacy nrg updates voltage');
 is($hash->{READINGS}{currentL3}{VAL}, '3.00', 'legacy nrg updates current');

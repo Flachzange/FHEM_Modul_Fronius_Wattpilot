@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.9**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.11**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -12,7 +12,7 @@ Version 2.x ist eine grundlegende Überarbeitung und keine bloße Erweiterung de
 | :--- | :--- | :--- |
 | Definition und Passwort | Passwort als Bestandteil der FHEM-Definition | Definition ohne Passwort; Speicherung über `set <Name> password <secret>` unter stabilen FUUID-basierten Schlüsseln |
 | Geräte und Authentifizierung | Vorgänger-Wattpilot mit PBKDF2 | Legacy-Profil bleibt erhalten; Wattpilot Flex wird ausschließlich über bcrypt authentifiziert |
-| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 86 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
+| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 88 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
 | Protokollverarbeitung | Grundlegende Verarbeitung von `hello`, Authentifizierung und Status | Strikte JSON-Typprüfung, partielle Statusmeldungen, robuste Nachrichtenfortsetzung, gesicherte Befehle und Antwortkorrelation |
 | Laufzeitverhalten | Einfaches Intervall und Idle-Filter | Kontrollierter Lifecycle für Reload, Rename, `modify`, Disable, Reconnect und Delete sowie getrennte Telemetrie-Caches mit gemeinsamem Veröffentlichungstakt |
 | Qualitätssicherung | Ursprünglicher Funktionsumfang | Umfangreiche Regressionstests, gepinnte FHEM-Core-Integration, Dokumentations- und reproduzierbare Releaseprüfungen |
@@ -240,6 +240,8 @@ set wallbox reboot
 
 Antwortet das Gerät noch regulär, wird diese Response wie bei jedem anderen gesicherten Befehl ausgewertet. Eine Ablehnung, eine fehlerhafte Response oder ein Timeout bei weiterhin offener und authentifizierter Sitzung setzt `state` wieder auf `connected`. Schließt der Wattpilot wegen des Neustarts zuerst die WebSocket-Verbindung, beendet das Modul ausschließlich den ausstehenden Request mit dem bereits gespeicherten Protokollschlüssel `rst` mit `lastCommandStatus=success` und `lastCommandError=none`; andere Befehle bleiben bei Verbindungsverlust Fehlerfälle. Danach greifen unverändert die vorhandenen automatischen Reconnect-Pfade und ersetzen `rebooting` durch die normalen Zustände `disconnected`, `connecting`, `authenticating`, `initializing` und schließlich `connected`. Bleiben sowohl Response als auch Verbindungsabbruch aus, läuft weiterhin der normale begrenzte Command-Timeout ab. Der gepinnte Drittquellen-Eintrag beschreibt `rst` als write-only `rebootCharger` mit Typ `any`; die Verwendung von `true` ist die Triggerdarstellung des Moduls und muss am Realgerät bestätigt werden.
 
+Eine initialisierte aktive Sitzung des empirisch belegten Geräteprofils `wattpilot_flex` besitzt zusätzlich einen unabhängigen Inbound-Watchdog. Jedes vollständig dekodierte JSON-Dokument erneuert den internen Liveness-Zeitstempel. Bleiben mindestens 180 Sekunden lang sämtliche vollständigen JSON-Dokumente aus, verwirft das Modul die scheinbar noch offene Sitzung beim nächsten 30-Sekunden-Prüflauf und plant genau einen Reconnect. Der Watchdog ist vollständig unabhängig von `interval` und `update_while_idle` und bleibt auch während `state=rebooting` aktiv. Das Legacy-Profil `devicetype=wattpilot` erhält bewusst keinen solchen Timeout, weil dafür keine hinreichend begrenzte Idle-Nachrichtenfrequenz belegt ist. `connectionLastReconnectReason` und `connectionAutomaticReconnectCount` machen die automatische Wiederherstellung anschließend sichtbar. Für gezielte Neustartdiagnosen kann ausschließlich diese Stille-Erkennung mit `attr <name> inboundWatchdog 0` vorübergehend abgeschaltet werden. Die bestehende Verbindung bleibt dabei unverändert; gewöhnliche Socket-, Lifecycle- und Idle-Refresh-Reconnects bleiben aktiv. `1` oder das Löschen des Attributs aktiviert den Watchdog mit einem frischen 180-Sekunden-Zeitfenster wieder.
+
 ### Next-Trip-Zeit setzen
 
 ```text
@@ -282,6 +284,16 @@ Steuert die einundzwanzig optionalen Diagnosereadings, deren Namen mit `diag_` b
 * `0` (Standard): Diagnosefelder werden weder ausgewertet noch gepuffert. Vorhandene `diag_...`-Readings werden sofort gelöscht und ihr Cache-/Dirty-Zustand verworfen. Das Löschen des Attributs wirkt genauso.
 * `1`: Gültige Werte der einundzwanzig ausgewählten Protokollpositionen werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
 * Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. JSON-Zahlen werden ohne Skalierung oder Umrechnung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und JSON-Booleans erscheinen als `0` oder `1`. Daraus werden weiterhin keine Einheit, Bedeutung oder Vorzeichenkonvention abgeleitet. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
+
+### `inboundWatchdog` (0 oder 1)
+
+Steuert ausschließlich die Flex-spezifische Erkennung einer lokal scheinbar offenen, aber stummen WebSocket-Sitzung.
+
+* `1` (Standard): Für eine initialisierte aktive `wattpilot_flex`-Sitzung läuft der 30-Sekunden-Prüftimer mit einer Inaktivitätsgrenze von mindestens 180 Sekunden.
+* `0`: Der Inbound-Watchdog-Timer wird sofort entfernt. Verbindung, `state`, Readings und Telemetrie bleiben unverändert. Gewöhnliche Socket-Close-/Socket-Error-, Lifecycle-, Idle-Refresh- und manuelle Reconnect-Pfade bleiben aktiv.
+* `1` oder das Löschen des Attributs: Bei einer bereits aktiven geeigneten Flex-Sitzung wird genau ein Watchdog mit einem frischen 180-Sekunden-Zeitfenster gestartet. Das Legacy-Profil `devicetype=wattpilot` bleibt weiterhin unüberwacht.
+
+Das Attribut ist für zeitlich begrenzte Diagnosen gedacht, insbesondere um automatische Stille-Erkennung von einem beobachteten Geräte-Neustart zu trennen.
 
 ### `disable` (0 oder 1)
 
@@ -326,11 +338,13 @@ Legt den bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes fest
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 86 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 88 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
 | `state` | Lifecycle-Zustand: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `rebooting`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed` oder `authNonceFailed`. |
+| `connectionLastReconnectReason` | Grund des zuletzt ausgelösten Reconnects: `none`, `manual`, `socketClosed`, `socketError`, `lifecycleTimeout`, `idleRefreshTimeout` oder `inboundTimeout`. Der Reading-Zeitstempel zeigt den Zeitpunkt des Ereignisses. |
+| `connectionAutomaticReconnectCount` | Kumulativer Zähler automatisch ausgelöster Reconnects. Ein manueller `set <name> reconnect` ändert den Zähler nicht. |
 | `deviceFirmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
 | `deviceType` | Exakter String aus dem Statusfeld `typ`. |
 | `deviceModel` | Exakter vom Gerät gemeldeter Modell-/Gruppenstring aus `grp`; keine erfundene Modellzuordnung. |

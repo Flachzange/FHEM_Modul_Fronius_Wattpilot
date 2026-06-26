@@ -1,5 +1,25 @@
 # Changelog
 
+## [v2.1.11] - 2026-06-27
+
+### Optional inbound-watchdog suspension for diagnostics
+
+- Adds the boolean `inboundWatchdog` attribute with effective default `1`. Setting it to `0` immediately removes only the Flex inbound-silence timer without changing the current connection, lifecycle state, readings, telemetry cadence, or other reconnect paths.
+- Setting the attribute back to `1`, or deleting it, re-arms exactly one watchdog for an eligible live `wattpilot_flex` session and starts a fresh 180-second inactivity grace period. The legacy `devicetype=wattpilot` profile remains outside the watchdog regardless of the attribute.
+- Keeps ordinary socket-close, socket-error, authentication/lifecycle, idle-refresh, and manual reconnect handling active while the inbound watchdog is disabled. This makes the switch suitable for investigating device-side reboots without disabling the module's established transport handling.
+- Extends regression coverage for validation, immediate cancellation, stale-callback rejection, reload persistence, fresh-grace re-enable/delete behavior, and ordinary socket-loss recovery while the watchdog is suspended.
+
+## [v2.1.10] - 2026-06-27
+
+### Silent-session recovery after device reboot
+
+- Adds an independent inbound-liveness watchdog for initialized WebSocket sessions of the empirically evidenced `wattpilot_flex` profile. Every fully decoded JSON document refreshes the session timestamp; at least 180 seconds without one triggers one lifecycle-safe reconnect, checked at a fixed 30-second cadence.
+- Keeps liveness independent of `interval`, `update_while_idle`, telemetry dirty state, and reading timestamps. Invalid or incomplete JSON does not refresh the watchdog. The legacy `devicetype=wattpilot` profile remains unmonitored because no sufficiently bounded idle-message cadence is evidenced for it, preventing an unverified compatibility timeout.
+- Adds persistent lifecycle readings `connectionLastReconnectReason` and `connectionAutomaticReconnectCount`. Manual reconnects record `manual` without incrementing the automatic counter; automatic socket, lifecycle, idle-refresh, and inbound-timeout recoveries remain visible after reconnection.
+- Keeps the watchdog active in both `connected` and the transitional `rebooting` state, so the device reboot command cannot leave a still-open session unmonitored if neither a response nor a transport close arrives.
+- Activates exactly one watchdog for an already initialized live device during `reload 72_Wattpilot`, without replacing the device hash, transport, credentials, or lifecycle generation.
+- Adds focused regression coverage for healthy traffic, silent timeout, stale callbacks, reload activation, publication-attribute independence, manual reconnect, socket close, the reboot transition, and lifecycle cleanup. The implementation is based on a real Wattpilot Flex Home 22 C6 / firmware 43.4 observation where the device rebooted, `uptime` reset, `deviceRebootCount` increased, and the old local socket remained apparently connected until manual recovery.
+
 ## [v2.1.9] - 2026-06-27
 
 ### Device reboot command

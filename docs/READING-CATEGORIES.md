@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.9 retains the authoritative publication policy for every public
+Version 2.1.11 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -48,6 +48,8 @@ queries must be adapted explicitly.
 | Internal key | Public reading | Category | Source | Publication | Idle gate | Owner | Formatter | Invalid input | Reason |
 |---|---|---|---|---|---|---|---|---|---|
 | `state` | `state` | `lifecycle` | `event:connection` | `immediate` | `none` | `connection` | `lifecycle` | `preserve` | Module connection/authentication lifecycle. |
+| `connection_last_reconnect_reason` | `connectionLastReconnectReason` | `lifecycle` | `event:connection` | `immediate` | `none` | `connection` | `enum` | `preserve` | Persistent reason for the most recently triggered reconnect; the reading timestamp records when it occurred. |
+| `connection_automatic_reconnect_count` | `connectionAutomaticReconnectCount` | `lifecycle` | `event:connection` | `immediate` | `none` | `connection` | `integer` | `preserve` | Cumulative automatic reconnect count; manual reconnects do not increment it. |
 | `firmware_version` | `deviceFirmwareVersion` | `identity` | `event:hello` | `immediate-on-change` | `none` | `identity` | `text` | `preserve` | Device firmware identity; identical reconnect values do not renew the reading. |
 | `device_type` | `deviceType` | `identity` | `status:typ` | `immediate-on-change` | `none` | `typ` | `text` | `preserve` | Exact status-level device-type identifier. |
 | `device_model` | `deviceModel` | `identity` | `status:grp` | `immediate-on-change` | `none` | `grp` | `text` | `preserve` | Exact device-reported model/group string; no model mapping is invented. |

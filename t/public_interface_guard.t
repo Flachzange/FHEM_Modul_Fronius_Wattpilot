@@ -100,7 +100,7 @@ for my $path (sort @test_files) {
 }
 
 my @public_readings = qw(
-    state deviceFirmwareVersion deviceType deviceModel deviceSubType deviceVariant deviceHelloProtocol deviceStatusProtocol
+    state connectionLastReconnectReason connectionAutomaticReconnectCount deviceFirmwareVersion deviceType deviceModel deviceSubType deviceVariant deviceHelloProtocol deviceStatusProtocol
     authHashMode carState configForceState configChargingCurrent
     configChargingMode chargingAllowed chargingDecisionCode chargingDecision
     chargingDecisionInternalCode chargingDecisionInternal errorCode configMaximumCurrentLimit

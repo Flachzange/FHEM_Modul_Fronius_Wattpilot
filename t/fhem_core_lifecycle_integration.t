@@ -35,7 +35,10 @@ sub existing_device {
         DeviceName => 'ws:192.0.2.37:80/ws',
         STATE      => 'connected',
         TEST_OPEN  => 1,
-        helper     => { authenticated => 1 },
+        helper     => {
+            authenticated => 1,
+            deviceType => 'wattpilot_flex',
+        },
     };
     $defs{$name} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} = 'synthetic-password';
@@ -260,7 +263,8 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'pinned CommandReload executes the real module reload path');
     is($defs{wallbox}, $original_hash,
         'real reload preserves the existing device hash identity');
-    is($hash->{VERSION}, '2.1.9',
+    is($hash->{VERSION}, '2.1.11',
+
         'real reload refreshes the module version internal');
     is($hash->{DeviceName}, $original_device_name,
         'real reload preserves the configured endpoint');
@@ -268,6 +272,12 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'real reload preserves the open transport state');
     is($hash->{helper}{reloadSentinel}, 'preserved',
         'real reload preserves runtime helper state');
+    ok(ref($hash->{helper}{timers}{inbound_watchdog}) eq 'HASH',
+        'real reload adds exactly one inbound watchdog to the connected session');
+    is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'none',
+        'real reload initializes the reconnect reason without replacing the device');
+    is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 0,
+        'real reload initializes the automatic reconnect count');
     is($DevIo::KEY_VALUES{$password_key}, $original_password,
         'real reload preserves stable credentials');
     is($modules{Wattpilot}{DefFn}, \&main::Wattpilot_Define,

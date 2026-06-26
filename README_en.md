@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.9**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.11**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -12,7 +12,7 @@ Version 2.x is a substantial redesign rather than a small extension of the origi
 | :--- | :--- | :--- |
 | Definition and password | Password included in the FHEM definition | Definition without password; storage through `set <Name> password <secret>` under stable FUUID-based keys |
 | Devices and authentication | Predecessor Wattpilot with PBKDF2 | Legacy profile retained; Wattpilot Flex authenticates exclusively with bcrypt |
-| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 86 readings, confirmed configuration readings, and grouped Set commands |
+| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 88 readings, confirmed configuration readings, and grouped Set commands |
 | Protocol handling | Basic `hello`, authentication, and status handling | Strict JSON type validation, partial status handling, robust message continuation, secured commands, and response correlation |
 | Runtime behavior | Basic interval and idle filtering | Controlled lifecycle behavior for reload, rename, `modify`, disable, reconnect, and delete, plus separate telemetry caches on one publication clock |
 | Quality assurance | Original functional scope | Extensive regression tests, pinned FHEM-core integration, documentation checks, and reproducible release verification |
@@ -240,6 +240,8 @@ set wallbox reboot
 
 If the device still returns a regular response, that response is handled through the normal secured-command path. A rejection, malformed response, or timeout on an otherwise open authenticated session restores `state=connected`. If the Wattpilot closes the WebSocket first because it is rebooting, only the pending request whose existing protocol key is `rst` finishes with `lastCommandStatus=success` and `lastCommandError=none`; unrelated commands still fail on connection loss. The existing automatic reconnect ownership then applies unchanged and replaces `rebooting` with the normal `disconnected`, `connecting`, `authenticating`, `initializing`, and finally `connected` states. If neither a response nor a disconnect arrives, the normal bounded command timeout still applies. The pinned third-party field registry describes `rst` as write-only `rebootCharger` with type `any`; boolean `true` is the module's trigger representation and still requires real-device confirmation.
 
+An initialized live session of the empirically evidenced `wattpilot_flex` device profile also owns an independent inbound watchdog. Every completely decoded JSON document refreshes an internal liveness timestamp. If no complete JSON document arrives for at least 180 seconds, the next 30-second watchdog check invalidates the apparently open session and schedules exactly one reconnect. The watchdog is completely independent of `interval` and `update_while_idle` and remains active while `state=rebooting`. The legacy `devicetype=wattpilot` profile deliberately receives no such timeout because no sufficiently bounded idle-message cadence is evidenced for it. `connectionLastReconnectReason` and `connectionAutomaticReconnectCount` preserve the recovery diagnosis after the session is connected again. For targeted reboot diagnostics, only this silence detection can be suspended temporarily with `attr <name> inboundWatchdog 0`. The established connection remains unchanged, and ordinary socket, lifecycle, and idle-refresh reconnects remain active. Setting `1` or deleting the attribute re-enables the watchdog with a fresh 180-second grace period.
+
 ### Set next-trip time
 
 ```text
@@ -283,6 +285,16 @@ Controls the twenty-one optional diagnostic readings whose names begin with `dia
 * `1`: valid values from the twenty-one selected protocol positions are published through the normal `interval` mechanism. They are eligible while the vehicle is charging or when `update_while_idle=1`.
 * The protocol wording is retained exactly after the `diag_` prefix. JSON numbers are rounded to exactly two decimal places without scaling or conversion; strings remain unchanged and JSON booleans become `0` or `1`. No unit, meaning, or sign convention is inferred from that formatting. Missing fields, `null`, objects, arrays, and invalid values preserve the previous reading.
 
+### `inboundWatchdog` (0 or 1)
+
+Controls only the Flex-specific detection of a WebSocket session that still looks locally open but has become silent.
+
+* `1` (Default): An initialized live `wattpilot_flex` session owns the 30-second check timer with an inactivity threshold of at least 180 seconds.
+* `0`: The inbound-watchdog timer is removed immediately. The connection, `state`, readings, and telemetry remain unchanged. Ordinary socket-close/socket-error, lifecycle, idle-refresh, and manual reconnect paths remain active.
+* `1` or deleting the attribute: An already live eligible Flex session receives exactly one watchdog with a fresh 180-second grace period. The legacy `devicetype=wattpilot` profile remains unmonitored.
+
+The attribute is intended for temporary diagnostics, especially to distinguish automatic silence recovery from an observed device-side reboot.
+
 ### `disable` (0 or 1)
 
 Completely disables the module.
@@ -324,11 +336,13 @@ Sets the bcrypt cost factor for newly derived authentication hashes. The default
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 86 public readings:
+The module exposes exactly these 88 public readings:
 
 | Reading | Description |
 | :--- | :--- |
 | `state` | Lifecycle state: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `rebooting`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed`, or `authNonceFailed`. |
+| `connectionLastReconnectReason` | Reason for the most recently triggered reconnect: `none`, `manual`, `socketClosed`, `socketError`, `lifecycleTimeout`, `idleRefreshTimeout`, or `inboundTimeout`. The reading timestamp records when it happened. |
+| `connectionAutomaticReconnectCount` | Cumulative count of automatically triggered reconnects. A manual `set <name> reconnect` does not increment it. |
 | `deviceFirmwareVersion` | Firmware/version string from the device `hello` message. Identical reconnect values do not renew the reading. |
 | `deviceType` | Exact string from status field `typ`. |
 | `deviceModel` | Exact device-reported model/group string from `grp`; no model mapping is invented. |
