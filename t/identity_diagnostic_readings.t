@@ -13,6 +13,7 @@ my $root = File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..'));
 require File::Spec->catfile($root, '72_Wattpilot.pm');
 
 my @diag_readings = qw(
+    diag_fbuf_akkuMode
     diag_fbuf_akkuSOC
     diag_fbuf_pAkku
     diag_fbuf_pGrid
@@ -80,6 +81,7 @@ sub updates_for {
 
 sub diagnostic_status {
     return {
+        fbuf_akkuMode => 1,
         fbuf_akkuSOC => 60.1256789,
         fbuf_pAkku => -1525.9876543,
         fbuf_pGrid => 125.1256789,
@@ -245,6 +247,10 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         car => 2,
         %{diagnostic_status()},
     }), 'enabled diagnostic status is accepted');
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '1.00',
+        'battery mode is exposed only as a rounded raw diagnostic');
+    ok(!exists $hash->{READINGS}{pvBatteryModeCode},
+        'the former normal battery mode reading is not recreated');
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.13',
         'former battery SOC telemetry is rounded to two decimals');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.99',
@@ -398,6 +404,10 @@ subtest 'reload removes stale diagnostics when the effective attribute is off' =
         'reload preserves unrelated readings');
     like($module_hash->{AttrList}, qr/\bdiagnosticReadings:0,1\b/,
         'the module advertises the boolean diagnostic attribute');
+    like($module_hash->{AttrList}, qr/(?:^|\s)interval(?:\s|$)/,
+        'interval is advertised as a free-value attribute');
+    unlike($module_hash->{AttrList}, qr/interval:slider/,
+        'interval no longer advertises a FHEMWEB slider');
 };
 
 done_testing;

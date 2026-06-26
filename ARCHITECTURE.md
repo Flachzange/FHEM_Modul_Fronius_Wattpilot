@@ -131,7 +131,7 @@ runtime `%WATTPILOT_READING_POLICY`:
 
 - all `config...` readings are immediate after valid device-confirmed status;
 - identity readings, `carState`, `chargingAllowed`, `temperatureCurrentLimit`,
-  `pvBatteryModeCode`, both charging-decision code/text pairs, and `errorCode`
+  both charging-decision code/text pairs, and `errorCode`
   are immediate-on-change; repeated identical public values neither renew
   their timestamps nor create events;
 - cumulative energy, electrical `nrg`, raw device-health values, `uptime`,
@@ -171,10 +171,9 @@ silent. The repository does not claim when or how often the device sends
 `modelStatus` and `msi` each produce an unmodified numeric code and a
 lowerCamelCase compatibility text reading. Each code/text pair is updated
 atomically in the same reading transaction. Unknown numeric values remain
-explicit as `unknown:<code>`. `pvBatteryModeCode` preserves a non-negative raw
-integer without inventing an enum. With diagnostics enabled, `fbuf_akkuSOC`
-and `fbuf_pAkku` are exposed as raw scalar diagnostics without percentage
-validation, unit assignment, scaling, or sign interpretation. Numeric
+explicit as `unknown:<code>`. With diagnostics enabled, `fbuf_akkuMode`,
+`fbuf_akkuSOC`, and `fbuf_pAkku` are exposed as raw scalar diagnostics without
+mode-enum, percentage, unit, scaling, sign, or aggregation interpretation. Numeric
 diagnostic values are formatted with exactly two decimal places; strings
 remain unchanged and booleans become `0|1`. The relationship between
 `fbuf_pAkku` and `pvopt_averagePAkku` remains unknown.
@@ -246,4 +245,4 @@ remain controlled adapters. No runtime abstraction is added to
 FHEM simulator is vendored.
 
 
-Optional diagnostic architecture: `diagnosticReadings=0` is the effective default and removes all fourteen `diag_...` readings plus the `diagnostic` owner state. With value `1`, only validated JSON scalars are cached; objects, arrays, and `null` are ignored. Validation preserves the original plain JSON scalar type, and the existing central reading formatter applies two-decimal numeric formatting, unchanged strings, or `0|1` booleans without diagnostic-specific wrapper objects. The `diagnostic` and `device_uptime` owners use the same charging/`update_while_idle` eligibility rule, while `device_health` remains ungated. `device_uptime` interprets `rbt` as milliseconds from the maintainer observation and converts it to cumulative `H:MM` only at publication time.
+Optional diagnostic architecture: `diagnosticReadings=0` is the effective default and removes all fifteen `diag_...` readings plus the `diagnostic` owner state. With value `1`, only validated JSON scalars are cached; objects, arrays, and `null` are ignored. Validation preserves the original plain JSON scalar type, and the existing central reading formatter applies two-decimal numeric formatting, unchanged strings, or `0|1` booleans without diagnostic-specific wrapper objects. The `diagnostic` and `device_uptime` owners use the same charging/`update_while_idle` eligibility rule, while `device_health` remains ungated. `device_uptime` interprets `rbt` as milliseconds from the maintainer observation and converts it to cumulative `H:MM` only at publication time.

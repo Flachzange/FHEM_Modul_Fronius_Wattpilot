@@ -317,12 +317,11 @@ subtest 'discrete status is immediate-on-change and paired readings are atomic' 
         msi => 27,
         err => 0,
         amt => 16,
-        fbuf_akkuMode => 1,
     }), 'baseline discrete status is accepted');
     my %time = map { $_ => reading_time($hash, $_) } qw(
         carState chargingAllowed chargingDecisionCode chargingDecision
         chargingDecisionInternalCode chargingDecisionInternal errorCode
-        temperatureCurrentLimit pvBatteryModeCode
+        temperatureCurrentLimit
     );
 
     my $update_start = scalar @DevIo::READING_UPDATES;
@@ -335,7 +334,6 @@ subtest 'discrete status is immediate-on-change and paired readings are atomic' 
         msi => 27,
         err => 0,
         amt => 16,
-        fbuf_akkuMode => 1,
     }), 'identical discrete delta is accepted');
     for my $reading (sort keys %time) {
         is(reading_time($hash, $reading), $time{$reading},
@@ -354,7 +352,6 @@ subtest 'discrete status is immediate-on-change and paired readings are atomic' 
         msi => 28,
         err => 7,
         amt => 15,
-        fbuf_akkuMode => 2,
     }), 'changed discrete delta is accepted inside the telemetry interval');
     is(reading_value($hash, 'carState'), 'charging',
         'carState changes immediately');
@@ -367,8 +364,6 @@ subtest 'discrete status is immediate-on-change and paired readings are atomic' 
     is(reading_time($hash, 'chargingDecisionCode'),
         reading_time($hash, 'chargingDecision'),
         'paired public decision readings share one transaction timestamp');
-    is(reading_value($hash, 'pvBatteryModeCode'), 2,
-        'battery mode code is immediate-on-change, not telemetry-gated');
     is($hash->{helper}{car_state}, 2,
         'internal car state is immediately current');
 };
@@ -777,7 +772,7 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     is_deeply(\@discrete, [sort qw(
         firmware_version device_type device_model device_sub_type device_variant
         hello_protocol status_protocol car_state charging_allowed
-        temperature_current_limit pv_battery_mode_code charging_decision_code
+        temperature_current_limit charging_decision_code
         charging_decision charging_decision_internal_code
         charging_decision_internal error_code
     )], 'identity and discrete status readings are exactly immediate-on-change');
@@ -806,8 +801,8 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     my @optional_diagnostic = grep {
         $policy->{$_}{category} eq 'optional_diagnostic'
     } keys %$policy;
-    is(scalar @optional_diagnostic, 14,
-        'all fourteen optional raw diagnostics are inventoried');
+    is(scalar @optional_diagnostic, 15,
+        'all fifteen optional raw diagnostics are inventoried');
     for my $key (@optional_diagnostic) {
         is($policy->{$key}{publication}, 'interval',
             "$key follows the shared interval");

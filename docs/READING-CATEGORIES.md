@@ -81,7 +81,7 @@ queries must be adapted explicitly.
 | `charging_pause_allowed` | `configChargingPauseAllowed` | `configuration` | `status:fap` | `immediate` | `none` | `fap` | `boolean` | `preserve` | Charging-pause setting; Set command remains `chargingPauseAllowed`. |
 | `minimum_charging_pause_duration` | `configMinimumChargingPauseDuration` | `configuration` | `status:mcpd` | `immediate` | `none` | `mcpd` | `seconds` | `preserve` | Minimum charging-pause duration; writable through `minimumCharging pauseDuration`. |
 | `minimum_charging_interval` | `configMinimumChargingInterval` | `configuration` | `status:mci` | `immediate` | `none` | `mci` | `seconds` | `preserve` | Forced/minimum charging interval; writable through `minimumCharging interval`. |
-| `pv_battery_mode_code` | `pvBatteryModeCode` | `status` | `status:fbuf_akkuMode` | `immediate-on-change` | `none` | `fbuf_akkuMode` | `integer` | `preserve` | Current raw stationary-battery mode code. |
+| `diag_fbuf_akku_mode` | `diag_fbuf_akkuMode` | `optional_diagnostic` | `status:fbuf_akkuMode` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw stationary-battery mode field. |
 | `device_reboot_count` | `deviceRebootCount` | `device_health` | `status:rbc` | `interval` | `none` | `device_health` | `integer` | `preserve` | Raw non-negative `rbc` value on the shared interval; exact protocol semantics remain unverified. |
 | `device_uptime` | `uptime` | `device_health` | `status:rbt` | `interval` | `device` | `device_uptime` | `hours_minutes_ms` | `preserve` | Non-negative `rbt` interpreted as milliseconds from the maintainer live observation, divided by 1,000, and rendered as cumulative `H:MM`; remaining seconds and milliseconds are discarded. |
 | `diag_fbuf_akku_soc` | `diag_fbuf_akkuSOC` | `optional_diagnostic` | `status:fbuf_akkuSOC` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field-research value; no percentage range, unit, or scaling is imposed. |
@@ -125,10 +125,9 @@ queries must be adapted explicitly.
 authentication method actually selected for the current session, which may be
 derived from `authHash=auto` and the device challenge.
 `temperatureCurrentLimit` is an effective runtime limit rather than a stored
-user setting. `pvBatteryModeCode` is a discrete current status code, not a
-configuration enum and not part of the optional interval-controlled battery diagnostics.
+user setting.
 Paired decision code/text readings share one source and are updated in the same
 FHEM reading transaction.
 
 
-`deviceRebootCount` and `uptime` are normal public readings, not optional diagnostics. `deviceRebootCount` is always interval-eligible; `uptime` follows the charging/`update_while_idle` gate. The fourteen `diag_...` readings exist only with `diagnosticReadings=1`; setting the attribute to `0` or deleting it removes those readings and clears their owner state immediately.
+`deviceRebootCount` and `uptime` are normal public readings, not optional diagnostics. `deviceRebootCount` is always interval-eligible; `uptime` follows the charging/`update_while_idle` gate. The fifteen `diag_...` readings exist only with `diagnosticReadings=1`; setting the attribute to `0` or deleting it removes those readings and clears their owner state immediately.

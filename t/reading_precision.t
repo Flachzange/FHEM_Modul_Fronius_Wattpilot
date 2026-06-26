@@ -70,7 +70,7 @@ subtest 'reading inventory declares one intentional public format per reading' =
     is_deeply(
         [sort grep { $policy->{$_}{formatter} eq 'diagnostic2' } keys %$policy],
         [sort qw(
-            diag_fbuf_akku_soc diag_fbuf_p_akku diag_fbuf_p_grid
+            diag_fbuf_akku_mode diag_fbuf_akku_soc diag_fbuf_p_akku diag_fbuf_p_grid
             diag_fbuf_p_pv diag_pvopt_average_p_grid
             diag_pvopt_average_p_pv diag_pvopt_average_p_akku
             diag_pvopt_average_p_ohmpilot diag_pvopt_delta_p

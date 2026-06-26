@@ -53,7 +53,7 @@ sub reading_time {
     return $hash->{READINGS}{$name}{TIME};
 }
 
-subtest 'stationary battery SOC and power are optional raw diagnostics' => sub {
+subtest 'stationary battery mode, SOC, and power are optional raw diagnostics' => sub {
     my $hash = fresh_device();
     $attr{$hash->{NAME}}{interval} = 0;
     $attr{$hash->{NAME}}{update_while_idle} = 1;
@@ -65,20 +65,25 @@ subtest 'stationary battery SOC and power are optional raw diagnostics' => sub {
         fbuf_pAkku => -1525.9876543,
         fbuf_akkuMode => 1,
     }), 'battery fields are accepted while diagnostics are disabled');
+    ok(!exists $hash->{READINGS}{diag_fbuf_akkuMode},
+        'battery mode diagnostic is absent by default');
     ok(!exists $hash->{READINGS}{diag_fbuf_akkuSOC},
         'battery SOC diagnostic is absent by default');
     ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
         'battery power diagnostic is absent by default');
-    is(reading_value($hash, 'pvBatteryModeCode'), 1,
-        'the discrete battery mode remains a normal immediate status reading');
+    ok(!exists $hash->{READINGS}{pvBatteryModeCode},
+        'the former normal battery mode reading is not emitted');
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 1), undef,
         'raw diagnostics can be enabled');
     $DevIo::NOW = 101;
     ok(parse_status($hash, 'deltaStatus', {
+        fbuf_akkuMode => 1,
         fbuf_akkuSOC => 60.1234567,
         fbuf_pAkku => -1525.9876543,
     }), 'battery diagnostics are accepted after enabling');
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '1.00',
+        'mode is exposed as an uninterpreted rounded diagnostic number');
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '60.12',
         'SOC is rounded to two decimals without percentage validation');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-1525.99',
@@ -154,6 +159,8 @@ subtest 'battery diagnostics share the common interval without cross-publication
         fbuf_akkuMode => 1,
         nrg => nrg(500),
     }), 'combined baseline starts the shared telemetry clock');
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '1.00',
+        'initial battery mode diagnostic is published with two decimals');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00',
         'initial numeric battery diagnostic is published with two decimals');
     is(reading_value($hash, 'power'), '500.00',
@@ -167,14 +174,16 @@ subtest 'battery diagnostics share the common interval without cross-publication
         fbuf_pAkku => -700.5678,
         fbuf_akkuMode => 2,
     }), 'battery-only input is cached before the common tick');
-    is(reading_value($hash, 'pvBatteryModeCode'), 2,
-        'battery mode remains immediate-on-change');
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '1.00',
+        'changed battery mode waits for the common diagnostic tick');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-500.00',
         'diagnostic power waits for the common tick');
 
     ok(parse_status($hash, 'deltaStatus', { nrg => nrg(700) }),
         'fresh nrg in the same cycle is cached independently');
     DevIo::run_due_timers(1_030);
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '2.00',
+        'latest raw mode publishes on the common tick');
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '49.12',
         'latest raw SOC publishes on the common tick');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-700.57',
@@ -196,14 +205,16 @@ subtest 'idle gate and diagnostic removal apply to battery diagnostics' => sub {
         fbuf_pAkku => 250.126,
         fbuf_akkuMode => 1,
     }), 'idle battery diagnostics are cached');
+    ok(!exists $hash->{READINGS}{diag_fbuf_akkuMode},
+        'battery mode diagnostic remains passive while idle');
     ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
         'battery diagnostics remain passive while idle');
-    is(reading_value($hash, 'pvBatteryModeCode'), 1,
-        'mode remains visible independently of diagnostics cadence');
 
     is(DevIo::command_attr($hash->{NAME}, 'update_while_idle', 1), undef,
         'idle publication can be enabled');
     DevIo::run_due_timers(2_030);
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '1.00',
+        'cached mode publishes after opening the idle gate');
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '40.00',
         'cached SOC publishes after opening the idle gate');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '250.13',
@@ -211,6 +222,8 @@ subtest 'idle gate and diagnostic removal apply to battery diagnostics' => sub {
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 0), undef,
         'diagnostics can be disabled');
+    ok(!exists $hash->{READINGS}{diag_fbuf_akkuMode},
+        'battery mode diagnostic is deleted immediately');
     ok(!exists $hash->{READINGS}{diag_fbuf_akkuSOC},
         'battery SOC diagnostic is deleted immediately');
     ok(!exists $hash->{READINGS}{diag_fbuf_pAkku},
@@ -228,6 +241,7 @@ subtest 'matched response status follows the same diagnostic contract' => sub {
 
     ok(parse_status($hash, 'fullStatus', {
         car => 2,
+        fbuf_akkuMode => 1,
         fbuf_akkuSOC => 60,
         fbuf_pAkku => -600,
         nrg => nrg(600),
@@ -249,10 +263,12 @@ subtest 'matched response status follows the same diagnostic contract' => sub {
     })), 'successful matched response is accepted');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-600.00',
         'response diagnostic remains cached before the tick');
-    is(reading_value($hash, 'pvBatteryModeCode'), 2,
-        'response mode change remains immediate');
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '1.00',
+        'response mode change remains cached before the tick');
 
     DevIo::run_due_timers(3_030);
+    is(reading_value($hash, 'diag_fbuf_akkuMode'), '2.00',
+        'response mode becomes visible at the tick');
     is(reading_value($hash, 'diag_fbuf_akkuSOC'), '61.75',
         'response SOC becomes visible at the tick');
     is(reading_value($hash, 'diag_fbuf_pAkku'), '-1200.88',
@@ -260,12 +276,14 @@ subtest 'matched response status follows the same diagnostic contract' => sub {
 };
 
 my $interface = main::Wattpilot_InterfaceSnapshot();
+is($interface->{readings}{diag_fbuf_akku_mode}, 'diag_fbuf_akkuMode',
+    'public interface exposes the raw optional battery mode diagnostic');
 is($interface->{readings}{diag_fbuf_akku_soc}, 'diag_fbuf_akkuSOC',
     'public interface exposes the raw optional battery SOC diagnostic');
 is($interface->{readings}{diag_fbuf_p_akku}, 'diag_fbuf_pAkku',
     'public interface exposes the raw optional battery power diagnostic');
-is($interface->{readings}{pv_battery_mode_code}, 'pvBatteryModeCode',
-    'public interface keeps the discrete stationary-battery mode code');
+ok(!exists $interface->{readings}{pv_battery_mode_code},
+    'public interface removes the former normal battery mode reading');
 
 my $hash = fresh_device();
 my $help = main::Wattpilot_Set($hash, 'batteryDiagnosticWallbox', '?');
