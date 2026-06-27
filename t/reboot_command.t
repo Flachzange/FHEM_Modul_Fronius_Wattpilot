@@ -11,6 +11,9 @@ our ($readingFnAttributes, %modules, %defs, %attr);
 my $root = File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..'));
 require File::Spec->catfile($root, '72_Wattpilot.pm');
 
+is(prototype(\&main::Wattpilot_SendSecure), '$$$',
+    'reboot keeps the established three-argument SendSecure prototype');
+
 sub fresh_device {
     DevIo::reset_test_state();
     %defs = ();
@@ -82,8 +85,10 @@ is($outer->{requestId}, '1sm',
     'reboot secured wrapper keeps ordinary request correlation');
 is($hash->{READINGS}{lastCommandStatus}{VAL}, 'pending',
     'reboot remains pending while the connection stays open without a response');
-ok($hash->{helper}{pendingRequests}{1}{disconnectExpected},
-    'reboot pending metadata marks the expected transport loss');
+is($hash->{helper}{pendingRequests}{1}{key}, 'rst',
+    'ordinary pending metadata retains the reboot protocol key');
+ok(!exists $hash->{helper}{pendingRequests}{1}{disconnectExpected},
+    'reboot adds no transport-specific pending flag');
 is(timer_count('command_timeout'), 1,
     'reboot retains the bounded response timeout while the socket stays open');
 

@@ -247,6 +247,13 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'reload fixture contains the current module file');
     $attr{global}{modpath} = $tmp;
 
+    {
+        no warnings qw(redefine prototype);
+        *main::Wattpilot_SendSecure = sub ($$$) { return undef; };
+    }
+    is(prototype(\&main::Wattpilot_SendSecure), '$$$',
+        'reload fixture models the established three-argument SendSecure prototype');
+
     my @warnings;
     local $SIG{__WARN__} = sub { push @warnings, @_ };
     is(FHEMCorePinned::CommandReload(undef, '72_Wattpilot'), undef,

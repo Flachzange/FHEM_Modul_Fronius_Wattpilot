@@ -72,7 +72,7 @@ FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `Und
 | `timeoutRetryUsed` | current authentication/initialization timeout episode |
 | `deviceType`, `protocol` | current connection/session |
 | `authPending`, `authHashMode`, `authenticated` | current authentication/session |
-| `pendingRequests` | current authenticated session; every invalidation cancels its timeout and either publishes one terminal newest-request result or suppresses output during undefine/shutdown. A request-local `disconnectExpected` marker is used only by `set reboot`: connection loss before a response completes that marked request successfully, while all unrelated requests retain the normal failure path. |
+| `pendingRequests` | current authenticated session; every invalidation cancels its timeout and either publishes one terminal newest-request result or suppresses output during undefine/shutdown. Connection loss before a response completes the newest pending request successfully only when its existing protocol key is `rst`; all unrelated requests retain the normal failure path. No transport-specific pending marker is added. |
 | `jsonBuffer` | current logical JSON continuation/session |
 | `car_state` | current device-hash runtime state |
 | idle-refresh flags | current idle episode; the reconnect-awaiting flag deliberately survives the single automatic refresh reconnect, while a manual reconnect clears the episode state |
