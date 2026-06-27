@@ -1,0 +1,148 @@
+diff --git a/72_Wattpilot.pm b/72_Wattpilot.pm
+index 771dbe4..c6a5188 100644
+--- a/72_Wattpilot.pm
++++ b/72_Wattpilot.pm
+@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
+ use Crypt::PBKDF2;
+ use Crypt::URandom qw(urandom);
+ 
+-my $WATTPILOT_VERSION = '2.1.7';
++my $WATTPILOT_VERSION = '2.1.8';
+ my $WATTPILOT_REQUEST_TIMEOUT = 30;
+ my $WATTPILOT_AUTH_TIMEOUT = 30;
+ my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
+@@ -124,6 +124,32 @@ my @WATTPILOT_READING_DEFINITION = (
+             status:rbc interval none device_health integer nonnegative_integer none)],
+     [qw(device_uptime uptime device_health
+             status:rbt interval device device_uptime hours_minutes_ms nonnegative_integer none)],
++    [qw(device_controller_firmware_version deviceControllerFirmwareVersion device_health
++            status:cc4.firmware_version interval none device_health text string none)],
++    [qw(device_controller_firmware_crc deviceControllerFirmwareCRC device_health
++            status:cc4.firmware_crc interval none device_health text string none)],
++    [qw(device_controller_firmware_integrity deviceControllerFirmwareIntegrity device_health
++            status:cc4.firmware_integrity interval none device_health text string none)],
++    [qw(device_controller_stack_size deviceControllerStackSize device_health
++            status:cc4.stack_size interval none device_health integer nonnegative_integer none)],
++    [qw(device_controller_reset_reason deviceControllerResetReason device_health
++            status:cc4.reset_reason interval none device_health text string none)],
++    [qw(device_controller_mid_firmware_version deviceControllerMidFirmwareVersion device_health
++            status:cc4.mid_firmware_version interval none device_health text string none)],
++    [qw(device_controller_hardware_id deviceControllerHardwareId device_health
++            status:cc4.hwid interval none device_health text string none)],
++    [qw(diag_temperature_sensor_1 diag_temperatureSensor1 optional_diagnostic
++            status:tma[0] interval diagnostic diagnostic decimal2 number none)],
++    [qw(diag_temperature_sensor_2 diag_temperatureSensor2 optional_diagnostic
++            status:tma[1] interval diagnostic diagnostic decimal2 number none)],
++    [qw(diag_temperature_sensor_3 diag_temperatureSensor3 optional_diagnostic
++            status:tma[2] interval diagnostic diagnostic decimal2 number none)],
++    [qw(diag_temperature_sensor_4 diag_temperatureSensor4 optional_diagnostic
++            status:tma[3] interval diagnostic diagnostic decimal2 number none)],
++    [qw(diag_temperature_sensor_5 diag_temperatureSensor5 optional_diagnostic
++            status:tma[4] interval diagnostic diagnostic decimal2 number none)],
++    [qw(diag_temperature_sensor_6 diag_temperatureSensor6 optional_diagnostic
++            status:tma[5] interval diagnostic diagnostic decimal2 number none)],
+     [qw(diag_fbuf_akku_mode diag_fbuf_akkuMode optional_diagnostic
+             status:fbuf_akkuMode interval diagnostic diagnostic diagnostic2 raw_scalar none)],
+     [qw(diag_fbuf_akku_soc diag_fbuf_akkuSOC optional_diagnostic
+@@ -195,8 +221,11 @@ for my $definition (@WATTPILOT_READING_DEFINITION) {
+     $policy{invalid} = 'preserve';
+     $WATTPILOT_READING_POLICY{$key} = \%policy;
+ 
+-    next if $policy{source} !~ /^status:([A-Za-z0-9_]+)(?:\[\d+\])?$/;
++    next if $policy{source} !~ /^status:([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+|\[\d+\])?)$/;
+     my $protocol_key = $1;
++    $protocol_key = $1
++        if $policy{validator} eq 'nrg'
++        && $protocol_key =~ /^([A-Za-z0-9_]+)\[\d+\]$/;
+     push @{$WATTPILOT_STATUS_READING_KEYS{$protocol_key}}, $key;
+     if ($policy{validator} ne 'none') {
+         my %spec = (kind => $policy{validator});
+@@ -242,7 +271,8 @@ for my $definition (@WATTPILOT_READING_DEFINITION) {
+     if (!$WATTPILOT_TELEMETRY_OWNER_SEEN{$owner}++) {
+         push @WATTPILOT_TELEMETRY_OWNER_DISCOVERY_ORDER, $owner;
+     }
+-    if ($policy->{source} =~ /^status:([A-Za-z0-9_]+)$/) {
++    if ($policy->{source} =~ /^status:([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+|\[\d+\])?)$/
++        && $policy->{validator} ne 'nrg') {
+         push @{$WATTPILOT_SCALAR_TELEMETRY_BY_OWNER{$owner}},
+             [$1, $reading_key];
+     }
+@@ -1223,8 +1253,9 @@ sub Wattpilot_NormalizeStatusValue($$) {
+     my ($value, $spec) = @_;
+     my $kind = $spec->{kind};
+ 
+-    if ($kind eq 'nonempty_string') {
+-        return undef if !Wattpilot_IsJsonString($value) || $value eq '';
++    if ($kind eq 'string' || $kind eq 'nonempty_string') {
++        return undef if !Wattpilot_IsJsonString($value);
++        return undef if $kind eq 'nonempty_string' && $value eq '';
+         return $value;
+     }
+ 
+@@ -1277,25 +1308,60 @@ sub Wattpilot_NormalizeStatusValue($$) {
+     die "Unknown Wattpilot status schema kind: $kind";
+ }
+ 
++sub Wattpilot_ExtractStatusSource($$) {
++    my ($status, $source) = @_;
++    return (0, undef, 1) if ref($status) ne 'HASH';
++
++    if ($source =~ /^([A-Za-z0-9_]+)$/) {
++        return (0, undef, 1) if !exists $status->{$1};
++        return (1, $status->{$1}, 1);
++    }
++    if ($source =~ /^([A-Za-z0-9_]+)\[(\d+)\]$/) {
++        my ($root, $index) = ($1, $2);
++        return (0, undef, 1) if !exists $status->{$root};
++        return (1, undef, 1) if !defined $status->{$root};
++        return (1, undef, 0) if ref($status->{$root}) ne 'ARRAY';
++        return (0, undef, 1) if $index >= @{$status->{$root}};
++        return (1, $status->{$root}[$index], 1);
++    }
++    if ($source =~ /^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$/) {
++        my ($root, $child) = ($1, $2);
++        return (0, undef, 1) if !exists $status->{$root};
++        return (1, undef, 1) if !defined $status->{$root};
++        return (1, undef, 0) if ref($status->{$root}) ne 'HASH';
++        return (0, undef, 1) if !exists $status->{$root}{$child};
++        return (1, $status->{$root}{$child}, 1);
++    }
++    die "Unsupported Wattpilot status source: $source";
++}
++
+ sub Wattpilot_NormalizeStatus($$) {
+     my ($hash, $input_status) = @_;
+     return undef if ref($input_status) ne 'HASH';
+ 
+     my %status = %$input_status;
+     for my $key (keys %WATTPILOT_STATUS_SCHEMA) {
+-        next if !exists $status{$key};
++        my ($exists, $value, $shape_valid) =
++            Wattpilot_ExtractStatusSource($input_status, $key);
++        next if !$exists;
+         if ($WATTPILOT_OPTIONAL_DIAGNOSTIC_PROTOCOL_KEY{$key}
+             && !Wattpilot_DiagnosticReadingsEnabled($hash)) {
+             delete $status{$key};
+             next;
+         }
+-        if (!defined $status{$key}) {
++        if (!$shape_valid) {
++            Log3 $hash->{NAME}, 2,
++                "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
++            delete $status{$key};
++            next;
++        }
++        if (!defined $value) {
+             delete $status{$key};
+             next;
+         }
+ 
+         my $normalized = Wattpilot_NormalizeStatusValue(
+-            $status{$key}, $WATTPILOT_STATUS_SCHEMA{$key});
++            $value, $WATTPILOT_STATUS_SCHEMA{$key});
+         if (!defined $normalized) {
+             Log3 $hash->{NAME}, 2,
+                 "Wattpilot ($hash->{NAME}) - Ignoring invalid status field key=$key";
+@@ -2972,7 +3038,7 @@ sub Wattpilot_WriteJson($$) {
+   <p>Version 2.1.4 replaces the seven individual phase-switch and minimum-charging Set commands with the grouped <code>phaseSwitch</code> and <code>minimumCharging</code> commands. Protocol keys, public units, validation, and confirmed <code>config...</code> readings remain unchanged. The removed individual Set names have no aliases.</p>
+   <p>Version 2.1.5 limits <code>chargingCurrent</code> to <code>6..min(32, configMaximumCurrentLimit)</code> after a usable <code>ama</code> value has been received for the current device hash. Missing, stale, malformed, non-integer, or out-of-range values keep the compatibility range <code>6..32</code>. FHEMWEB receives the same dynamic upper bound; rejected commands
