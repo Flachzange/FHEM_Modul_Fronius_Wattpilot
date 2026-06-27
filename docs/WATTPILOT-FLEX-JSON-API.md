@@ -223,7 +223,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
 
 
-The names below describe the current version-2.1.7 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.8 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -236,6 +236,14 @@ The names below describe the current version-2.1.7 implementation. They describe
 | `proto` | `deviceStatusProtocol` | raw non-negative integer, separate from hello protocol | observed field/type/value plus separate hello observation; relationship unknown |
 | `rbc` | `deviceRebootCount` | raw non-negative integer on shared interval; no unit/meaning conversion | observed field/type/value; historical reboot-count candidate remains unconfirmed |
 | `rbt` | `uptime` | non-negative value, empirically treated as milliseconds, divided by 1,000, and rendered as cumulative `H:MM` on the shared interval and idle gate | observed field/type/value plus maintainer live-device time progression; broader scope unverified |
+| `cc4.firmware_version` | `deviceControllerFirmwareVersion` | raw string on the shared device-health interval | observed nested member/type/value only; scope and relationship to main firmware unknown |
+| `cc4.firmware_crc` | `deviceControllerFirmwareCRC` | raw string; no decoding or verification | observed nested member/type/value only |
+| `cc4.firmware_integrity` | `deviceControllerFirmwareIntegrity` | raw string; no enum or health verdict | observed nested member/type/value only |
+| `cc4.stack_size` | `deviceControllerStackSize` | raw non-negative integer; no unit conversion | observed nested member/type/value only; meaning and unit unknown |
+| `cc4.reset_reason` | `deviceControllerResetReason` | raw string; tokens not decoded and not equated with `rbc` | observed nested member/type/value only |
+| `cc4.mid_firmware_version` | `deviceControllerMidFirmwareVersion` | raw string | observed nested member/type/value only |
+| `cc4.hwid` | `deviceControllerHardwareId` | raw string | observed nested member/type/value only |
+| `tma[0..5]` | `diag_temperatureSensor1..6` | optional finite numbers, two decimals, diagnostic interval/idle gate; no maximum or derating derivation | observed six-position array plus historical temperature-array candidate; physical mapping and unit unknown |
 | selected raw diagnostic fields | exact `diag_` + protocol key | optional validated scalar; numbers formatted to two decimals without scaling, strings unchanged, booleans as `0|1` | observed field/type only; semantics remain unknown |
 | `car` | `carState` | 0 `unknown`, 1 `idle`, 2 `charging`, 3 `waitingForCar`, 4 `complete`, 5 `error`; other values become `unknown:<raw-value>` | current implementation inference |
 | `frc` | `configForceState` / Set `forceState` | 0 `neutral`, 1 `off`, 2 `on`; Set uses the same numeric values | current implementation plus pinned third-party evidence; Flex writability unverified |
@@ -271,6 +279,8 @@ Version 2.1.4 groups the already verified `psm`/`mpwst`/`mptwt`/`spl3` writes un
 Version 2.1.5 uses the already published, device-confirmed `configMaximumCurrentLimit` value from `ama` as a local FHEM upper bound for writes to `amp` when the value is an integer from 6 through 32. The effective `chargingCurrent` range and FHEMWEB slider are `6..min(32, configMaximumCurrentLimit)`. Before `ama` has been received for the current device hash, and for missing, malformed, non-integer, or out-of-range readings, the module keeps the compatibility range `6..32`. This does not add an `ama` setter, prove new protocol writability, or make the third-party current-limit interpretation an official Fronius Flex API fact.
 
 Version 2.1.7 adds the identity, device-health, and raw-diagnostic mappings listed above. The shared interval now has five independent owners (`energy`, `nrg`, `device_health`, `device_uptime`, and `diagnostic`). `device_health` is not idle-gated; `device_uptime` and `diagnostic` are eligible only while charging or with `update_while_idle=1`. `fbuf_akkuSOC` and `fbuf_pAkku` now belong to the optional `diagnostic` owner rather than a separate battery owner. `diagnosticReadings=0` removes the optional readings and owner state. These are module publication rules, not Wattpilot protocol semantics.
+
+Version 2.1.8 adds the seven validated `cc4` member mappings and six optional numeric `tma` positions listed above. They reuse the existing `device_health` and `diagnostic` owners, respectively. Missing or invalid nested values preserve readings. This is an implementation boundary based on one sanitized Flex 43.4 capture; it is not an official Fronius specification of controller scope, physical sensor placement, units, requiredness, update frequency, or health interpretation.
 
 ## Complete observed status-key reference
 
@@ -352,7 +362,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `cble` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cbm` | string | `"00:00:00:00:00:00"` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cbtt` | number | `22` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `cc4` | object | `{"firmware_version":"0.0.17-8","firmware_crc":"0x5CC8","firmware_integrity":"verified","stack_size":15464,"reset_reason":"\|por\|pin","mid_firmware_version":"BDDF3FF","hwid":"phnx-rts-rev6"}` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `cc4` | object | `{"firmware_version":"0.0.17-8","firmware_crc":"0x5CC8","firmware_integrity":"verified","stack_size":15464,"reset_reason":"\|por\|pin","mid_firmware_version":"BDDF3FF","hwid":"phnx-rts-rev6"}` | selected members exposed as raw `deviceController...` readings; exact controller semantics unknown | none claimed | read-only current mapping; no writability evidence | empirical nested structure/type/value only | Version 2.1.8 validates member types and performs no token decoding, CRC verification, or combined health interpretation. |
 | `cc42l` | boolean | `true` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cc4ae` | array | `[0,0,0,0]` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `cc4ap` | array | `[0,5977,5978,5993]` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
@@ -775,7 +785,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `tcl` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `tds` | number | `1` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ten` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `tma` | array | `[null,null,39,41,40,38.5]` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
+| `tma` | array | `[null,null,39,41,40,38.5]` | optional numeric `diag_temperatureSensor1..6`; physical mapping and unit unknown | none claimed | read-only diagnostic mapping; no writability evidence | empirical array shape/value plus historical temperature-array candidate | Version 2.1.8 accepts finite numeric positions only and derives no maximum or derating state. |
 | `tof` | number | `60` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `tou` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `tpa` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |

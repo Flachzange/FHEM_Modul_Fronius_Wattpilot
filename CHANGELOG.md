@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.1.8] - 2026-06-27
+
+### Controller health and temperature diagnostics
+
+- Adds six optional numeric readings `diag_temperatureSensor1` through `diag_temperatureSensor6` from the observed `tma[0..5]` array. They require `diagnosticReadings=1`, follow the normal diagnostic interval/idle gate, and are formatted with exactly two decimal places. The module deliberately assigns no physical sensor locations, unit, maximum, or derating state.
+- Adds the normal interval-controlled device-health readings `deviceControllerFirmwareVersion`, `deviceControllerFirmwareCRC`, `deviceControllerFirmwareIntegrity`, `deviceControllerStackSize`, `deviceControllerResetReason`, `deviceControllerMidFirmwareVersion`, and `deviceControllerHardwareId` from the observed `cc4` object. The strings and non-negative stack-size value are exposed without decoding tokens, inventing enums, or deriving a combined health verdict.
+- Extends the declarative status-source model with one-level object members and fixed array positions. Missing members, `null`, malformed containers, and wrong-type values preserve existing readings and do not create dirty telemetry.
+- Expands the public reading inventory from 73 to 86 and the consumed status schema from 55 to 68 fields. Adds focused regression coverage for interval publication, partial updates, invalid nested values, diagnostic cleanup, and evidence-boundary negative controls.
+- No real Wattpilot, FHEM reload, WebSocket, authentication, or network integration test was performed for this release candidate; behavior was validated with the repository test harness and the sanitized Flex 43.4 capture.
+
 ## [v2.1.7] - 2026-06-26
 
 ### Identity, device health, and optional raw diagnostics

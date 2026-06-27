@@ -37,6 +37,12 @@ my @public_readings = qw(
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
     configMinimumChargingInterval deviceRebootCount uptime
+    deviceControllerFirmwareVersion deviceControllerFirmwareCRC
+    deviceControllerFirmwareIntegrity deviceControllerStackSize
+    deviceControllerResetReason deviceControllerMidFirmwareVersion
+    deviceControllerHardwareId
+    diag_temperatureSensor1 diag_temperatureSensor2 diag_temperatureSensor3
+    diag_temperatureSensor4 diag_temperatureSensor5 diag_temperatureSensor6
     diag_fbuf_akkuMode diag_fbuf_akkuSOC diag_fbuf_pAkku diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
     diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
     diag_pvopt_deltaA diag_pvopt_specialCase diag_fbuf_pAcTotal
@@ -67,7 +73,7 @@ main::Wattpilot_DispatchMessage($hash, {
     protocol => 2,
 });
 main::readingsSingleUpdate($hash, 'authHashMode', 'pbkdf2', 1);
-main::Wattpilot_UpdateReadings($hash, {
+main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
     typ => 'wattpilot_flex',
     grp => 'Wattpilot Flex Home 22 C6',
     styp => 'wattpilot_flex_c6',
@@ -77,7 +83,7 @@ main::Wattpilot_UpdateReadings($hash, {
     frc => 0,
     amp => 16,
     lmo => 5,
-    alw => 0,
+    alw => JSON::false(),
     modelStatus => 23,
     msi => 27,
     err => 0,
@@ -123,11 +129,21 @@ main::Wattpilot_UpdateReadings($hash, {
     eto => 123456,
     wh => 789,
     nrg => [230, 231, 232, 0, 1.1, 2.2, 3.3, 100, 200, 300, 0, 600],
-}, 'fullStatus');
+    cc4 => {
+        firmware_version => '0.0.17-8',
+        firmware_crc => '0x5CC8',
+        firmware_integrity => 'verified',
+        stack_size => 15464,
+        reset_reason => '|por|pin',
+        mid_firmware_version => 'BDDF3FF',
+        hwid => 'phnx-rts-rev6',
+    },
+    tma => [10, 11, 12, 13, 14, 15],
+}), 'fullStatus');
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 73 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 86 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }
