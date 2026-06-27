@@ -236,9 +236,9 @@ Der Befehl trennt die lokale WebSocket-Sitzung, verwirft sitzungsgebundene Timer
 set wallbox reboot
 ```
 
-`reboot` sendet den nur schreibbaren Trigger `rst` als JSON-Boolean `true` über denselben authentifizierten `setValue`-/`securedMsg`-Pfad wie die übrigen Gerätebefehle. Der Befehl benötigt kein Argument und ist ausdrücklich vom rein lokalen `reconnect` zu unterscheiden: `reboot` fordert einen Neustart des physischen Wattpiloten an, während `reconnect` nur die FHEM-WebSocket-Sitzung neu aufbaut.
+`reboot` sendet den nur schreibbaren Trigger `rst` als JSON-Boolean `true` über denselben authentifizierten `setValue`-/`securedMsg`-Pfad wie die übrigen Gerätebefehle. Nach erfolgreichem Versand wechselt `state` sofort auf `rebooting`. Der Befehl benötigt kein Argument und ist ausdrücklich vom rein lokalen `reconnect` zu unterscheiden: `reboot` fordert einen Neustart des physischen Wattpiloten an, während `reconnect` nur die FHEM-WebSocket-Sitzung neu aufbaut.
 
-Antwortet das Gerät noch regulär, wird diese Response wie bei jedem anderen gesicherten Befehl ausgewertet. Schließt der Wattpilot wegen des Neustarts zuerst die WebSocket-Verbindung, beendet das Modul ausschließlich den ausstehenden Request mit dem bereits gespeicherten Protokollschlüssel `rst` mit `lastCommandStatus=success` und `lastCommandError=none`; andere Befehle bleiben bei Verbindungsverlust Fehlerfälle. Danach greifen unverändert die vorhandenen automatischen Reconnect-Pfade. Bleiben sowohl Response als auch Verbindungsabbruch aus, läuft weiterhin der normale begrenzte Command-Timeout ab. Der gepinnte Drittquellen-Eintrag beschreibt `rst` als write-only `rebootCharger` mit Typ `any`; die Verwendung von `true` ist die Triggerdarstellung des Moduls und muss am Realgerät bestätigt werden.
+Antwortet das Gerät noch regulär, wird diese Response wie bei jedem anderen gesicherten Befehl ausgewertet. Eine Ablehnung, eine fehlerhafte Response oder ein Timeout bei weiterhin offener und authentifizierter Sitzung setzt `state` wieder auf `connected`. Schließt der Wattpilot wegen des Neustarts zuerst die WebSocket-Verbindung, beendet das Modul ausschließlich den ausstehenden Request mit dem bereits gespeicherten Protokollschlüssel `rst` mit `lastCommandStatus=success` und `lastCommandError=none`; andere Befehle bleiben bei Verbindungsverlust Fehlerfälle. Danach greifen unverändert die vorhandenen automatischen Reconnect-Pfade und ersetzen `rebooting` durch die normalen Zustände `disconnected`, `connecting`, `authenticating`, `initializing` und schließlich `connected`. Bleiben sowohl Response als auch Verbindungsabbruch aus, läuft weiterhin der normale begrenzte Command-Timeout ab. Der gepinnte Drittquellen-Eintrag beschreibt `rst` als write-only `rebootCharger` mit Typ `any`; die Verwendung von `true` ist die Triggerdarstellung des Moduls und muss am Realgerät bestätigt werden.
 
 ### Next-Trip-Zeit setzen
 
@@ -330,7 +330,7 @@ Das Modul stellt exakt folgende 86 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
-| `state` | Lifecycle-Zustand: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed` oder `authNonceFailed`. |
+| `state` | Lifecycle-Zustand: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `rebooting`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed` oder `authNonceFailed`. |
 | `deviceFirmwareVersion` | Firmware-/Versionsstring aus der `hello`-Nachricht des Geräts. Identische Reconnect-Werte erneuern das Reading nicht. |
 | `deviceType` | Exakter String aus dem Statusfeld `typ`. |
 | `deviceModel` | Exakter vom Gerät gemeldeter Modell-/Gruppenstring aus `grp`; keine erfundene Modellzuordnung. |

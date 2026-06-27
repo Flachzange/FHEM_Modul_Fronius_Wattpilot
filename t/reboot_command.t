@@ -68,6 +68,10 @@ is(scalar @DevIo::WRITES, 0,
 $hash = fresh_device();
 is(main::Wattpilot_Set($hash, $hash->{NAME}, 'reboot'), undef,
     'reboot is accepted while connected and authenticated');
+is($hash->{READINGS}{state}{VAL}, 'rebooting',
+    'reboot publishes the transitional lifecycle state immediately');
+is($hash->{STATE}, 'rebooting',
+    'reboot also updates the FHEM device STATE');
 is(scalar @DevIo::WRITES, 1,
     'reboot sends exactly one secured frame');
 my ($outer, $inner) = inner_payload($DevIo::WRITES[0]);
@@ -91,12 +95,19 @@ ok(!exists $hash->{helper}{pendingRequests}{1}{disconnectExpected},
     'reboot adds no transport-specific pending flag');
 is(timer_count('command_timeout'), 1,
     'reboot retains the bounded response timeout while the socket stays open');
+like(main::Wattpilot_Set($hash, $hash->{NAME}, 'chargingCurrent', 16),
+    qr/rebooting/,
+    'additional secured commands are rejected during the reboot transition');
+is(scalar @DevIo::WRITES, 1,
+    'reboot transition rejection sends no additional frame');
 
 main::Wattpilot_Parse($hash, encode_json({
     type => 'response', requestId => 1, success => JSON::true, status => {},
 }));
 is($hash->{READINGS}{lastCommandStatus}{VAL}, 'success',
     'a regular successful response completes reboot normally');
+is($hash->{READINGS}{state}{VAL}, 'rebooting',
+    'successful acceptance keeps rebooting until the connection lifecycle advances');
 is($hash->{READINGS}{lastCommandError}{VAL}, 'none',
     'successful reboot response has no command error');
 ok(!exists $hash->{helper}{pendingRequests},
@@ -112,6 +123,18 @@ is($hash->{READINGS}{lastCommandStatus}{VAL}, 'failed',
     'an explicit device rejection remains a failure');
 is($hash->{READINGS}{lastCommandError}{VAL}, 'device rejected rst',
     'reboot rejection uses the normal concise redacted error');
+is($hash->{READINGS}{state}{VAL}, 'connected',
+    'explicit reboot rejection restores connected while the session remains usable');
+
+$hash = fresh_device();
+main::Wattpilot_Set($hash, $hash->{NAME}, 'reboot');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => 1,
+}));
+is($hash->{READINGS}{lastCommandStatus}{VAL}, 'failed',
+    'malformed reboot response remains a command failure');
+is($hash->{READINGS}{state}{VAL}, 'connected',
+    'malformed reboot response restores connected on the still-open session');
 
 $hash = fresh_device();
 main::Wattpilot_Set($hash, $hash->{NAME}, 'reboot');
@@ -178,6 +201,8 @@ is($hash->{READINGS}{lastCommandStatus}{VAL}, 'timeout',
     'missing response and missing disconnect still produce the bounded timeout');
 is($hash->{READINGS}{lastCommandError}{VAL}, 'response timeout',
     'reboot timeout retains the normal concise error');
+is($hash->{READINGS}{state}{VAL}, 'connected',
+    'reboot timeout restores connected while transport and authentication remain active');
 
 $hash = fresh_device();
 $hash->{TEST_OPEN} = 0;

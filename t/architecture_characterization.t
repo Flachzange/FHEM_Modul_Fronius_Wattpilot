@@ -332,6 +332,7 @@ is_deeply(
         authenticating => 'authenticating',
         initializing => 'initializing',
         connected => 'connected',
+        rebooting => 'rebooting',
         auth_failed => 'authFailed',
         auth_timeout => 'authTimeout',
         initialization_timeout => 'initializationTimeout',
