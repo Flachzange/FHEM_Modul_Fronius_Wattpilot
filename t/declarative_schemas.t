@@ -48,8 +48,8 @@ is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
 is(scalar(keys %$command_schema), 14,
     'command schema contains the complete 14-command public surface');
-is(scalar(keys %$status_fields), 55,
-    'status schema contains all 55 consumed protocol fields');
+is(scalar(keys %$status_fields), 68,
+    'status schema contains all 68 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
@@ -188,6 +188,7 @@ my %valid_for_kind = (
     clock_seconds => 3600,
     boolean => JSON::true,
     nrg => [1 .. 12],
+    string => 'synthetic',
     nonempty_string => 'synthetic',
     raw_scalar => 12.3456789,
 );
@@ -200,9 +201,26 @@ my %invalid_for_kind = (
     clock_seconds => 1,
     boolean => 1,
     nrg => [1, 2],
+    string => [],
     nonempty_string => '',
     raw_scalar => {},
 );
+sub status_with_source {
+    my ($source, $value) = @_;
+    return { $source => $value }
+        if $source =~ /^[A-Za-z0-9_]+$/;
+    if ($source =~ /^([A-Za-z0-9_]+)\[(\d+)\]$/) {
+        my ($root, $index) = ($1, $2);
+        my @values = (undef) x ($index + 1);
+        $values[$index] = $value;
+        return { $root => \@values };
+    }
+    if ($source =~ /^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$/) {
+        return { $1 => { $2 => $value } };
+    }
+    die "Unsupported test status source: $source";
+}
+
 $attr{schemaWallbox}{diagnosticReadings} = 1;
 my (@valid_failures, @invalid_failures, @mapping_errors);
 for my $protocol_key (sort keys %$status_fields) {
@@ -210,12 +228,12 @@ for my $protocol_key (sort keys %$status_fields) {
     my $kind = $field->{kind};
     my $valid = main::Wattpilot_NormalizeStatus(
         { NAME => 'schemaWallbox' },
-        { $protocol_key => $valid_for_kind{$kind} });
+        status_with_source($protocol_key, $valid_for_kind{$kind}));
     push @valid_failures, $protocol_key
         if !exists $valid->{$protocol_key};
     my $invalid = main::Wattpilot_NormalizeStatus(
         { NAME => 'schemaWallbox' },
-        { $protocol_key => $invalid_for_kind{$kind} });
+        status_with_source($protocol_key, $invalid_for_kind{$kind}));
     push @invalid_failures, $protocol_key
         if exists $invalid->{$protocol_key};
     push @mapping_errors, "$protocol_key has no readings"

@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.7**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.8**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -12,7 +12,7 @@ Version 2.x ist eine grundlegende Überarbeitung und keine bloße Erweiterung de
 | :--- | :--- | :--- |
 | Definition und Passwort | Passwort als Bestandteil der FHEM-Definition | Definition ohne Passwort; Speicherung über `set <Name> password <secret>` unter stabilen FUUID-basierten Schlüsseln |
 | Geräte und Authentifizierung | Vorgänger-Wattpilot mit PBKDF2 | Legacy-Profil bleibt erhalten; Wattpilot Flex wird ausschließlich über bcrypt authentifiziert |
-| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 73 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
+| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 86 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
 | Protokollverarbeitung | Grundlegende Verarbeitung von `hello`, Authentifizierung und Status | Strikte JSON-Typprüfung, partielle Statusmeldungen, robuste Nachrichtenfortsetzung, gesicherte Befehle und Antwortkorrelation |
 | Laufzeitverhalten | Einfaches Intervall und Idle-Filter | Kontrollierter Lifecycle für Reload, Rename, `modify`, Disable, Reconnect und Delete sowie getrennte Telemetrie-Caches mit gemeinsamem Veröffentlichungstakt |
 | Qualitätssicherung | Ursprünglicher Funktionsumfang | Umfangreiche Regressionstests, gepinnte FHEM-Core-Integration, Dokumentations- und reproduzierbare Releaseprüfungen |
@@ -267,10 +267,10 @@ Steuert die elektrische `nrg`-Telemetrie, `uptime` und aktivierte `diag_...`-Rea
 
 ### `diagnosticReadings` (0 oder 1)
 
-Steuert die fünfzehn optionalen Rohreadings zur Felderkundung, deren Namen mit `diag_` beginnen.
+Steuert die einundzwanzig optionalen Diagnosereadings, deren Namen mit `diag_` beginnen: fünfzehn rohe skalare Felder sowie sechs numerische Positionen des beobachteten `tma`-Arrays.
 
 * `0` (Standard): Diagnosefelder werden weder ausgewertet noch gepuffert. Vorhandene `diag_...`-Readings werden sofort gelöscht und ihr Cache-/Dirty-Zustand verworfen. Das Löschen des Attributs wirkt genauso.
-* `1`: Gültige skalare Werte der fünfzehn ausgewählten Protokollfelder werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
+* `1`: Gültige Werte der einundzwanzig ausgewählten Protokollpositionen werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
 * Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. JSON-Zahlen werden ohne Skalierung oder Umrechnung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und JSON-Booleans erscheinen als `0` oder `1`. Daraus werden weiterhin keine Einheit, Bedeutung oder Vorzeichenkonvention abgeleitet. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
 
 ### `disable` (0 oder 1)
@@ -316,7 +316,7 @@ Legt den bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes fest
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 86 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
@@ -359,6 +359,14 @@ Das Modul stellt exakt folgende 73 öffentlichen Readings bereit:
 | `diag_fbuf_akkuMode` | Optionaler Rohskalar aus `fbuf_akkuMode`; numerische Werte erhalten zwei Nachkommastellen und es wird keine Modus-Enum erfunden. |
 | `deviceRebootCount` | Unveränderter nicht negativer Ganzzahlwert aus `rbc`, im normalen Intervall ohne Idle-Sperre. Die genaue Protokollbedeutung ist unbestätigt. |
 | `uptime` | Nicht negativer Rohwert aus `rbt`, dessen Fortschritt beim getesteten Flex mit Millisekunden konsistent war. Das Modul teilt ihn durch 1.000 und gibt kumulative Stunden und Minuten als `H:MM` aus; verbleibende Sekunden und Millisekunden werden verworfen. Welchen Geräteprozess oder Lifecycle der Zähler genau abbildet, ist nicht bestätigt. Aktualisierung im normalen Intervall beim Laden oder mit `update_while_idle=1`. |
+| `deviceControllerFirmwareVersion` | Roher String aus `cc4.firmware_version`; eine Beziehung zu `deviceFirmwareVersion` wird nicht behauptet. |
+| `deviceControllerFirmwareCRC` | Roher String aus `cc4.firmware_crc`; keine Dekodierung. |
+| `deviceControllerFirmwareIntegrity` | Roher String aus `cc4.firmware_integrity`; kein Enum oder abgeleiteter Health-Status. |
+| `deviceControllerStackSize` | Roher nicht negativer Ganzzahlwert aus `cc4.stack_size`; Bedeutung und Einheit sind unbestätigt. |
+| `deviceControllerResetReason` | Roher String aus `cc4.reset_reason`; Tokens werden nicht dekodiert und das Feld wird nicht mit `deviceRebootCount` gleichgesetzt. |
+| `deviceControllerMidFirmwareVersion` | Roher String aus `cc4.mid_firmware_version`. |
+| `deviceControllerHardwareId` | Roher String aus `cc4.hwid`. |
+| `diag_temperatureSensor1` bis `diag_temperatureSensor6` | Optionale numerische Werte aus `tma[0]` bis `tma[5]`, mit genau zwei Nachkommastellen. Physische Sensorzuordnung, Einheit, Maximum und Derating-Bedeutung werden nicht behauptet. |
 | `diag_fbuf_pGrid` | Optionaler Rohskalar aus `fbuf_pGrid`; keine Behauptung zu Bedeutung, Einheit oder Vorzeichen. |
 | `diag_fbuf_pPv` | Optionaler Rohskalar aus `fbuf_pPv`; keine Behauptung zu Bedeutung oder Einheit. |
 | `diag_pvopt_averagePGrid` | Optionaler Rohskalar aus `pvopt_averagePGrid`; Aggregation und Semantik unbekannt. |

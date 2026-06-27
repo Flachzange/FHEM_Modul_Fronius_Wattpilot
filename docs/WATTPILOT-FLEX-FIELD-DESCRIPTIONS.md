@@ -249,3 +249,18 @@ A future description change should update the applicable empirical field row or 
 | `fbuf_pAcTotal` | `diag_fbuf_pAcTotal` | Optional raw scalar only; observed value is `null` | observed field/null only |
 | `fbuf_ohmpilotState` | `diag_fbuf_ohmpilotState` | Optional raw scalar only; observed value is `null` | observed field/null only |
 | `fbuf_ohmpilotTemperature` | `diag_fbuf_ohmpilotTemperature` | Optional raw scalar only; observed value is `null` | observed field/null only |
+
+## Version 2.1.8 controller and temperature diagnostics
+
+| Key/path | Public reading | Confirmed implementation boundary | Evidence |
+|---|---|---|---|
+| `tma[0]` … `tma[5]` | `diag_temperatureSensor1` … `diag_temperatureSensor6` | Optional finite numeric positions only, formatted with two decimals; no physical assignment, unit, maximum, or derating meaning | observed six-position Flex array plus historical temperature-array candidate |
+| `cc4.firmware_version` | `deviceControllerFirmwareVersion` | Raw JSON string on the shared device-health interval | observed object member/type/value only |
+| `cc4.firmware_crc` | `deviceControllerFirmwareCRC` | Raw JSON string; no CRC decoding or verification | observed object member/type/value only |
+| `cc4.firmware_integrity` | `deviceControllerFirmwareIntegrity` | Raw JSON string; no enum or health verdict | observed object member/type/value only |
+| `cc4.stack_size` | `deviceControllerStackSize` | Raw non-negative integer; meaning and unit unconfirmed | observed object member/type/value only |
+| `cc4.reset_reason` | `deviceControllerResetReason` | Raw JSON string; tokens are not decoded and are not equated with `rbc` | observed object member/type/value only |
+| `cc4.mid_firmware_version` | `deviceControllerMidFirmwareVersion` | Raw JSON string | observed object member/type/value only |
+| `cc4.hwid` | `deviceControllerHardwareId` | Raw JSON string | observed object member/type/value only |
+
+Missing, `null`, structurally invalid, or wrong-type nested values preserve existing readings. These mappings add no setters and do not establish device-requiredness, emission frequency, or cross-firmware compatibility.

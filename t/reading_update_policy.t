@@ -699,7 +699,7 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
 
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.7',
+    is($hash->{VERSION}, '2.1.8',
         'reload-style Initialize refreshes the module version');
     is($hash->{FD}, 69,
         'reload-style Initialize preserves the open transport');
@@ -801,8 +801,8 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     my @optional_diagnostic = grep {
         $policy->{$_}{category} eq 'optional_diagnostic'
     } keys %$policy;
-    is(scalar @optional_diagnostic, 15,
-        'all fifteen optional raw diagnostics are inventoried');
+    is(scalar @optional_diagnostic, 21,
+        'all twenty-one optional diagnostics are inventoried');
     for my $key (@optional_diagnostic) {
         is($policy->{$key}{publication}, 'interval',
             "$key follows the shared interval");
@@ -810,8 +810,11 @@ subtest 'authoritative reading policy inventory is complete' => sub {
             "$key uses the common diagnostic idle gate");
         is($policy->{$key}{owner}, 'diagnostic',
             "$key uses the diagnostic owner");
-        is($policy->{$key}{formatter}, 'diagnostic2',
-            "$key rounds JSON numbers while preserving strings and booleans");
+        my $expected_formatter = $key =~ /^diag_temperature_sensor_/
+            ? 'decimal2'
+            : 'diagnostic2';
+        is($policy->{$key}{formatter}, $expected_formatter,
+            "$key uses its declared two-decimal diagnostic formatter");
     }
 };
 

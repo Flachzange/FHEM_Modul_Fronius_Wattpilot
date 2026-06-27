@@ -52,8 +52,8 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 73,
-    'central reading definition contains all 73 public readings');
+is(scalar(keys %{$interface->{readings}}), 86,
+    'central reading definition contains all 86 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -96,6 +96,19 @@ is_deeply(
         diag_fbuf_akku_mode => 'diag_fbuf_akkuMode',
         device_reboot_count => 'deviceRebootCount',
         device_uptime => 'uptime',
+        device_controller_firmware_version => 'deviceControllerFirmwareVersion',
+        device_controller_firmware_crc => 'deviceControllerFirmwareCRC',
+        device_controller_firmware_integrity => 'deviceControllerFirmwareIntegrity',
+        device_controller_stack_size => 'deviceControllerStackSize',
+        device_controller_reset_reason => 'deviceControllerResetReason',
+        device_controller_mid_firmware_version => 'deviceControllerMidFirmwareVersion',
+        device_controller_hardware_id => 'deviceControllerHardwareId',
+        diag_temperature_sensor_1 => 'diag_temperatureSensor1',
+        diag_temperature_sensor_2 => 'diag_temperatureSensor2',
+        diag_temperature_sensor_3 => 'diag_temperatureSensor3',
+        diag_temperature_sensor_4 => 'diag_temperatureSensor4',
+        diag_temperature_sensor_5 => 'diag_temperatureSensor5',
+        diag_temperature_sensor_6 => 'diag_temperatureSensor6',
         diag_fbuf_p_grid => 'diag_fbuf_pGrid',
         diag_fbuf_p_pv => 'diag_fbuf_pPv',
         diag_pvopt_average_p_grid => 'diag_pvopt_averagePGrid',
@@ -131,7 +144,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 73 public reading names match the 2.x contract');
+    'all 86 public reading names match the 2.x contract');
 is_deeply(
     $interface->{readingCategories},
     {
@@ -174,6 +187,19 @@ is_deeply(
         diag_fbuf_akku_mode => 'optional_diagnostic',
         device_reboot_count => 'device_health',
         device_uptime => 'device_health',
+        device_controller_firmware_version => 'device_health',
+        device_controller_firmware_crc => 'device_health',
+        device_controller_firmware_integrity => 'device_health',
+        device_controller_stack_size => 'device_health',
+        device_controller_reset_reason => 'device_health',
+        device_controller_mid_firmware_version => 'device_health',
+        device_controller_hardware_id => 'device_health',
+        diag_temperature_sensor_1 => 'optional_diagnostic',
+        diag_temperature_sensor_2 => 'optional_diagnostic',
+        diag_temperature_sensor_3 => 'optional_diagnostic',
+        diag_temperature_sensor_4 => 'optional_diagnostic',
+        diag_temperature_sensor_5 => 'optional_diagnostic',
+        diag_temperature_sensor_6 => 'optional_diagnostic',
         diag_fbuf_p_grid => 'optional_diagnostic',
         diag_fbuf_p_pv => 'optional_diagnostic',
         diag_pvopt_average_p_grid => 'optional_diagnostic',

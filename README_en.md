@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.7**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.8**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -12,7 +12,7 @@ Version 2.x is a substantial redesign rather than a small extension of the origi
 | :--- | :--- | :--- |
 | Definition and password | Password included in the FHEM definition | Definition without password; storage through `set <Name> password <secret>` under stable FUUID-based keys |
 | Devices and authentication | Predecessor Wattpilot with PBKDF2 | Legacy profile retained; Wattpilot Flex authenticates exclusively with bcrypt |
-| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 73 readings, confirmed configuration readings, and grouped Set commands |
+| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 86 readings, confirmed configuration readings, and grouped Set commands |
 | Protocol handling | Basic `hello`, authentication, and status handling | Strict JSON type validation, partial status handling, robust message continuation, secured commands, and response correlation |
 | Runtime behavior | Basic interval and idle filtering | Controlled lifecycle behavior for reload, rename, `modify`, disable, reconnect, and delete, plus separate telemetry caches on one publication clock |
 | Quality assurance | Original functional scope | Extensive regression tests, pinned FHEM-core integration, documentation checks, and reproducible release verification |
@@ -267,10 +267,10 @@ Controls electrical `nrg`, `uptime`, and enabled optional diagnostics while the 
 
 ### `diagnosticReadings` (0 or 1)
 
-Controls the fifteen optional raw field-research readings whose names begin with `diag_`.
+Controls the twenty-one optional diagnostic readings whose names begin with `diag_`: fifteen raw scalar fields and six numeric positions from the observed `tma` array.
 
 * `0` (Default): diagnostic fields are not evaluated or cached. Existing `diag_...` readings are deleted immediately and their dirty/cache state is cleared. Deleting the attribute has the same effect.
-* `1`: valid scalar values from the fifteen selected protocol fields are published through the normal `interval` mechanism. They are eligible while the vehicle is charging or when `update_while_idle=1`.
+* `1`: valid values from the twenty-one selected protocol positions are published through the normal `interval` mechanism. They are eligible while the vehicle is charging or when `update_while_idle=1`.
 * The protocol wording is retained exactly after the `diag_` prefix. JSON numbers are rounded to exactly two decimal places without scaling or conversion; strings remain unchanged and JSON booleans become `0` or `1`. No unit, meaning, or sign convention is inferred from that formatting. Missing fields, `null`, objects, arrays, and invalid values preserve the previous reading.
 
 ### `disable` (0 or 1)
@@ -314,7 +314,7 @@ Sets the bcrypt cost factor for newly derived authentication hashes. The default
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 73 public readings:
+The module exposes exactly these 86 public readings:
 
 | Reading | Description |
 | :--- | :--- |
@@ -357,6 +357,14 @@ The module exposes exactly these 73 public readings:
 | `diag_fbuf_akkuMode` | Optional raw scalar from `fbuf_akkuMode`; numeric values use two decimal places and no mode enum is invented. |
 | `deviceRebootCount` | Raw non-negative integer from `rbc`, published on the normal interval without idle gating. The exact protocol meaning remains unverified. |
 | `uptime` | Non-negative raw value from `rbt` whose progression on the tested Flex was consistent with milliseconds. The module divides it by 1,000 and renders cumulative hours and minutes as `H:MM`; remaining seconds and milliseconds are discarded. The exact device process or lifecycle represented by the counter is unconfirmed. Publication uses the normal interval while charging or with `update_while_idle=1`. |
+| `deviceControllerFirmwareVersion` | Raw string from `cc4.firmware_version`; no relationship to `deviceFirmwareVersion` is claimed. |
+| `deviceControllerFirmwareCRC` | Raw string from `cc4.firmware_crc`; no decoding is applied. |
+| `deviceControllerFirmwareIntegrity` | Raw string from `cc4.firmware_integrity`; no enum or derived health verdict is applied. |
+| `deviceControllerStackSize` | Raw non-negative integer from `cc4.stack_size`; exact meaning and unit remain unconfirmed. |
+| `deviceControllerResetReason` | Raw string from `cc4.reset_reason`; tokens are not decoded and the value is not equated with `deviceRebootCount`. |
+| `deviceControllerMidFirmwareVersion` | Raw string from `cc4.mid_firmware_version`. |
+| `deviceControllerHardwareId` | Raw string from `cc4.hwid`. |
+| `diag_temperatureSensor1` through `diag_temperatureSensor6` | Optional numeric values from `tma[0]` through `tma[5]`, formatted with exactly two decimal places. No physical sensor assignment, unit, maximum, or derating meaning is claimed. |
 | `diag_fbuf_pGrid` | Optional raw scalar from `fbuf_pGrid`; no meaning, unit, or sign convention is claimed. |
 | `diag_fbuf_pPv` | Optional raw scalar from `fbuf_pPv`; no meaning or unit is claimed. |
 | `diag_pvopt_averagePGrid` | Optional raw scalar from `pvopt_averagePGrid`; aggregation and semantics remain unknown. |

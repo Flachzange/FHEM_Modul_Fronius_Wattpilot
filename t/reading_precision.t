@@ -61,6 +61,9 @@ subtest 'reading inventory declares one intentional public format per reading' =
         [sort grep { $policy->{$_}{formatter} eq 'decimal2' } keys %$policy],
         [sort qw(
             pv_surplus_start_power three_phase_switch_power
+            diag_temperature_sensor_1 diag_temperature_sensor_2
+            diag_temperature_sensor_3 diag_temperature_sensor_4
+            diag_temperature_sensor_5 diag_temperature_sensor_6
             energy_total energy_since_plug_in
             voltage_l1 voltage_l2 voltage_l3
             current_l1 current_l2 current_l3
