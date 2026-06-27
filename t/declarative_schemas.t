@@ -46,15 +46,15 @@ my $reading_policy = $interface->{readingPolicy};
 
 is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
-is(scalar(keys %$command_schema), 14,
-    'command schema contains the complete 14-command public surface');
+is(scalar(keys %$command_schema), 15,
+    'command schema contains the complete 15-command public surface');
 is(scalar(keys %$status_fields), 68,
     'status schema contains all 68 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
-    [qw(minimum_charging password phase_switch pv_battery reconnect)],
-    'only grouped commands, password, pvBattery, and reconnect remain explicit Set handlers');
+    [qw(minimum_charging password phase_switch pv_battery reboot reconnect)],
+    'only grouped commands, password, pvBattery, reboot, and reconnect remain explicit Set handlers');
 
 my (@command_schema_errors, %seen_public_name);
 for my $key (sort keys %$command_schema) {

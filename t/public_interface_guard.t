@@ -124,7 +124,7 @@ my @public_readings = qw(
 my @public_commands = qw(
     password chargingCurrent forceState chargingMode pvSurplusStartPower
     pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitch
-    minimumCharging chargingPauseAllowed reconnect
+    minimumCharging chargingPauseAllowed reconnect reboot pvBattery
     nextTripTime
 );
 
@@ -358,6 +358,10 @@ for my $entry (@active_docs) {
     my ($label, $text) = @$entry;
     like($text, qr/reconnect/s,
         "$label documents the manual reconnect command");
+    like($text, qr/reboot/s,
+        "$label documents the device reboot command");
+    like($text, qr/rst/s,
+        "$label documents the reboot protocol key");
     like($text, qr/(?:not|kein).*fullStatus.*request|fullStatus.*(?:not|kein).*request/is,
         "$label states that reconnect is not a fullStatus request");
     like($text, qr/minimumCharging.*interval/s,
@@ -373,6 +377,10 @@ like($commandref_en, qr/reconnect.*not a <code>fullStatus<\/code> request/s,
     'English commandref does not misrepresent reconnect as polling');
 like($commandref_de, qr/reconnect.*kein <code>fullStatus<\/code>-Request/s,
     'German commandref does not misrepresent reconnect as polling');
+like($commandref_en, qr/reboot.*<code>rst<\/code>.*securedMsg/s,
+    'English commandref documents the secured reboot path');
+like($commandref_de, qr/reboot.*<code>rst<\/code>.*securedMsg/s,
+    'German commandref documents the secured reboot path');
 like($protocol_sources, qr/No pinned Wattpilot-specific source documents a <code>|No pinned Wattpilot-specific source documents a `fullStatus`/s,
     'protocol provenance records the missing fullStatus request evidence');
 

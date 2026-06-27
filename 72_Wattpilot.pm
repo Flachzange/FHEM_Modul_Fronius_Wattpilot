@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.8';
+my $WATTPILOT_VERSION = '2.1.9';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -319,6 +319,7 @@ my @WATTPILOT_COMMAND_DEFINITION = (
     ['minimum_charging', 'minimumCharging', 'none', 'none', 'special', 'none', 'usage'],
     ['charging_pause_allowed', 'chargingPauseAllowed', '0,1', 'fap', 'boolean', '<0|1>', 'usage'],
     ['reconnect', 'reconnect', 'noArg', 'none', 'special', 'none', 'usage'],
+    ['reboot', 'reboot', 'noArg', 'rst', 'special', 'none', 'usage'],
     ['pv_battery', 'pvBattery', 'none', 'none', 'special', 'none', 'usage'],
     ['next_trip_time', 'nextTripTime', 'none', 'ftt', 'clock', '<HH:MM>', 'usage'],
 );
@@ -476,6 +477,7 @@ my %WATTPILOT_LIFECYCLE_STATE = (
     authenticating         => 'authenticating',
     initializing           => 'initializing',
     connected              => 'connected',
+    rebooting              => 'rebooting',
     auth_failed            => 'authFailed',
     auth_timeout           => 'authTimeout',
     initialization_timeout => 'initializationTimeout',
@@ -2204,8 +2206,20 @@ sub Wattpilot_AbortPendingRequests($$;$) {
     delete $hash->{helper}{pendingRequests};
     $publish = Wattpilot_CommandReadingsMayBePublished($hash)
         if !defined $publish;
-    Wattpilot_SetCommandReadings($hash, $request_id, 'failed', $reason)
-        if $publish;
+    if ($publish) {
+        my $request = $pending->{$request_id};
+        if ($reason eq 'connection lost'
+            && ref($request) eq 'HASH'
+            && defined($request->{key})
+            && $request->{key} eq $WATTPILOT_COMMAND_SCHEMA{reboot}{protocolKey}) {
+            Wattpilot_SetCommandReadings(
+                $hash, $request_id, 'success', 'none');
+        }
+        else {
+            Wattpilot_SetCommandReadings(
+                $hash, $request_id, 'failed', $reason);
+        }
+    }
 }
 
 sub Wattpilot_AbortPendingRequestsForReconnect($) {
@@ -2409,6 +2423,7 @@ sub Wattpilot_Set($@) {
     my $cmd = $a[1] // '';
     my $val = $a[2];
     my $set_options = Wattpilot_SetOptions($hash);
+    my $schema = $WATTPILOT_COMMAND_BY_NAME{$cmd};
 
     return "Unknown argument $cmd, choose one of $set_options"
         if $cmd eq '?';
@@ -2418,6 +2433,17 @@ sub Wattpilot_Set($@) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{reconnect}"
             if @a != 2;
         return Wattpilot_ManualReconnect($hash);
+    }
+    if ($cmd eq $WATTPILOT_COMMAND_NAME{reboot}) {
+        return "Usage: set $name $WATTPILOT_COMMAND_NAME{reboot}"
+            if @a != 2;
+        my $error = Wattpilot_SendSecure(
+            $hash, $schema->{protocolKey}, JSON::true);
+        return $error if defined $error;
+        readingsSingleUpdate(
+            $hash, $WATTPILOT_READING_NAME{state},
+            $WATTPILOT_LIFECYCLE_STATE{rebooting}, 1);
+        return undef;
     }
     if (exists $WATTPILOT_GROUPED_COMMAND_BY_NAME{$cmd}) {
         return Wattpilot_SetGroupedCommand(
@@ -2439,7 +2465,6 @@ sub Wattpilot_Set($@) {
         return undef;
     }
 
-    my $schema = $WATTPILOT_COMMAND_BY_NAME{$cmd};
     if ($schema && $schema->{parser} ne 'special') {
         return Wattpilot_SetUsage($hash, $name, $schema)
             if @a != 3 || !defined $val;
@@ -2463,6 +2488,10 @@ sub Wattpilot_SendSecure($$$) {
 
     return "Device is disabled" if Wattpilot_IsDisabled($name);
     return "Wattpilot is disconnected" if !DevIo_IsOpen($hash);
+    return "Wattpilot is rebooting"
+        if (($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{rebooting})
+        || (($hash->{READINGS}{$WATTPILOT_READING_NAME{state}}{VAL} // '')
+            eq $WATTPILOT_LIFECYCLE_STATE{rebooting});
     return "Wattpilot is not authenticated" if !$hash->{helper}{authenticated}
         || (($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{connected}
             && (($hash->{READINGS}{$WATTPILOT_READING_NAME{state}}{VAL} // '') ne $WATTPILOT_LIFECYCLE_STATE{connected}));
@@ -2510,7 +2539,11 @@ sub Wattpilot_SendSecure($$$) {
     my $final_msg = JSON->new->canonical->encode($secure_msg);
     Log3 $name, 3, "Wattpilot ($name) - Sending secured command key=$key requestId=$requestId";
     Wattpilot_WriteJson($hash, $final_msg);
-    $pending->{$requestId} = { key => $key, value => $val, sentAt => gettimeofday() };
+    $pending->{$requestId} = {
+        key => $key,
+        value => $val,
+        sentAt => gettimeofday(),
+    };
     Wattpilot_SetCommandReadings($hash, $requestId, 'pending', 'none');
     Wattpilot_ScheduleRequestTimeout($hash);
     return undef;
@@ -2604,6 +2637,14 @@ sub Wattpilot_CleanupPendingRequests($) {
         Log3 $hash->{NAME}, 1,
             "Wattpilot ($hash->{NAME}) - Command response timeout key=$key requestId=$request_id";
         Wattpilot_SetCommandReadings($hash, $request_id, 'timeout', 'response timeout');
+        readingsSingleUpdate(
+            $hash, $WATTPILOT_READING_NAME{state},
+            $WATTPILOT_LIFECYCLE_STATE{connected}, 1)
+            if defined($key)
+            && $key eq $WATTPILOT_COMMAND_SCHEMA{reboot}{protocolKey}
+            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{rebooting}
+            && DevIo_IsOpen($hash)
+            && $hash->{helper}{authenticated};
     }
     delete $hash->{helper}{pendingRequests} if !keys %$pending;
     Wattpilot_ScheduleRequestTimeout($hash);
@@ -2632,26 +2673,37 @@ sub Wattpilot_HandleResponse($$) {
     }
 
     my $request = delete $pending->{$request_id};
+    my $is_reboot = defined($request->{key})
+        && $request->{key} eq $WATTPILOT_COMMAND_SCHEMA{reboot}{protocolKey};
     delete $hash->{helper}{pendingRequests} if !keys %$pending;
     Wattpilot_ScheduleRequestTimeout($hash);
 
+    my $error;
     if (!exists $json->{success}) {
         Log3 $hash->{NAME}, 1,
             "Wattpilot ($hash->{NAME}) - Malformed command response requestId=$request_id";
-        Wattpilot_SetCommandReadings($hash, $request_id, 'failed', 'malformed response');
-        return;
+        $error = 'malformed response';
     }
-
-    if ($json->{success}) {
+    elsif ($json->{success}) {
         Wattpilot_UpdateReadings($hash, $json->{status}, 'response')
             if ref($json->{status}) eq 'HASH';
         Wattpilot_SetCommandReadings($hash, $request_id, 'success', 'none');
         return;
     }
+    else {
+        Log3 $hash->{NAME}, 1,
+            "Wattpilot ($hash->{NAME}) - Command rejected key=$request->{key} requestId=$request_id";
+        $error = "device rejected $request->{key}";
+    }
 
-    Log3 $hash->{NAME}, 1,
-        "Wattpilot ($hash->{NAME}) - Command rejected key=$request->{key} requestId=$request_id";
-    Wattpilot_SetCommandReadings($hash, $request_id, 'failed', "device rejected $request->{key}");
+    Wattpilot_SetCommandReadings($hash, $request_id, 'failed', $error);
+    readingsSingleUpdate(
+        $hash, $WATTPILOT_READING_NAME{state},
+        $WATTPILOT_LIFECYCLE_STATE{connected}, 1)
+        if $is_reboot
+        && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{rebooting}
+        && DevIo_IsOpen($hash)
+        && $hash->{helper}{authenticated};
 }
 
 sub Wattpilot_Ready($) {
@@ -3040,6 +3092,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.6 replaces the shared telemetry timer immediately when <code>interval</code> changes between positive values while telemetry is dirty. The queued values remain rate-limited and publish at the new boundary even without another status message. Repeated changes keep exactly one timer, stale callbacks are harmless, idle-gated electrical and battery data remains passive, and a positive change with no dirty telemetry keeps the clock lazy.</p>
   <p>Version 2.1.7 exposes the hello firmware string as <code>deviceFirmwareVersion</code>, adds exact device identity readings, separates <code>deviceHelloProtocol</code> from <code>deviceStatusProtocol</code>, adds interval-controlled <code>deviceRebootCount</code> and <code>uptime</code>, and introduces fifteen optional scalar field-research readings behind <code>diagnosticReadings</code>. The observed <code>rbt</code> progression is treated as milliseconds, divided by 1,000, and rendered as cumulative hours and minutes in <code>H:MM</code>; the exact device process or lifecycle represented by the counter remains unconfirmed. The former standalone stationary-battery mode/SOC/power readings are replaced by raw <code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code>, and <code>diag_fbuf_pAkku</code>. Optional diagnostics are removed immediately when disabled and make no semantic, unit, sign, aggregation, or enum claims.</p>
   <p>Version 2.1.8 adds six optional numeric temperature-array readings <code>diag_temperatureSensor1</code> through <code>diag_temperatureSensor6</code> and seven interval-controlled controller-health readings from the observed <code>cc4</code> object. Temperature positions have no claimed physical sensor assignment, unit, maximum, or derating meaning. Controller strings and the non-negative stack-size value are exposed without decoding tokens, inventing enums, or deriving a combined health verdict. Missing, <code>null</code>, malformed, and wrong-type nested values preserve existing readings.</p>
+  <p>Version 2.1.9 adds <code>set &lt;name&gt; reboot</code>. It sends protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> path and immediately publishes <code>state=rebooting</code> after dispatch. A normal device response remains authoritative; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the Wattpilot closes the socket before responding, only the pending reboot request identified by protocol key <code>rst</code> is completed successfully and the existing automatic reconnect path takes over; unrelated pending commands retain the normal connection-loss failure behavior. The exact trigger value and disconnect timing require real-device confirmation.</p>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3154,6 +3207,8 @@ sub Wattpilot_WriteJson($$) {
         No reading is changed optimistically; only returned device status confirms a value. All six grouped setters were changed individually on a Wattpilot Flex Home 22 C6 running firmware 43.4, confirmed through device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and other firmware/model variants remain unverified.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
         Performs a local controlled WebSocket reconnect without sending a Wattpilot protocol command. Session-owned timers, authentication state, partial JSON, and pending secured commands are invalidated; operational readings and configuration remain intact. Pending commands terminate with <code>lastCommandStatus=failed</code> and <code>lastCommandError=reconnect requested</code>. The command is not a <code>fullStatus</code> request; any initial status after login is device-supplied.</li>
+    <li><code>set &lt;name&gt; reboot</code><br>
+        Reboots the physical Wattpilot by sending protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> command path. After dispatch, <code>state</code> immediately becomes <code>rebooting</code> and further secured commands are rejected during that transition. The command takes no argument and is distinct from the local <code>reconnect</code> command. A returned response is processed normally; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the device closes the socket first, the pending <code>rst</code> request ends with <code>lastCommandStatus=success</code> and <code>lastCommandError=none</code>, pending state is cleared, and the ordinary automatic reconnect path replaces <code>rebooting</code> with its normal connection states. Other commands still fail on connection loss.</li>
     <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
         Requires exactly two-digit <code>HH:MM</code> and sends protocol key <code>ftt</code> as seconds after midnight.</li>
   </ul>
@@ -3191,7 +3246,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Readings</b>
   <ul>
     <li><code>state</code><br>
-        Lifecycle state: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code>, or <code>authNonceFailed</code>.</li>
+        Lifecycle state: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>rebooting</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code>, or <code>authNonceFailed</code>.</li>
     <li><code>deviceFirmwareVersion</code><br>Firmware/version string reported by the device <code>hello</code> message; identical reconnect values do not renew the reading.</li>
     <li><code>deviceType</code>, <code>deviceModel</code>, <code>deviceSubType</code>, <code>deviceVariant</code><br>Exact valid values from <code>typ</code>, <code>grp</code>, <code>styp</code>, and <code>var</code>. No commercial-model mapping is invented.</li>
     <li><code>deviceHelloProtocol</code>, <code>deviceStatusProtocol</code><br>Raw non-negative integers from <code>hello.protocol</code> and <code>status.proto</code>. They remain separate and no relationship is assumed.</li>
@@ -3274,7 +3329,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Values from <code>nrg[7..9]</code>, interpreted as watts.</li>
     <li><code>power</code><br>Value from <code>nrg[11]</code>, interpreted as total watts.</li>
     <li><code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, <code>lastCommandError</code><br>
-        Correlation and result of the most recent secured command. Status values are <code>pending</code>, <code>success</code>, <code>failed</code>, or <code>timeout</code>. If a live session is invalidated before a response arrives, all pending requests and their timeout are cleared and the newest request becomes <code>failed</code> with a stable redacted reason such as <code>connection lost</code>, <code>device disabled</code>, <code>credentials changed</code>, <code>authentication aborted</code>, <code>lifecycle timeout</code>, <code>reconnect requested</code>, <code>definition changed</code>, or <code>session replaced</code>. Undefine and shutdown suppress new diagnostic events.</li>
+        Correlation and result of the most recent secured command. Status values are <code>pending</code>, <code>success</code>, <code>failed</code>, or <code>timeout</code>. If a live session is invalidated before a response arrives, all pending requests and their timeout are cleared and the newest request becomes <code>failed</code> with a stable redacted reason such as <code>connection lost</code>, <code>device disabled</code>, <code>credentials changed</code>, <code>authentication aborted</code>, <code>lifecycle timeout</code>, <code>reconnect requested</code>, <code>definition changed</code>, or <code>session replaced</code>. The sole exception is a connection loss while a pending request uses the reboot protocol key <code>rst</code>: because the device may restart before replying, that request is completed as <code>success</code>/<code>none</code>; explicit responses and the normal timeout remain authoritative. Undefine and shutdown suppress new diagnostic events.</li>
   </ul>
 </ul>
 
@@ -3312,6 +3367,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.6 ersetzt den gemeinsamen Telemetrie-Timer sofort, wenn <code>interval</code> zwischen positiven Werten geändert wird und Telemetrie als geändert vorgemerkt ist. Die gepufferten Werte bleiben intervallgesteuert und werden auch ohne weiteres Statuspaket am neuen Zeitpunkt veröffentlicht. Wiederholte Änderungen behalten genau einen Timer, veraltete Callbacks bleiben wirkungslos, im Idle gesperrte elektrische und Batteriedaten bleiben passiv und ohne Dirty-Daten bleibt die Clock weiterhin lazy.</p>
   <p>Version 2.1.7 stellt den Firmware-String aus der Hello-Nachricht als <code>deviceFirmwareVersion</code> bereit, ergänzt exakte Geräteidentitätsreadings, trennt <code>deviceHelloProtocol</code> von <code>deviceStatusProtocol</code>, ergänzt intervallgesteuerte <code>deviceRebootCount</code> und <code>uptime</code> sowie fünfzehn optionale skalare Felderkundungsreadings hinter <code>diagnosticReadings</code>. Der beobachtete Fortschritt von <code>rbt</code> wird als Millisekunden behandelt, durch 1.000 geteilt und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben; welcher Geräteprozess oder Lifecycle durch den Zähler genau abgebildet wird, bleibt unbestätigt. Die bisherigen eigenständigen stationären Speicher-Modus-/SOC-/Leistungsreadings werden durch rohe <code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code> und <code>diag_fbuf_pAkku</code> ersetzt. Optionale Diagnosen werden beim Abschalten sofort gelöscht und behaupten weder Semantik, Einheit, Vorzeichen, Aggregation noch Enum.</p>
   <p>Version 2.1.8 ergänzt sechs optionale numerische Temperatur-Array-Readings <code>diag_temperatureSensor1</code> bis <code>diag_temperatureSensor6</code> sowie sieben intervallgesteuerte Controller-Health-Readings aus dem beobachteten <code>cc4</code>-Objekt. Für die Temperaturpositionen werden weder physische Sensorzuordnung, Einheit, Maximum noch Derating-Bedeutung behauptet. Controller-Strings und der nicht negative Stack-Size-Wert werden ohne Token-Dekodierung, erfundene Enums oder abgeleiteten Health-Gesamtzustand ausgegeben. Fehlende, <code>null</code>-, strukturell falsche und typfalsche verschachtelte Werte erhalten vorhandene Readings.</p>
+  <p>Version 2.1.9 ergänzt <code>set &lt;name&gt; reboot</code>. Der Befehl sendet den Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den bestehenden authentifizierten <code>setValue</code>/<code>securedMsg</code>-Pfad und veröffentlicht danach sofort <code>state=rebooting</code>. Eine normale Geräteantwort bleibt maßgeblich; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt der Wattpilot die Verbindung vor der Antwort, wird ausschließlich der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request erfolgreich abgeschlossen und der vorhandene automatische Reconnect übernimmt; andere ausstehende Befehle behalten ihr normales Fehlerverhalten bei Verbindungsverlust. Der exakte Triggerwert und das Trennungsverhalten müssen am Realgerät bestätigt werden.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3426,6 +3482,8 @@ sub Wattpilot_WriteJson($$) {
         Kein Reading wird optimistisch geändert; nur vom Gerät zurückgelieferter Status bestätigt einen Wert. Alle sechs gruppierten Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
         Baut die lokale WebSocket-Verbindung kontrolliert neu auf, ohne ein Wattpilot-Protokollkommando zu senden. Sitzungsgebundene Timer, Authentifizierungszustand, Teil-JSON und ausstehende gesicherte Befehle werden verworfen; Betriebsreadings und Konfiguration bleiben erhalten. Ausstehende Befehle enden mit <code>lastCommandStatus=failed</code> und <code>lastCommandError=reconnect requested</code>. Der Befehl ist kein <code>fullStatus</code>-Request; ein Initialstatus nach der Anmeldung wird vom Gerät geliefert.</li>
+    <li><code>set &lt;name&gt; reboot</code><br>
+        Startet den physischen Wattpilot neu, indem der Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den vorhandenen authentifizierten <code>setValue</code>/<code>securedMsg</code>-Befehlspfad gesendet wird. Nach dem Versand wechselt <code>state</code> sofort auf <code>rebooting</code>; weitere gesicherte Befehle werden während dieses Übergangs abgewiesen. Der Befehl benötigt kein Argument und ist vom lokalen <code>reconnect</code> zu unterscheiden. Eine zurückgelieferte Response wird normal ausgewertet; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt das Gerät zuerst den Socket, endet der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request mit <code>lastCommandStatus=success</code> und <code>lastCommandError=none</code>, der Pending-Zustand wird entfernt und der gewöhnliche automatische Reconnect ersetzt <code>rebooting</code> durch seine normalen Verbindungszustände. Andere Befehle schlagen bei Verbindungsverlust weiterhin fehl.</li>
     <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
         Erfordert exakt zweistelliges <code>HH:MM</code> und sendet <code>ftt</code> als Sekunden nach Mitternacht.</li>
   </ul>
@@ -3463,7 +3521,7 @@ sub Wattpilot_WriteJson($$) {
   <b>Readings</b>
   <ul>
     <li><code>state</code><br>
-        Lifecycle-Zustand: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code> oder <code>authNonceFailed</code>.</li>
+        Lifecycle-Zustand: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>rebooting</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code> oder <code>authNonceFailed</code>.</li>
     <li><code>deviceFirmwareVersion</code><br>Firmware-/Versionsstring aus der <code>hello</code>-Nachricht; identische Reconnect-Werte erneuern das Reading nicht.</li>
     <li><code>deviceType</code>, <code>deviceModel</code>, <code>deviceSubType</code>, <code>deviceVariant</code><br>Exakte gültige Werte aus <code>typ</code>, <code>grp</code>, <code>styp</code> und <code>var</code>. Es wird keine kommerzielle Modellzuordnung erfunden.</li>
     <li><code>deviceHelloProtocol</code>, <code>deviceStatusProtocol</code><br>Unveränderte nicht negative Ganzzahlen aus <code>hello.protocol</code> und <code>status.proto</code>. Sie bleiben getrennt; eine Beziehung wird nicht angenommen.</li>
@@ -3546,7 +3604,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>powerL1</code>, <code>powerL2</code>, <code>powerL3</code><br>Werte aus <code>nrg[7..9]</code>, als Watt interpretiert.</li>
     <li><code>power</code><br>Wert aus <code>nrg[11]</code>, als Gesamtleistung in Watt interpretiert.</li>
     <li><code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, <code>lastCommandError</code><br>
-        Korrelation und Ergebnis des letzten gesicherten Befehls. Statuswerte sind <code>pending</code>, <code>success</code>, <code>failed</code> oder <code>timeout</code>. Wird eine aktive Sitzung vor der Antwort invalidiert, werden alle ausstehenden Requests und ihr Timeout entfernt; der neueste Request endet als <code>failed</code> mit einem stabilen redigierten Grund wie <code>connection lost</code>, <code>device disabled</code>, <code>credentials changed</code>, <code>authentication aborted</code>, <code>lifecycle timeout</code>, <code>reconnect requested</code>, <code>definition changed</code> oder <code>session replaced</code>. Undefine und Shutdown unterdrücken neue Diagnose-Events.</li>
+        Korrelation und Ergebnis des letzten gesicherten Befehls. Statuswerte sind <code>pending</code>, <code>success</code>, <code>failed</code> oder <code>timeout</code>. Wird eine aktive Sitzung vor der Antwort invalidiert, werden alle ausstehenden Requests und ihr Timeout entfernt; der neueste Request endet als <code>failed</code> mit einem stabilen redigierten Grund wie <code>connection lost</code>, <code>device disabled</code>, <code>credentials changed</code>, <code>authentication aborted</code>, <code>lifecycle timeout</code>, <code>reconnect requested</code>, <code>definition changed</code> oder <code>session replaced</code>. Einzige Ausnahme ist ein Verbindungsverlust, während ein ausstehender Request den Reboot-Protokollschlüssel <code>rst</code> verwendet: Da das Gerät vor einer Antwort neu starten kann, wird dieser Request als <code>success</code>/<code>none</code> abgeschlossen; explizite Responses und der normale Timeout bleiben maßgeblich. Undefine und Shutdown unterdrücken neue Diagnose-Events.</li>
   </ul>
 </ul>
 
@@ -3561,7 +3619,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.8",
+  "version": "v2.1.9",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

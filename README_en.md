@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.8**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.9**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -230,6 +230,16 @@ set wallbox reconnect
 
 This local lifecycle command closes the WebSocket session, invalidates session-owned timers, authentication, and partial-JSON state, and starts exactly one new connection/authentication cycle. Existing operational readings and configuration remain intact. Pending secured commands terminate with `lastCommandStatus=failed` and `lastCommandError=reconnect requested`. The same terminal diagnostic contract applies to session loss, disable, credential changes, authentication abort, and lifecycle timeout; undefine and shutdown clear internal state without creating new reading events. The FHEMWEB Set list uses `reconnect:noArg`, so no unnecessary value field is shown. This is explicitly **not** a verified `fullStatus` request; any initial status received after login remains server-pushed by the device.
 
+### Reboot the Wattpilot device
+
+```text
+set wallbox reboot
+```
+
+`reboot` sends the write-only `rst` trigger as JSON boolean `true` through the same authenticated `setValue`/`securedMsg` path used by the other device commands. After the request has been sent successfully, `state` immediately changes to `rebooting`. It takes no argument and is deliberately distinct from the local-only `reconnect`: `reboot` requests a restart of the physical Wattpilot, while `reconnect` only rebuilds the FHEM WebSocket session.
+
+If the device still returns a regular response, that response is handled through the normal secured-command path. A rejection, malformed response, or timeout on an otherwise open authenticated session restores `state=connected`. If the Wattpilot closes the WebSocket first because it is rebooting, only the pending request whose existing protocol key is `rst` finishes with `lastCommandStatus=success` and `lastCommandError=none`; unrelated commands still fail on connection loss. The existing automatic reconnect ownership then applies unchanged and replaces `rebooting` with the normal `disconnected`, `connecting`, `authenticating`, `initializing`, and finally `connected` states. If neither a response nor a disconnect arrives, the normal bounded command timeout still applies. The pinned third-party field registry describes `rst` as write-only `rebootCharger` with type `any`; boolean `true` is the module's trigger representation and still requires real-device confirmation.
+
 ### Set next-trip time
 
 ```text
@@ -318,7 +328,7 @@ The module exposes exactly these 86 public readings:
 
 | Reading | Description |
 | :--- | :--- |
-| `state` | Lifecycle state: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed`, or `authNonceFailed`. |
+| `state` | Lifecycle state: `disabled`, `passwordMissing`, `credentialError`, `connecting`, `authenticating`, `initializing`, `connected`, `rebooting`, `disconnected`, `connectionFailed`, `authFailed`, `authTimeout`, `initializationTimeout`, `authSequenceInvalid`, `authConfigMissing`, `authChallengeInvalid`, `authHashUnsupported`, `authHashFailed`, `authHashStoreFailed`, or `authNonceFailed`. |
 | `deviceFirmwareVersion` | Firmware/version string from the device `hello` message. Identical reconnect values do not renew the reading. |
 | `deviceType` | Exact string from status field `typ`. |
 | `deviceModel` | Exact device-reported model/group string from `grp`; no model mapping is invented. |

@@ -247,13 +247,20 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'reload fixture contains the current module file');
     $attr{global}{modpath} = $tmp;
 
+    {
+        no warnings qw(redefine prototype);
+        *main::Wattpilot_SendSecure = sub ($$$) { return undef; };
+    }
+    is(prototype(\&main::Wattpilot_SendSecure), '$$$',
+        'reload fixture models the established three-argument SendSecure prototype');
+
     my @warnings;
     local $SIG{__WARN__} = sub { push @warnings, @_ };
     is(FHEMCorePinned::CommandReload(undef, '72_Wattpilot'), undef,
         'pinned CommandReload executes the real module reload path');
     is($defs{wallbox}, $original_hash,
         'real reload preserves the existing device hash identity');
-    is($hash->{VERSION}, '2.1.8',
+    is($hash->{VERSION}, '2.1.9',
         'real reload refreshes the module version internal');
     is($hash->{DeviceName}, $original_device_name,
         'real reload preserves the configured endpoint');
