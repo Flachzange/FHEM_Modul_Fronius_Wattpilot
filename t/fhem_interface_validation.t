@@ -72,6 +72,8 @@ like($registration{AttrList}, qr/(?:^|\s)interval(?:\s|$)/,
     'interval is registered as a free-value attribute');
 unlike($registration{AttrList}, qr/interval:slider/,
     'interval no longer registers a FHEMWEB slider');
+like($registration{AttrList}, qr/(?:^|\s)inboundWatchdog:0,1(?:\s|$)/,
+    'inboundWatchdog is registered with the boolean widget');
 like($registration{AttrList}, qr/(?:^|\s)rawJSONLog:0,1(?:\s|$)/,
     'rawJSONLog is registered with the boolean widget');
 unlike($registration{AttrList}, qr/(?:^|\s)rawJsonLog(?::|\s|$)/,
@@ -80,6 +82,7 @@ unlike($registration{AttrList}, qr/(?:^|\s)rawJsonLog(?::|\s|$)/,
 my %valid_existing_value = (
     interval          => '30',
     update_while_idle => '0',
+    inboundWatchdog   => '1',
     disable           => '0',
     rawJSONLog        => '0',
     authHash          => 'auto',
@@ -92,6 +95,7 @@ my @invalid_attributes = (
     [interval          => '1.5',      qr/interval must be an integer from 0 to 300/],
     [interval          => 'not-a-number', qr/interval must be an integer from 0 to 300/],
     [update_while_idle => '7',        qr/update_while_idle must be 0 or 1/],
+    [inboundWatchdog   => '2',        qr/inboundWatchdog must be 0 or 1/],
     [disable           => 'true',     qr/disable must be 0 or 1/],
     [rawJSONLog        => 'yes',      qr/rawJSONLog must be 0 or 1/],
     [authHash          => 'sha256',   qr/authHash must be one of auto, pbkdf2, bcrypt/],
@@ -136,6 +140,8 @@ my @valid_attributes = (
     [interval          => '300'],
     [update_while_idle => '0'],
     [update_while_idle => '1'],
+    [inboundWatchdog   => '0'],
+    [inboundWatchdog   => '1'],
     [disable           => '0'],
     [disable           => '1'],
     [rawJSONLog        => '0'],
@@ -157,7 +163,7 @@ for my $case (@valid_attributes) {
 }
 
 for my $attribute (qw(
-    interval update_while_idle disable rawJSONLog authHash authHashCost
+    interval update_while_idle inboundWatchdog disable rawJSONLog authHash authHashCost
 )) {
     my $hash = fresh_device();
     is(main::Wattpilot_Attr('del', $hash->{NAME}, $attribute, undef), undef,

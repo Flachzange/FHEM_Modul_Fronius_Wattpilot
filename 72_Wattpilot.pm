@@ -39,12 +39,14 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.9';
+my $WATTPILOT_VERSION = '2.1.11';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
 my $WATTPILOT_TIMEOUT_RETRY_DELAY = 5;
 my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
+my $WATTPILOT_INBOUND_WATCHDOG_INTERVAL = 30;
+my $WATTPILOT_INBOUND_TIMEOUT = 180;
 my $WATTPILOT_MAX_PENDING_REQUESTS = 32;
 my $WATTPILOT_MAX_JSON_BYTES = 1024 * 1024;
 my $WATTPILOT_MAX_JSON_DOCUMENTS = 256;
@@ -54,6 +56,10 @@ my $WATTPILOT_CHARGING_CURRENT_MAXIMUM = 32;
 # formatter, incoming validator, formatter detail
 my @WATTPILOT_READING_DEFINITION = (
     [qw(state state lifecycle event:connection immediate none connection lifecycle none none)],
+    [qw(connection_last_reconnect_reason connectionLastReconnectReason lifecycle
+            event:connection immediate none connection enum none none)],
+    [qw(connection_automatic_reconnect_count connectionAutomaticReconnectCount lifecycle
+            event:connection immediate none connection integer none none)],
     [qw(firmware_version deviceFirmwareVersion identity event:hello immediate-on-change none identity text none none)],
     [qw(device_type deviceType identity status:typ immediate-on-change none typ text nonempty_string none)],
     [qw(device_model deviceModel identity status:grp immediate-on-change none grp text nonempty_string none)],
@@ -501,12 +507,15 @@ sub Wattpilot_Initialize($) {
     my ($hash) = @_;
 
     # FHEM CommandReload calls Initialize while existing device hashes remain
-    # in %defs. Refresh only the module-version Internal; do not alter runtime
-    # state, connections, credentials, timers, or readings.
+    # in %defs. Preserve the live session, initialize the two persistent
+    # connection diagnostics without events, and ensure exactly one watchdog
+    # for an already connected device.
     for my $device_hash (values %defs) {
         next if ref($device_hash) ne 'HASH';
         next if ($device_hash->{TYPE} // '') ne 'Wattpilot';
         $device_hash->{VERSION} = $WATTPILOT_VERSION;
+        Wattpilot_InitializeConnectionDiagnostics($device_hash);
+        Wattpilot_StartInboundWatchdog($device_hash);
         if (AttrVal($device_hash->{NAME}, 'diagnosticReadings', 0) eq '1') {
             Wattpilot_ClearOptionalDiagnosticCache($device_hash);
         }
@@ -525,7 +534,7 @@ sub Wattpilot_Initialize($) {
     $hash->{ReadyFn}  = \&Wattpilot_Ready;
     $hash->{ShutdownFn} = \&Wattpilot_Shutdown;
     
-    $hash->{AttrList} = "interval update_while_idle:0,1 diagnosticReadings:0,1 disable:0,1 rawJSONLog:0,1 authHash:auto,pbkdf2,bcrypt authHashCost:slider,4,1,14 " .
+    $hash->{AttrList} = "interval update_while_idle:0,1 diagnosticReadings:0,1 inboundWatchdog:0,1 disable:0,1 rawJSONLog:0,1 authHash:auto,pbkdf2,bcrypt authHashCost:slider,4,1,14 " .
         $readingFnAttributes;
 
     return FHEM::Meta::InitMod(__FILE__, $hash);
@@ -641,6 +650,78 @@ sub Wattpilot_ScheduleConnect($;$$) {
     return undef if !Wattpilot_IsRuntimeActive($hash, $disable_override);
     return undef if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
     return Wattpilot_ScheduleTimer($hash, 'connect', $delay, 'Wattpilot_Connect', undef, $disable_override);
+}
+
+sub Wattpilot_InitializeConnectionDiagnostics($) {
+    my ($hash) = @_;
+    return if ref($hash) ne 'HASH';
+
+    my $needs_reason = !exists $hash->{READINGS}{$WATTPILOT_READING_NAME{connection_last_reconnect_reason}};
+    my $needs_count = !exists $hash->{READINGS}{$WATTPILOT_READING_NAME{connection_automatic_reconnect_count}};
+    return if !$needs_reason && !$needs_count;
+
+    readingsBeginUpdate($hash);
+    Wattpilot_PublishReading(
+        $hash,
+        $WATTPILOT_READING_NAME{connection_last_reconnect_reason},
+        'none') if $needs_reason;
+    Wattpilot_PublishReading(
+        $hash,
+        $WATTPILOT_READING_NAME{connection_automatic_reconnect_count},
+        0) if $needs_count;
+    readingsEndUpdate($hash, 0);
+}
+
+sub Wattpilot_StartInboundWatchdog($;$$) {
+    my ($hash, $enabled_override, $reset_liveness) = @_;
+    my $enabled = defined($enabled_override)
+        ? $enabled_override
+        : AttrVal($hash->{NAME}, 'inboundWatchdog', 1);
+    if ($enabled ne '1') {
+        Wattpilot_CancelTimer($hash, 'inbound_watchdog');
+        return undef;
+    }
+    return undef if !Wattpilot_IsRuntimeActive($hash);
+    return undef if !DevIo_IsOpen($hash);
+    my $device_type = $hash->{helper}{deviceType};
+    $device_type =
+        $hash->{READINGS}{$WATTPILOT_READING_NAME{device_type}}{VAL}
+        if !defined($device_type) || $device_type eq '';
+    return undef if ($device_type // '') ne 'wattpilot_flex';
+    my $state = $hash->{STATE} // '';
+    return undef if $state ne $WATTPILOT_LIFECYCLE_STATE{connected}
+        && $state ne $WATTPILOT_LIFECYCLE_STATE{rebooting};
+
+    $hash->{helper}{lastInboundJsonAt} = gettimeofday()
+        if $reset_liveness || !defined($hash->{helper}{lastInboundJsonAt});
+    return Wattpilot_ScheduleTimer(
+        $hash, 'inbound_watchdog', $WATTPILOT_INBOUND_WATCHDOG_INTERVAL,
+        'Wattpilot_InboundWatchdog');
+}
+
+sub Wattpilot_RecordReconnect($$$) {
+    my ($hash, $reason, $automatic) = @_;
+    return if ref($hash) ne 'HASH';
+    return if !defined($hash->{NAME})
+        || !defined($defs{$hash->{NAME}})
+        || $defs{$hash->{NAME}} != $hash;
+    return if $hash->{helper}{undefined}
+        || $hash->{helper}{deleting}
+        || $hash->{helper}{shuttingDown};
+
+    Wattpilot_InitializeConnectionDiagnostics($hash);
+    my $count_reading = $WATTPILOT_READING_NAME{connection_automatic_reconnect_count};
+    my $count = $hash->{READINGS}{$count_reading}{VAL};
+    $count = 0 if !defined($count) || $count !~ /^\d+$/;
+
+    readingsBeginUpdate($hash);
+    Wattpilot_PublishReading(
+        $hash,
+        $WATTPILOT_READING_NAME{connection_last_reconnect_reason},
+        $reason);
+    Wattpilot_PublishReading($hash, $count_reading, $count + 1)
+        if $automatic;
+    readingsEndUpdate($hash, 1);
 }
 
 sub Wattpilot_CloseDevIoForContext($;$) {
@@ -792,6 +873,7 @@ sub Wattpilot_Define($$) {
 
     $hash->{DeviceName} = $definition->{device_name};
     $hash->{VERSION} = $WATTPILOT_VERSION;
+    Wattpilot_InitializeConnectionDiagnostics($hash) if !$is_modify;
     if (defined $definition->{serial}) {
         $hash->{SERIAL} = $definition->{serial};
     } else {
@@ -932,8 +1014,10 @@ sub Wattpilot_StartOpen($$) {
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
             readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connection_failed}, 1);
-            Wattpilot_ScheduleConnect($hash, 60)
-                if !defined($hash->{NEXT_OPEN}) || $hash->{NEXT_OPEN} <= gettimeofday();
+            if (!defined($hash->{NEXT_OPEN}) || $hash->{NEXT_OPEN} <= gettimeofday()) {
+                Wattpilot_RecordReconnect($hash, 'socketError', 1);
+                Wattpilot_ScheduleConnect($hash, 60);
+            }
             return;
         }
         if (!DevIo_IsOpen($hash)) {
@@ -991,16 +1075,21 @@ sub Wattpilot_LifecycleTimeout($) {
 
     return if $hash->{helper}{timeoutRetryUsed};
     $hash->{helper}{timeoutRetryUsed} = 1;
+    Wattpilot_RecordReconnect($hash, 'lifecycleTimeout', 1);
     Wattpilot_ScheduleConnect($hash, $WATTPILOT_TIMEOUT_RETRY_DELAY);
 }
 
 sub Wattpilot_Read($) {
     my ($hash) = @_;
+    my $state_before_read = $hash->{STATE} // '';
     my $buf = DevIo_SimpleRead($hash);
 
     if (!defined($buf)) {
         my $devio_owns_reconnect = $hash->{DevIoJustClosed} ? 1 : 0;
         my $idle_refresh_pending = $hash->{helper}{idleRefreshPending} ? 1 : 0;
+        my $was_live_session = $state_before_read ne $WATTPILOT_LIFECYCLE_STATE{disconnected}
+            && $state_before_read ne $WATTPILOT_LIFECYCLE_STATE{connection_failed}
+            && $state_before_read ne $WATTPILOT_LIFECYCLE_STATE{disabled};
         Wattpilot_NextLifecycleGeneration($hash);
         Wattpilot_CancelAllTimers($hash);
         if ($idle_refresh_pending && !$hash->{helper}{idleRefreshAttempted}) {
@@ -1011,6 +1100,8 @@ sub Wattpilot_Read($) {
         delete $hash->{helper}{openInFlight};
         Wattpilot_ClearConnectionState($hash, 'connection lost');
         if (Wattpilot_IsRuntimeActive($hash)) {
+            Wattpilot_RecordReconnect($hash, 'socketClosed', 1)
+                if $was_live_session;
             readingsSingleUpdate(
                 $hash, $WATTPILOT_READING_NAME{state},
                 $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1)
@@ -1076,6 +1167,7 @@ sub Wattpilot_ProcessJsonPayload($$) {
     delete $hash->{helper}{jsonBuffer};
     for my $document (@documents) {
         my ($raw, $json) = @$document;
+        $hash->{helper}{lastInboundJsonAt} = gettimeofday();
         Wattpilot_LogRawJson($hash, "IN", $raw);
         Wattpilot_DispatchMessage($hash, $json);
     }
@@ -1498,6 +1590,47 @@ sub Wattpilot_MarkInitialized($) {
     Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
     delete $hash->{helper}{timeoutRetryUsed};
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connected}, 1);
+    Wattpilot_StartInboundWatchdog($hash);
+}
+
+sub Wattpilot_InboundWatchdog($) {
+    my ($ctx) = @_;
+    my $hash = $ctx->{hash};
+    return if !Wattpilot_TimerContextValid($hash, $ctx);
+    Wattpilot_FinishTimer($hash, $ctx);
+
+    return if AttrVal($hash->{NAME}, 'inboundWatchdog', 1) ne '1';
+    return if !DevIo_IsOpen($hash);
+    my $state = $hash->{STATE} // '';
+    return if $state ne $WATTPILOT_LIFECYCLE_STATE{connected}
+        && $state ne $WATTPILOT_LIFECYCLE_STATE{rebooting};
+
+    my $now = gettimeofday();
+    my $last = $hash->{helper}{lastInboundJsonAt};
+    if (!defined $last) {
+        $last = $now;
+        $hash->{helper}{lastInboundJsonAt} = $last;
+    }
+    my $age = $now - $last;
+    Log3 $hash->{NAME}, 5,
+        "Wattpilot ($hash->{NAME}) - inbound watchdog age=" . int($age) . " seconds";
+
+    if ($age >= $WATTPILOT_INBOUND_TIMEOUT) {
+        Log3 $hash->{NAME}, 2,
+            "Wattpilot ($hash->{NAME}) - no inbound JSON for "
+            . int($age) . " seconds; reconnecting silent session";
+        Wattpilot_RecordReconnect($hash, 'inboundTimeout', 1);
+        Wattpilot_InvalidateSession($hash, undef, 'connection lost');
+        readingsSingleUpdate(
+            $hash, $WATTPILOT_READING_NAME{state},
+            $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
+        Wattpilot_ScheduleConnect($hash, 1);
+        return;
+    }
+
+    Wattpilot_ScheduleTimer(
+        $hash, 'inbound_watchdog', $WATTPILOT_INBOUND_WATCHDOG_INTERVAL,
+        'Wattpilot_InboundWatchdog');
 }
 
 sub Wattpilot_StartIdleRefreshWindow($) {
@@ -1534,6 +1667,7 @@ sub Wattpilot_IdleRefreshTimeout($) {
     $hash->{helper}{idleRefreshAwaitingReconnectNrg} = 1;
     Log3 $hash->{NAME}, 3,
         "Wattpilot ($hash->{NAME}) - idle refresh fallback closes the session once for this idle episode";
+    Wattpilot_RecordReconnect($hash, 'idleRefreshTimeout', 1);
     Wattpilot_InvalidateSession($hash, undef, 'connection lost');
     readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
     Wattpilot_ScheduleConnect($hash, 1);
@@ -2245,6 +2379,7 @@ sub Wattpilot_ManualReconnect($) {
     delete $hash->{helper}{pendingReconnectAfterOpen};
     Wattpilot_StopIdleRefresh($hash);
     delete $hash->{helper}{idleRefreshAttempted};
+    Wattpilot_RecordReconnect($hash, 'manual', 0);
     Wattpilot_InvalidateSession($hash, undef, 'reconnect requested');
     Wattpilot_ApplyConfiguredState($hash, 0);
     return undef;
@@ -2593,6 +2728,7 @@ sub Wattpilot_ClearConnectionState($;$) {
     delete $hash->{helper}{deviceType};
     delete $hash->{helper}{protocol};
     delete $hash->{helper}{jsonBuffer};
+    delete $hash->{helper}{lastInboundJsonAt};
     delete $hash->{helper}{volatileTelemetryCache};
     delete $hash->{helper}{telemetryClock};
     if (ref($hash->{helper}{telemetryPublication}) eq 'HASH') {
@@ -2760,6 +2896,16 @@ sub Wattpilot_Attr(@) {
         Wattpilot_ClearOptionalDiagnosticReadings($hash);
     }
 
+    if ($attrName eq "inboundWatchdog" && ($cmd eq "set" || $cmd eq "del")) {
+        my $enabled = $cmd eq "del" ? 1 : $attrVal;
+        if ($enabled eq "1") {
+            Wattpilot_StartInboundWatchdog($hash, 1, 1);
+        }
+        else {
+            Wattpilot_CancelTimer($hash, 'inbound_watchdog');
+        }
+    }
+
     if ($attrName eq "rawJSONLog" && $cmd eq "set" && $attrVal eq "1") {
         Log3 $name, 1, "Wattpilot ($name) - WARNING: raw JSON logging was requested; it becomes active only with verbose=5 and may then contain sensitive authentication, network, device, and operational data";
     }
@@ -2791,7 +2937,7 @@ sub Wattpilot_ValidateAttribute($$) {
     my ($attr_name, $attr_value) = @_;
 
     my %boolean_attribute = map { $_ => 1 } qw(
-        update_while_idle diagnosticReadings disable rawJSONLog
+        update_while_idle diagnosticReadings inboundWatchdog disable rawJSONLog
     );
     if ($boolean_attribute{$attr_name}) {
         return "$attr_name must be 0 or 1"
@@ -3206,9 +3352,9 @@ sub Wattpilot_WriteJson($$) {
         <code>dischargeStopTime &lt;HH:MM|24:00&gt;</code> &rarr; <code>pdlo</code> as seconds after midnight.<br>
         No reading is changed optimistically; only returned device status confirms a value. All six grouped setters were changed individually on a Wattpilot Flex Home 22 C6 running firmware 43.4, confirmed through device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and other firmware/model variants remain unverified.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
-        Performs a local controlled WebSocket reconnect without sending a Wattpilot protocol command. Session-owned timers, authentication state, partial JSON, and pending secured commands are invalidated; operational readings and configuration remain intact. Pending commands terminate with <code>lastCommandStatus=failed</code> and <code>lastCommandError=reconnect requested</code>. The command is not a <code>fullStatus</code> request; any initial status after login is device-supplied.</li>
+        Performs a local controlled WebSocket reconnect without sending a Wattpilot protocol command. Session-owned timers, authentication state, partial JSON, and pending secured commands are invalidated; operational readings and configuration remain intact. Pending commands terminate with <code>lastCommandStatus=failed</code> and <code>lastCommandError=reconnect requested</code>. The command is not a <code>fullStatus</code> request; any initial status after login is device-supplied. Initialized live sessions of the empirically evidenced <code>wattpilot_flex</code> device profile are also guarded by an independent inbound watchdog: every complete decoded JSON document refreshes liveness, and at least 180 seconds without one triggers exactly one automatic reconnect at the next 30-second check. The watchdog is independent of <code>interval</code> and <code>update_while_idle</code> and can be suspended temporarily with <code>inboundWatchdog=0</code> without closing the session or disabling other reconnect paths. The legacy <code>devicetype=wattpilot</code> profile deliberately receives no such timeout because no sufficiently bounded idle-message cadence is evidenced for it.</li>
     <li><code>set &lt;name&gt; reboot</code><br>
-        Reboots the physical Wattpilot by sending protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> command path. After dispatch, <code>state</code> immediately becomes <code>rebooting</code> and further secured commands are rejected during that transition. The command takes no argument and is distinct from the local <code>reconnect</code> command. A returned response is processed normally; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the device closes the socket first, the pending <code>rst</code> request ends with <code>lastCommandStatus=success</code> and <code>lastCommandError=none</code>, pending state is cleared, and the ordinary automatic reconnect path replaces <code>rebooting</code> with its normal connection states. Other commands still fail on connection loss.</li>
+        Reboots the physical Wattpilot by sending protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> command path. After dispatch, <code>state</code> immediately becomes <code>rebooting</code> and further secured commands are rejected during that transition. The command takes no argument and is distinct from the local <code>reconnect</code> command. A returned response is processed normally; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the device closes the socket first, the pending <code>rst</code> request ends with <code>lastCommandStatus=success</code> and <code>lastCommandError=none</code>, pending state is cleared, and the ordinary automatic reconnect path replaces <code>rebooting</code> with its normal connection states. Other commands still fail on connection loss. For the evidenced <code>wattpilot_flex</code> profile, the inbound watchdog remains armed during the transitional <code>rebooting</code> state so that a device which neither responds nor closes the transport cannot leave the session permanently unmonitored.</li>
     <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
         Requires exactly two-digit <code>HH:MM</code> and sends protocol key <code>ftt</code> as seconds after midnight.</li>
   </ul>
@@ -3231,6 +3377,8 @@ sub Wattpilot_WriteJson($$) {
         <code>0</code> is the default and keeps ordinary electrical <code>nrg</code>, <code>uptime</code>, and enabled optional diagnostics passive while not charging; <code>1</code> admits real incoming idle values from those owners on the shared telemetry clock. With either value, charging-to-idle starts one bounded electrical refresh: one valid device-supplied <code>nrg</code> in the transition message or grace window may bypass the clock, otherwise at most one controlled reconnect is used. Changing the attribute during the episode neither duplicates nor cancels it. The attribute does not gate energy: <code>eto</code>/<code>wh</code> are queued only when their formatted public values actually change, so identical snapshots do not renew timestamps. No device emission frequency is claimed, no polling command is invented, and no zero value is synthesized.</li>
     <li><code>diagnosticReadings &lt;0|1&gt;</code><br>
         <code>0</code> is the default and immediately deletes all optional <code>diag_...</code> readings and clears their cache/dirty state; deleting the attribute has the same effect. <code>1</code> enables the twenty-one optional diagnostic readings on the normal <code>interval</code>, eligible while charging or with <code>update_while_idle=1</code>. JSON numbers are formatted with exactly two decimal places, strings remain unchanged, and JSON booleans become <code>0|1</code>; missing, <code>null</code>, object, array, or invalid values preserve the previous reading.</li>
+    <li><code>inboundWatchdog &lt;0|1&gt;</code><br>
+        <code>1</code> is the default. For an initialized live <code>wattpilot_flex</code> session it enables the independent 30-second inbound-silence check with an inactivity threshold of at least 180 seconds. Setting <code>0</code> removes only that timer immediately; the connection, lifecycle state, readings, telemetry, and ordinary socket/lifecycle/idle-refresh/manual reconnect paths remain unchanged. Setting <code>1</code> or deleting the attribute re-arms exactly one eligible live Flex watchdog with a fresh inactivity grace period. The legacy <code>devicetype=wattpilot</code> profile remains outside this watchdog.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         <code>0</code> is the default. Setting <code>1</code> invalidates the active session and pending work, closes the connection, and publishes <code>state=disabled</code>. Setting <code>0</code> or deleting the attribute reapplies the configured state and reconnects when credentials and runtime state permit.</li>
     <li><code>rawJSONLog &lt;0|1&gt;</code><br>
@@ -3247,6 +3395,8 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>state</code><br>
         Lifecycle state: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>rebooting</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code>, or <code>authNonceFailed</code>.</li>
+    <li><code>connectionLastReconnectReason</code><br>Persistent reason for the most recently triggered reconnect: <code>none</code>, <code>manual</code>, <code>socketClosed</code>, <code>socketError</code>, <code>lifecycleTimeout</code>, <code>idleRefreshTimeout</code>, or <code>inboundTimeout</code>. The reading timestamp records when it occurred.</li>
+    <li><code>connectionAutomaticReconnectCount</code><br>Cumulative number of automatically triggered reconnects. A manual <code>set &lt;name&gt; reconnect</code> does not increment it.</li>
     <li><code>deviceFirmwareVersion</code><br>Firmware/version string reported by the device <code>hello</code> message; identical reconnect values do not renew the reading.</li>
     <li><code>deviceType</code>, <code>deviceModel</code>, <code>deviceSubType</code>, <code>deviceVariant</code><br>Exact valid values from <code>typ</code>, <code>grp</code>, <code>styp</code>, and <code>var</code>. No commercial-model mapping is invented.</li>
     <li><code>deviceHelloProtocol</code>, <code>deviceStatusProtocol</code><br>Raw non-negative integers from <code>hello.protocol</code> and <code>status.proto</code>. They remain separate and no relationship is assumed.</li>
@@ -3278,7 +3428,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App setting <code>State of charge SoC</code> from <code>pdt</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped setter accepts whole percentages only.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App switch <code>Limit discharging time</code> from <code>pdle</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App start/stop times from <code>pdls</code> and <code>pdlo</code>, converted from whole seconds after midnight to <code>HH:MM</code>. The six configuration mappings were matched to simultaneous Solar.wattpilot app values on one Flex Home 22 C6 running firmware 43.4. All six grouped setters were subsequently accepted on the same model/firmware, reflected in device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and broader firmware/model scope remain unverified.</li>
-    <li>All 24 configuration readings update immediately after valid device confirmation. Identity readings and the device-supplied discrete readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code>, and <code>errorCode</code> publish immediately only when their public value changes. <code>authHashMode</code> updates when an authentication method is selected; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, and <code>lastCommandError</code> update with command lifecycle events. Energy, electrical <code>nrg</code>, device-health values, <code>uptime</code>, and enabled optional diagnostics keep separate caches and dirty fields but share one <code>interval</code> clock; one group never republishes stale values from another. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
+    <li>All 24 configuration readings update immediately after valid device confirmation. Identity readings and the device-supplied discrete readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code>, and <code>errorCode</code> publish immediately only when their public value changes. <code>authHashMode</code> updates when an authentication method is selected; <code>connectionLastReconnectReason</code> and <code>connectionAutomaticReconnectCount</code> record reconnect lifecycle events; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, and <code>lastCommandError</code> update with command lifecycle events. Energy, electrical <code>nrg</code>, device-health values, <code>uptime</code>, and enabled optional diagnostics keep separate caches and dirty fields but share one <code>interval</code> clock; one group never republishes stale values from another. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
   </ul>
   <p><b>Note on aWATTar:</b> aWATTar is a provider or tariff name associated with dynamic electricity prices, not a technical abbreviation introduced by this module. Names containing <code>Awattar</code> in the imported go-e enum refer to price-controlled charging decisions. <code>Fallback</code> denotes the default outcome of a decision branch when no more specific charging reason applies; it does not automatically indicate a technical fault. The exact trigger and full semantics of these codes are not confirmed for Wattpilot Flex. In particular, <code>notChargingBecauseFallbackAwattar</code> alone does not prove that an aWATTar tariff is enabled.</p>
   <p><b>Charging-decision compatibility mapping</b></p>
@@ -3481,9 +3631,9 @@ sub Wattpilot_WriteJson($$) {
         <code>dischargeStopTime &lt;HH:MM|24:00&gt;</code> &rarr; <code>pdlo</code> als Sekunden seit Mitternacht.<br>
         Kein Reading wird optimistisch geändert; nur vom Gerät zurückgelieferter Status bestätigt einen Wert. Alle sechs gruppierten Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
-        Baut die lokale WebSocket-Verbindung kontrolliert neu auf, ohne ein Wattpilot-Protokollkommando zu senden. Sitzungsgebundene Timer, Authentifizierungszustand, Teil-JSON und ausstehende gesicherte Befehle werden verworfen; Betriebsreadings und Konfiguration bleiben erhalten. Ausstehende Befehle enden mit <code>lastCommandStatus=failed</code> und <code>lastCommandError=reconnect requested</code>. Der Befehl ist kein <code>fullStatus</code>-Request; ein Initialstatus nach der Anmeldung wird vom Gerät geliefert.</li>
+        Baut die lokale WebSocket-Verbindung kontrolliert neu auf, ohne ein Wattpilot-Protokollkommando zu senden. Sitzungsgebundene Timer, Authentifizierungszustand, Teil-JSON und ausstehende gesicherte Befehle werden verworfen; Betriebsreadings und Konfiguration bleiben erhalten. Ausstehende Befehle enden mit <code>lastCommandStatus=failed</code> und <code>lastCommandError=reconnect requested</code>. Der Befehl ist kein <code>fullStatus</code>-Request; ein Initialstatus nach der Anmeldung wird vom Gerät geliefert. Initialisierte aktive Sitzungen des empirisch belegten Geräteprofils <code>wattpilot_flex</code> werden zusätzlich durch einen unabhängigen Inbound-Watchdog überwacht: Jedes vollständig dekodierte JSON-Dokument erneuert die Liveness; mindestens 180 Sekunden ohne ein solches Dokument lösen beim nächsten 30-Sekunden-Prüflauf genau einen automatischen Reconnect aus. Der Watchdog ist unabhängig von <code>interval</code> und <code>update_while_idle</code> und kann mit <code>inboundWatchdog=0</code> vorübergehend ausgesetzt werden, ohne die Sitzung zu schließen oder andere Reconnect-Pfade abzuschalten. Das Legacy-Profil <code>devicetype=wattpilot</code> erhält bewusst keinen solchen Timeout, weil dafür keine hinreichend begrenzte Idle-Nachrichtenfrequenz belegt ist.</li>
     <li><code>set &lt;name&gt; reboot</code><br>
-        Startet den physischen Wattpilot neu, indem der Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den vorhandenen authentifizierten <code>setValue</code>/<code>securedMsg</code>-Befehlspfad gesendet wird. Nach dem Versand wechselt <code>state</code> sofort auf <code>rebooting</code>; weitere gesicherte Befehle werden während dieses Übergangs abgewiesen. Der Befehl benötigt kein Argument und ist vom lokalen <code>reconnect</code> zu unterscheiden. Eine zurückgelieferte Response wird normal ausgewertet; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt das Gerät zuerst den Socket, endet der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request mit <code>lastCommandStatus=success</code> und <code>lastCommandError=none</code>, der Pending-Zustand wird entfernt und der gewöhnliche automatische Reconnect ersetzt <code>rebooting</code> durch seine normalen Verbindungszustände. Andere Befehle schlagen bei Verbindungsverlust weiterhin fehl.</li>
+        Startet den physischen Wattpilot neu, indem der Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den vorhandenen authentifizierten <code>setValue</code>/<code>securedMsg</code>-Befehlspfad gesendet wird. Nach dem Versand wechselt <code>state</code> sofort auf <code>rebooting</code>; weitere gesicherte Befehle werden während dieses Übergangs abgewiesen. Der Befehl benötigt kein Argument und ist vom lokalen <code>reconnect</code> zu unterscheiden. Eine zurückgelieferte Response wird normal ausgewertet; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt das Gerät zuerst den Socket, endet der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request mit <code>lastCommandStatus=success</code> und <code>lastCommandError=none</code>, der Pending-Zustand wird entfernt und der gewöhnliche automatische Reconnect ersetzt <code>rebooting</code> durch seine normalen Verbindungszustände. Andere Befehle schlagen bei Verbindungsverlust weiterhin fehl. Beim belegten Profil <code>wattpilot_flex</code> bleibt der Inbound-Watchdog auch im Übergangszustand <code>rebooting</code> aktiv, damit ein Gerät, das weder antwortet noch den Transport schließt, die Sitzung nicht dauerhaft unüberwacht lässt.</li>
     <li><code>set &lt;name&gt; nextTripTime &lt;HH:MM&gt;</code><br>
         Erfordert exakt zweistelliges <code>HH:MM</code> und sendet <code>ftt</code> als Sekunden nach Mitternacht.</li>
   </ul>
@@ -3506,6 +3656,8 @@ sub Wattpilot_WriteJson($$) {
         <code>0</code> ist Standard und belässt gewöhnliche elektrische <code>nrg</code>-Telemetrie, <code>uptime</code> und aktivierte optionale Diagnosen im Idle passiv; <code>1</code> verarbeitet echte Idle-Werte dieser Owner im gemeinsamen Telemetrietakt. Bei beiden Werten startet Charging-zu-Idle genau einen begrenzten elektrischen Refresh: Ein gültiges Geräte-<code>nrg</code> in der Übergangsnachricht oder im Zeitfenster darf den Takt einmalig umgehen; andernfalls erfolgt höchstens ein kontrollierter Reconnect. Eine Attributänderung während der Episode dupliziert oder beendet sie nicht. Das Attribut sperrt Energie nicht: <code>eto</code>/<code>wh</code> werden nur vorgemerkt, wenn sich ihr formatierter öffentlicher Wert tatsächlich ändert; identische Statuswerte erneuern keine Zeitstempel. Es wird keine Geräte-Sendefrequenz behauptet, kein Polling-Kommando erfunden und kein Nullwert synthetisiert.</li>
     <li><code>diagnosticReadings &lt;0|1&gt;</code><br>
         <code>0</code> ist Standard und löscht sofort alle optionalen <code>diag_...</code>-Readings sowie deren Cache-/Dirty-Zustand; das Löschen des Attributs wirkt genauso. <code>1</code> aktiviert die einundzwanzig optionalen Diagnosereadings im normalen <code>interval</code>, zulässig beim Laden oder mit <code>update_while_idle=1</code>. JSON-Zahlen werden mit genau zwei Nachkommastellen formatiert, Strings bleiben unverändert und JSON-Booleans erscheinen als <code>0|1</code>; fehlende, <code>null</code>-, Objekt-, Array- oder ungültige Werte erhalten das bisherige Reading.</li>
+    <li><code>inboundWatchdog &lt;0|1&gt;</code><br>
+        <code>1</code> ist Standard. Bei einer initialisierten aktiven <code>wattpilot_flex</code>-Sitzung aktiviert es die unabhängige 30-Sekunden-Stilleprüfung mit einer Inaktivitätsgrenze von mindestens 180 Sekunden. <code>0</code> entfernt ausschließlich diesen Timer sofort; Verbindung, Lifecycle-Zustand, Readings, Telemetrie sowie gewöhnliche Socket-/Lifecycle-/Idle-Refresh-/manuelle Reconnect-Pfade bleiben unverändert. <code>1</code> oder das Löschen des Attributs aktiviert genau einen geeigneten aktiven Flex-Watchdog mit einem frischen Inaktivitätszeitfenster. Das Legacy-Profil <code>devicetype=wattpilot</code> bleibt außerhalb dieses Watchdogs.</li>
     <li><code>disable &lt;0|1&gt;</code><br>
         <code>0</code> ist Standard. <code>1</code> verwirft die aktive Sitzung und ausstehende Arbeit, trennt die Verbindung und veröffentlicht <code>state=disabled</code>. <code>0</code> oder das Löschen des Attributs wendet den konfigurierten Zustand erneut an und verbindet neu, sobald Zugangsdaten und Laufzeitzustand dies zulassen.</li>
     <li><code>rawJSONLog &lt;0|1&gt;</code><br>
@@ -3522,6 +3674,8 @@ sub Wattpilot_WriteJson($$) {
   <ul>
     <li><code>state</code><br>
         Lifecycle-Zustand: <code>disabled</code>, <code>passwordMissing</code>, <code>credentialError</code>, <code>connecting</code>, <code>authenticating</code>, <code>initializing</code>, <code>connected</code>, <code>rebooting</code>, <code>disconnected</code>, <code>connectionFailed</code>, <code>authFailed</code>, <code>authTimeout</code>, <code>initializationTimeout</code>, <code>authSequenceInvalid</code>, <code>authConfigMissing</code>, <code>authChallengeInvalid</code>, <code>authHashUnsupported</code>, <code>authHashFailed</code>, <code>authHashStoreFailed</code> oder <code>authNonceFailed</code>.</li>
+    <li><code>connectionLastReconnectReason</code><br>Persistenter Grund des zuletzt ausgelösten Reconnects: <code>none</code>, <code>manual</code>, <code>socketClosed</code>, <code>socketError</code>, <code>lifecycleTimeout</code>, <code>idleRefreshTimeout</code> oder <code>inboundTimeout</code>. Der Reading-Zeitstempel zeigt den Zeitpunkt des Ereignisses.</li>
+    <li><code>connectionAutomaticReconnectCount</code><br>Kumulative Anzahl automatisch ausgelöster Reconnects. Ein manueller <code>set &lt;name&gt; reconnect</code> erhöht den Zähler nicht.</li>
     <li><code>deviceFirmwareVersion</code><br>Firmware-/Versionsstring aus der <code>hello</code>-Nachricht; identische Reconnect-Werte erneuern das Reading nicht.</li>
     <li><code>deviceType</code>, <code>deviceModel</code>, <code>deviceSubType</code>, <code>deviceVariant</code><br>Exakte gültige Werte aus <code>typ</code>, <code>grp</code>, <code>styp</code> und <code>var</code>. Es wird keine kommerzielle Modellzuordnung erfunden.</li>
     <li><code>deviceHelloProtocol</code>, <code>deviceStatusProtocol</code><br>Unveränderte nicht negative Ganzzahlen aus <code>hello.protocol</code> und <code>status.proto</code>. Sie bleiben getrennt; eine Beziehung wird nicht angenommen.</li>
@@ -3553,7 +3707,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App-Einstellung <code>State of charge SoC</code> aus <code>pdt</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Der gruppierte Setter akzeptiert nur ganze Prozentwerte.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App-Schalter <code>Limit discharging time</code> aus <code>pdle</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App-Start-/Stoppzeiten aus <code>pdls</code> und <code>pdlo</code>, von ganzen Sekunden seit Mitternacht nach <code>HH:MM</code> umgerechnet. Die sechs Konfigurationszuordnungen wurden auf einem Flex Home 22 C6 mit Firmware 43.4 anhand zeitgleich übereinstimmender Solar.wattpilot-App-Werte belegt. Alle sechs gruppierten Setter wurden anschließend auf demselben Modell/Firmwarestand vom Gerät angenommen, im geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
-    <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Identitätsreadings und die vom Gerät gelieferten diskreten Readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code> und <code>errorCode</code> werden sofort, aber nur bei einer tatsächlichen Änderung ihres öffentlichen Werts veröffentlicht. <code>authHashMode</code> wird bei der Auswahl eines Authentifizierungsverfahrens aktualisiert; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code> und <code>lastCommandError</code> folgen den Ereignissen im Befehls-Lifecycle. Energie-, elektrische <code>nrg</code>-Telemetrie, Gerätegesundheitswerte, <code>uptime</code> und aktivierte optionale Diagnosen behalten getrennte Caches und Dirty-Felder, teilen aber einen <code>interval</code>-Takt; eine Gruppe veröffentlicht nie alte Werte einer anderen. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
+    <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Identitätsreadings und die vom Gerät gelieferten diskreten Readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code> und <code>errorCode</code> werden sofort, aber nur bei einer tatsächlichen Änderung ihres öffentlichen Werts veröffentlicht. <code>authHashMode</code> wird bei der Auswahl eines Authentifizierungsverfahrens aktualisiert; <code>connectionLastReconnectReason</code> und <code>connectionAutomaticReconnectCount</code> dokumentieren Reconnect-Ereignisse; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code> und <code>lastCommandError</code> folgen den Ereignissen im Befehls-Lifecycle. Energie-, elektrische <code>nrg</code>-Telemetrie, Gerätegesundheitswerte, <code>uptime</code> und aktivierte optionale Diagnosen behalten getrennte Caches und Dirty-Felder, teilen aber einen <code>interval</code>-Takt; eine Gruppe veröffentlicht nie alte Werte einer anderen. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
   </ul>
   <p><b>Hinweis zu aWATTar:</b> aWATTar ist ein Anbieter- beziehungsweise Tarifname für dynamische Strompreise und kein technisches Kürzel des Moduls. Die aus der go-e-Enum übernommenen Namen mit <code>Awattar</code> bezeichnen preisabhängige Ladeentscheidungen. <code>Fallback</code> bezeichnet dabei den Standardausgang eines Entscheidungszweigs, wenn kein speziellerer Ladegrund greift, und nicht automatisch einen technischen Fehler. Für den Wattpilot Flex sind der genaue Auslöser dieser Codes und ihre vollständige Semantik nicht bestätigt; insbesondere beweist <code>notChargingBecauseFallbackAwattar</code> allein nicht, dass ein aWATTar-Tarif aktiviert ist.</p>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
@@ -3619,7 +3773,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.9",
+  "version": "v2.1.11",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

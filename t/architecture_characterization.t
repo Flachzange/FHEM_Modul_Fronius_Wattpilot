@@ -53,12 +53,14 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 86,
-    'central reading definition contains all 86 public readings');
+is(scalar(keys %{$interface->{readings}}), 88,
+    'central reading definition contains all 88 public readings');
 is_deeply(
     $interface->{readings},
     {
         state => 'state',
+        connection_last_reconnect_reason => 'connectionLastReconnectReason',
+        connection_automatic_reconnect_count => 'connectionAutomaticReconnectCount',
         firmware_version => 'deviceFirmwareVersion',
         device_type => 'deviceType',
         device_model => 'deviceModel',
@@ -145,11 +147,13 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 86 public reading names match the 2.x contract');
+    'all 88 public reading names match the 2.x contract');
 is_deeply(
     $interface->{readingCategories},
     {
         state => 'lifecycle',
+        connection_last_reconnect_reason => 'lifecycle',
+        connection_automatic_reconnect_count => 'lifecycle',
         firmware_version => 'identity',
         device_type => 'identity',
         device_model => 'identity',

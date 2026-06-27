@@ -164,6 +164,10 @@ is($hash->{READINGS}{power}{VAL}, '1388.00',
     'idle timeout never synthesizes zero electrical readings');
 is(scalar @DevIo::CLOSES, 1, 'missing nrg triggers one controlled refresh close');
 is(timer_count('connect'), 1, 'missing nrg schedules one refresh reconnect');
+is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'idleRefreshTimeout',
+    'idle refresh recovery records its reconnect reason');
+is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 1,
+    'idle refresh recovery increments the automatic reconnect count');
 due_in(1);
 is(timer_count('idle_refresh'), 0, 'refresh reconnect does not start a second idle timer');
 main::Wattpilot_Parse($hash, status_msg({ car => 2 }));
@@ -243,6 +247,10 @@ is(timer_count('lifecycle_timeout'), 1, 'authenticating has one lifecycle timeou
 due_in(30);
 is($hash->{STATE}, 'authTimeout', 'authentication timeout is exposed');
 is(timer_count('connect'), 1, 'first authentication timeout schedules one retry');
+is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'lifecycleTimeout',
+    'authentication timeout retry records its reconnect reason');
+is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 1,
+    'authentication timeout retry increments the automatic reconnect count');
 due_in(5);
 is($hash->{STATE}, 'authenticating', 'timeout retry uses the normal open path');
 due_in(30);
@@ -431,6 +439,10 @@ $DevIo::OPEN_ERROR = 'synthetic immediate connect failure';
 main::Wattpilot_Connect($hash);
 is($hash->{STATE}, 'connectionFailed', 'immediate DevIo open error reports connection failed');
 is(timer_count('connect'), 1, 'immediate DevIo open error schedules recovery through guarded connect');
+is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'socketError',
+    'module-owned open recovery records its socket error reason');
+is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 1,
+    'module-owned open recovery increments the automatic reconnect count');
 ok(!defined $hash->{NEXT_OPEN}, 'immediate DevIo open error has no DevIo recovery owner');
 ok(!exists $DevIo::READYFNLIST{$hash->{NAME}},
     'immediate DevIo open error leaves no readyfnlist owner');
