@@ -48,6 +48,7 @@ is_deeply(
         minimum_charging => 'minimumCharging',
         charging_pause_allowed => 'chargingPauseAllowed',
         reconnect => 'reconnect',
+        reboot => 'reboot',
         pv_battery => 'pvBattery',
         next_trip_time => 'nextTripTime',
     },

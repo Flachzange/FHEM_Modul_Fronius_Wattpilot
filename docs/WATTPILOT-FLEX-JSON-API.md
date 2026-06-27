@@ -223,7 +223,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
 
 
-The names below describe the current version-2.1.8 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.9 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -265,6 +265,7 @@ The names below describe the current version-2.1.8 implementation. They describe
 | `nrg[11]` | `power` | formats two decimals; interpreted as total watts | current implementation inference |
 | `authRequired.hash` | `authHashMode` | `auto` accepts announced `bcrypt` or `pbkdf2`; missing hash selects PBKDF2 only for the evidenced predecessor protocol-2 profile | current implementation; relation to observed status `authhash` remains unverified |
 | outbound `setValue` in `securedMsg` | `lastCommandRequestId`, `lastCommandStatus`, `lastCommandError` | request correlation, HMAC-SHA256 envelope, pending/success/failed/timeout result readings | current implementation; field-specific live verification is documented below |
+| outbound `setValue` key `rst` in `securedMsg` | Set `reboot` | JSON boolean `true`; an explicit response remains authoritative, while connection loss before a response completes only the marked reboot request as successful and leaves the existing reconnect lifecycle in charge | pinned third-party registry documents write-only `rst`/`rebootCharger` with type `any`; exact trigger value and real-device disconnect/reboot behavior remain unverified |
 
 The exact relationship, evaluation order, precedence, and any role of `cpDisabledRequest` between `modelStatus` and `msi` are not confirmed for Wattpilot Flex. The documentation therefore does not claim that `modelStatus` is necessarily the final/effective decision or that `msi` is necessarily a pre-CP decision. If the values differ, they must be treated as two device-supplied diagnostic values; no causal chain is inferred.
 
@@ -281,6 +282,8 @@ Version 2.1.5 uses the already published, device-confirmed `configMaximumCurrent
 Version 2.1.7 adds the identity, device-health, and raw-diagnostic mappings listed above. The shared interval now has five independent owners (`energy`, `nrg`, `device_health`, `device_uptime`, and `diagnostic`). `device_health` is not idle-gated; `device_uptime` and `diagnostic` are eligible only while charging or with `update_while_idle=1`. `fbuf_akkuSOC` and `fbuf_pAkku` now belong to the optional `diagnostic` owner rather than a separate battery owner. `diagnosticReadings=0` removes the optional readings and owner state. These are module publication rules, not Wattpilot protocol semantics.
 
 Version 2.1.8 adds the seven validated `cc4` member mappings and six optional numeric `tma` positions listed above. They reuse the existing `device_health` and `diagnostic` owners, respectively. Missing or invalid nested values preserve readings. This is an implementation boundary based on one sanitized Flex 43.4 capture; it is not an official Fronius specification of controller scope, physical sensor placement, units, requiredness, update frequency, or health interpretation.
+
+Version 2.1.9 adds the write-only command mapping Set `reboot` to secured `setValue` key `rst` with JSON boolean `true`. The pinned third-party registry names `rst` as `rebootCharger`, marks it write-only, and declares JSON type `any`; it does not establish the exact trigger value. A returned device response is handled normally. If the socket closes first, only the request marked as expecting a reboot disconnect is completed successfully and the existing reconnect lifecycle proceeds. This is an FHEM-side request-lifecycle rule and still requires real-device confirmation.
 
 ## Complete observed status-key reference
 

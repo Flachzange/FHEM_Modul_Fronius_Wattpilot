@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.1.9] - 2026-06-27
+
+### Device reboot command
+
+- Adds the no-argument Set command `reboot`, which sends the write-only protocol key `rst` with JSON boolean `true` through the existing authenticated `setValue`/`securedMsg` path. The local `reconnect` command remains unchanged and sends no Wattpilot protocol frame.
+- Marks only the reboot request as expecting a transport loss. A normal success or rejection response still completes through the existing response path; if the device closes the WebSocket first, the reboot request completes successfully instead of becoming a misleading `connection lost` failure. Other pending command types retain their established failure behavior.
+- Keeps the existing DevIo reconnect ownership unchanged: ordinary EOF remains ReadyFn-owned and an ownerless WebSocket Close receives exactly one guarded module reconnect. If neither a response nor a disconnect occurs, the normal bounded command timeout still applies.
+- Adds deterministic coverage for Set discovery and arity, the exact secured `rst` payload, success/rejection responses, ordinary EOF, WebSocket Close, reconnect ownership, timeout cleanup, and negative controls for unrelated commands.
+- The pinned third-party field registry describes `rst` as write-only `rebootCharger` with JSON type `any`; the choice of boolean `true` is the module's trigger representation and still requires real-device confirmation.
+
 ## [v2.1.8] - 2026-06-27
 
 ### Controller health and temperature diagnostics
