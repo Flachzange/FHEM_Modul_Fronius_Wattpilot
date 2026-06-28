@@ -26,7 +26,7 @@ The complete Ethernet TCP scan found these open listeners:
 | ---: | --- | --- |
 | `80/tcp` | HTTP, nginx | authenticated local WebSocket endpoint used by the module |
 | `9180/tcp` | HTTP, nginx | unencrypted WebSocket endpoint with application-level authentication |
-| `9443/tcp` | TLS/HTTP, nginx | TLS WebSocket endpoint that immediately exposes status without the observed bcrypt exchange |
+| `9443/tcp` | TLS/HTTP, nginx | TLS WebSocket endpoint that exposes status and accepted a controlled no-op setter check without the observed bcrypt exchange |
 
 Both 9180 and 9443 rejected an ordinary HTTP `GET /` with:
 
@@ -39,9 +39,9 @@ Both accepted a standards-compliant WebSocket upgrade and returned `101 Switchin
 
 Port 9180 reported `secured:true` and issued the bcrypt `authRequired` challenge. Port 9443 reported `secured:false` and immediately emitted status messages over TLS without the observed Wattpilot-password exchange or client certificate.
 
-No setter check was performed against Ethernet port 9443.
+A controlled check on Ethernet port 9443 used a supported setter and wrote back exactly the value that had just been read from `fullStatus`. The listener returned a correlated successful response containing the unchanged value. No operating setting was effectively changed.
 
-A later connection to the Ethernet address on port 80 while the test client was attached to the Wattpilot hotspot returned `authRequired`. This supports an interface- or destination-address-dependent policy rather than behavior determined only by the TCP port number.
+A connection to the Ethernet address on port 80 returned `authRequired`. This confirms that the Ethernet security profile differs by listener and that port 9443 is not merely a TLS equivalent of the authenticated port-80 API.
 
 ## Wattpilot hotspot listeners
 
@@ -105,13 +105,15 @@ The checks were deliberately designed not to change an operating setting.
 
 A first application-level message targeted a read-only status field. The device parsed the request and returned a semantic `has no setter` error. This established that incoming client application messages were being processed rather than silently ignored.
 
-A second check used a supported setter and wrote back exactly the value that had just been read from `fullStatus`. Ports 80, 443, 9181, and 9443 each returned a correlated successful response containing the unchanged value.
+A second check used a supported setter and wrote back exactly the value that had just been read from `fullStatus`. Hotspot ports 80, 443, 9181, and 9443 each returned a correlated successful response containing the unchanged value.
+
+The same no-op setter check was then performed against Ethernet port 9443. It also returned a correlated successful response containing the unchanged value.
 
 The request used a numeric request identifier. The correlated response represented the identifier as a string.
 
-These observations establish that the four hotspot listeners reporting `secured:false` are not passive read-only streams. They accept setter messages without the additional Wattpilot application-level secured-message exchange used on ports 9180 and 8443.
+These observations establish that the four hotspot listeners reporting `secured:false`, and Ethernet port 9443, are not passive read-only streams. They accept setter messages without the additional Wattpilot application-level secured-message exchange used on the authenticated listeners.
 
-Access still required association with and reachability through the Wattpilot hotspot. The hotspot WLAN may therefore be the intended outer access-control boundary. The observation alone does not establish vendor intent or exposure outside that network.
+Hotspot access required association with and reachability through the Wattpilot hotspot. Ethernet port 9443, however, was reachable from the ordinary local network used for the device. The observations alone do not establish vendor intent or exposure beyond networks that can route to the listener.
 
 ## OTA and partition fields visible on 9443
 
@@ -156,7 +158,9 @@ The fields `otaif` and `otap` are candidates for passive observation during a fu
 
 The exposed status stream includes more than electrical measurements. It contains network, backend, device, and operational configuration.
 
-For the observed device and firmware, clients associated with the hotspot could read this data and perform the controlled no-op setter checks on ports 80, 443, 9181, and 9443 without the additional Wattpilot secured-message exchange. This may be an intentional trusted-hotspot design. The observations alone do not establish a vulnerability classification or vendor intent.
+For the observed device and firmware, clients associated with the hotspot could read this data and perform the controlled no-op setter checks on ports 80, 443, 9181, and 9443 without the additional Wattpilot secured-message exchange. A client with ordinary local-network reachability could also perform the controlled no-op setter check on Ethernet port 9443.
+
+The Ethernet result is more security-relevant than the hotspot-only result because the access boundary is the surrounding local network rather than association with the device hotspot. This may still be an intentional trusted-LAN integration design. The observations alone do not establish a vulnerability classification or vendor intent.
 
 Raw captures and full status payloads must therefore be treated as sensitive and must not be committed or posted publicly without sanitization.
 
@@ -164,15 +168,14 @@ Raw captures and full status payloads must therefore be treated as sensitive and
 
 The investigation does not establish:
 
-- whether the hotspot behavior is intentional and documented internally;
-- whether every supported setter is available through all four `secured:false` hotspot listeners;
+- whether the hotspot and Ethernet 9443 behavior is intentional and documented internally;
+- whether every supported setter is available through all `secured:false` listeners;
 - whether any command classes have additional authorization checks;
-- whether Ethernet port 9443 accepts setter messages;
-- whether the interface-dependent behavior is implemented by nginx routing, separate backend listeners, or another network-policy layer;
+- whether the behavior is implemented by nginx routing, separate backend listeners, or another network-policy layer;
 - the intended purpose of the hotspot-local SSH service;
 - the certificate identity and validation expectations intended for ordinary TLS clients;
 - the exact meaning of `otaif` and every member of `otap`;
-- whether the ports, message sequence, and `secured` values are stable across firmware versions or device models;
+- whether the ports, message sequence, `secured` values, and setter behavior are stable across firmware versions or device models;
 - whether any listener is intended or suitable as an alternative transport for this FHEM module.
 
 No alternative module transport should be implemented solely from these observations. Any such change requires a separate issue, safety and privacy analysis, reproducible sanitized tests, and explicit protocol-source documentation.
