@@ -2,7 +2,7 @@
 
 Checked on 2026-06-28 on one Wattpilot Flex Home 22 C6 running firmware 43.4.
 
-This note records sanitized empirical observations of local TCP and WebSocket listeners. It is not an official Fronius protocol specification and does not establish cross-model or cross-version behavior.
+This note records sanitized empirical observations of local TCP, SSH, and WebSocket listeners. It is not an official Fronius protocol specification and does not establish cross-model or cross-version behavior.
 
 Related records:
 
@@ -12,21 +12,21 @@ Related records:
 
 ## Evidence and privacy boundary
 
-The retained evidence consists of a complete TCP connect scan of the Ethernet address, service detection, ordinary HTTP requests, standards-compliant WebSocket upgrades, and passive WebSocket captures. No state-changing WebSocket message was sent during this investigation.
+The retained evidence consists of complete TCP connect scans, service detection, ordinary HTTP requests, standards-compliant WebSocket upgrades, passive WebSocket captures, one SSH authentication-method query with an intentionally nonexistent probe user, and controlled no-op setter checks that wrote back a value already active on the device.
 
-Raw captures are deliberately not committed. The local full-status stream contains device identifiers, network configuration, backend information, operational state, and other potentially sensitive data. Examples below remove the real serial number, local addresses, authentication tokens, and unrelated status values.
+No raw captures are committed. The local full-status stream contains device identifiers, network configuration, backend information, operational state, and other potentially sensitive data. Examples and summaries below remove the real serial number, local addresses, request identifiers, authentication values, SSIDs, BSSIDs, certificate fingerprints, and unrelated status values.
+
+No reboot, OTA, partition, network, force-state, charging-mode, or changed-value command was sent. No SSH key was tested and no SSH login was attempted.
 
 ## Ethernet listeners
 
-The complete TCP scan found these open listeners:
+The complete Ethernet TCP scan found these open listeners:
 
 | Port | Detected service | Observed role |
 | ---: | --- | --- |
-| `80/tcp` | HTTP, nginx | existing local WebSocket endpoint used by the module |
+| `80/tcp` | HTTP, nginx | authenticated local WebSocket endpoint used by the module |
 | `9180/tcp` | HTTP, nginx | unencrypted WebSocket endpoint with application-level authentication |
 | `9443/tcp` | TLS/HTTP, nginx | TLS WebSocket endpoint that immediately exposes status without the observed bcrypt exchange |
-
-The service names above are empirical observations, not a compatibility guarantee. No conclusion is made about UDP services, other Wattpilot models, or future firmware versions.
 
 Both 9180 and 9443 rejected an ordinary HTTP `GET /` with:
 
@@ -35,88 +35,87 @@ HTTP/1.1 400 Bad Request
 The WebSocket handshake Upgrade field is missing
 ```
 
-Both accepted a standards-compliant WebSocket upgrade and returned:
+Both accepted a standards-compliant WebSocket upgrade and returned `101 Switching Protocols`.
+
+Port 9180 reported `secured:true` and issued the bcrypt `authRequired` challenge. Port 9443 reported `secured:false` and immediately emitted status messages over TLS without the observed Wattpilot-password exchange or client certificate.
+
+No setter check was performed against Ethernet port 9443.
+
+A later connection to the Ethernet address on port 80 while the test client was attached to the Wattpilot hotspot returned `authRequired`. This supports an interface- or destination-address-dependent policy rather than behavior determined only by the TCP port number.
+
+## Wattpilot hotspot listeners
+
+A complete TCP connect scan through the Wattpilot's own WLAN hotspot found exactly these open TCP ports:
+
+| Port | Detected service |
+| ---: | --- |
+| `22/tcp` | Dropbear SSH 2024.85 |
+| `80/tcp` | nginx, WebSocket |
+| `443/tcp` | nginx, WebSocket over TLS |
+| `8443/tcp` | nginx, WebSocket over TLS |
+| `9180/tcp` | nginx, WebSocket |
+| `9181/tcp` | nginx, WebSocket |
+| `9443/tcp` | nginx, WebSocket over TLS |
+
+The TLS listeners on 443, 8443, and 9443 presented the same device-specific certificate issued by the private `Wattpilot production CA`. Identifying certificate data and fingerprints are deliberately omitted.
+
+The scan was TCP-only. It does not establish whether additional UDP services exist.
+
+## Hotspot SSH listener
+
+Port 22 identified itself as Dropbear SSH 2024.85 using SSH protocol 2 on Linux.
+
+The advertised algorithm set included modern options such as Curve25519, Ed25519, ChaCha20-Poly1305, AES-CTR, and SHA-256, together with compatibility options including `ssh-rsa`, `diffie-hellman-group14-sha1`, and `hmac-sha1`.
+
+A single `ssh-auth-methods` query using an intentionally nonexistent probe user reported only:
 
 ```text
-HTTP/1.1 101 Switching Protocols
-Server: nginx
-Connection: upgrade
-Upgrade: websocket
+publickey
 ```
 
-## Port 9180
+Password authentication was not offered in that test. No private key, username guess, password, brute-force method, or login was attempted. The observation is consistent with a manufacturer, production, recovery, or service access path, but its intended purpose is not established.
 
-Port 9180 returned a text WebSocket `hello` message with this sanitized shape:
+## Hotspot WebSocket matrix
 
-```json
-{
-  "type": "hello",
-  "devicefamily": "wattpilot",
-  "devicetype": "wattpilot_flex",
-  "devicesubtype": "wattpilot_flex_c6",
-  "version": "43.4",
-  "protocol": 2,
-  "proto": 4,
-  "secured": true
-}
-```
+Passive WebSocket handshakes and captures produced this matrix:
 
-The next message was:
+| Port | Transport | `secured` | Behavior before client application data | Controlled no-op setter check |
+| ---: | --- | :---: | --- | --- |
+| 80 | WS | `false` | immediate `fullStatus`, inverter messages, and continuous `deltaStatus` | accepted |
+| 443 | WSS | `false` | immediate `fullStatus`, inverter messages, and continuous `deltaStatus` | accepted |
+| 8443 | WSS | `true` | bcrypt `authRequired`; no status stream before authentication | not attempted |
+| 9180 | WS | `true` | bcrypt `authRequired`; no status stream before authentication | not attempted |
+| 9181 | WS | `false` | immediate `fullStatus`, inverter messages, and continuous `deltaStatus` | accepted |
+| 9443 | WSS | `false` | immediate `fullStatus`, inverter messages, and continuous `deltaStatus` | accepted |
 
-```json
-{
-  "type": "authRequired",
-  "token1": "<redacted>",
-  "token2": "<redacted>",
-  "hash": "bcrypt"
-}
-```
+All six WebSocket listeners reported protocol 2, `proto` 4, and firmware 43.4 in the observed `hello` message.
 
-The passive capture contained exactly these two logical messages. Because the client sent no authentication response, no `fullStatus` or `deltaStatus` followed.
+The four `secured:false` listeners exposed the same set of 558 `fullStatus` fields and the same general application-message sequence. One large `fullStatus` message observed on port 9181 was fragmented over four WebSocket frames, confirming that clients must support fragmented text messages.
 
-This matches the existing Flex application-level authentication model: `secured:true`, bcrypt challenge, and subsequent protected messages after successful authentication.
+The evidence supports these listener groups:
 
-## Port 9443
+- authenticated API: 9180 over cleartext WebSocket and 8443 over TLS;
+- hotspot application API without the additional Wattpilot secured-message layer: 80 and 9181 over cleartext WebSocket, plus 443 and 9443 over TLS.
 
-Port 9443 used TLS and returned a text WebSocket `hello` message with the same basic device identity, but with:
+TLS on 443 and 9443 encrypted the transport but did not add client authentication in the tested hotspot configuration.
 
-```json
-{
-  "type": "hello",
-  "protocol": 2,
-  "proto": 4,
-  "secured": false
-}
-```
+## Controlled no-op setter checks
 
-The test client supplied:
+The checks were deliberately designed not to change an operating setting.
 
-- no Wattpilot password;
-- no `auth` response;
-- no `securedMsg`;
-- no client certificate;
-- no application message after the WebSocket handshake.
+A first application-level message targeted a read-only status field. The device parsed the request and returned a semantic `has no setter` error. This established that incoming client application messages were being processed rather than silently ignored.
 
-Nevertheless, the device immediately emitted this logical message sequence:
+A second check used a supported setter and wrote back exactly the value that had just been read from `fullStatus`. Ports 80, 443, 9181, and 9443 each returned a correlated successful response containing the unchanged value.
 
-1. one `hello`;
-2. one `fullStatus`;
-3. one `clearInverters`;
-4. two `updateInverter` messages;
-5. one `clearSmips`;
-6. fifteen `deltaStatus` messages during the retained interval.
+The request used a numeric request identifier. The correlated response represented the identifier as a string.
 
-No `authRequired` message was observed on 9443.
+These observations establish that the four hotspot listeners reporting `secured:false` are not passive read-only streams. They accept setter messages without the additional Wattpilot application-level secured-message exchange used on ports 9180 and 8443.
 
-The `fullStatus` JSON payload was 13,755 bytes and contained 558 top-level status fields. It was fragmented over four WebSocket frames. The remaining application messages were ordinary text WebSocket messages.
-
-The transport itself was TLS encrypted. Therefore, `secured:false` appears to describe the absence of the additional Wattpilot application-level secured-message layer rather than absence of transport encryption.
-
-The observation establishes unauthenticated **read access at the Wattpilot application layer** for this local TLS listener. It does not establish anonymous write access. No `setValue`, `otaCloud`, `switchAppPartition`, reboot, or other state-changing message was tested on port 9443.
+Access still required association with and reachability through the Wattpilot hotspot. The hotspot WLAN may therefore be the intended outer access-control boundary. The observation alone does not establish vendor intent or exposure outside that network.
 
 ## OTA and partition fields visible on 9443
 
-The idle `fullStatus` contained these OTA-related values:
+The idle Ethernet `fullStatus` on port 9443 contained these OTA-related values:
 
 ```json
 {
@@ -132,7 +131,7 @@ The idle `fullStatus` contained these OTA-related values:
 }
 ```
 
-It also contained this previously unrecorded object:
+It also contained this object:
 
 ```json
 {
@@ -155,23 +154,25 @@ The fields `otaif` and `otap` are candidates for passive observation during a fu
 
 ## Security and privacy implications
 
-The 9443 status stream includes more than simple electrical measurements. The captured `fullStatus` contained network, backend, device, and operational configuration.
+The exposed status stream includes more than electrical measurements. It contains network, backend, device, and operational configuration.
 
-For the observed device and firmware, a client with local network reachability to port 9443 could obtain this data without the Wattpilot password and without the observed bcrypt exchange. This may be an intentional trusted-LAN integration interface; the observation alone does not establish a vulnerability or vendor intent.
+For the observed device and firmware, clients associated with the hotspot could read this data and perform the controlled no-op setter checks on ports 80, 443, 9181, and 9443 without the additional Wattpilot secured-message exchange. This may be an intentional trusted-hotspot design. The observations alone do not establish a vulnerability classification or vendor intent.
 
-Raw 9443 captures should therefore be treated as sensitive and must not be committed or posted publicly without sanitization.
+Raw captures and full status payloads must therefore be treated as sensitive and must not be committed or posted publicly without sanitization.
 
 ## What remains unknown
 
 The investigation does not establish:
 
-- whether port 9443 intentionally supports read-only access or also accepts writes;
-- whether any write requires a different authentication mechanism;
-- whether ports 9180 and 9443 are reachable through the Wattpilot hotspot;
-- whether hotspot clients receive the same status stream;
-- the certificate identity and validation expectations intended for ordinary 9443 clients;
+- whether the hotspot behavior is intentional and documented internally;
+- whether every supported setter is available through all four `secured:false` hotspot listeners;
+- whether any command classes have additional authorization checks;
+- whether Ethernet port 9443 accepts setter messages;
+- whether the interface-dependent behavior is implemented by nginx routing, separate backend listeners, or another network-policy layer;
+- the intended purpose of the hotspot-local SSH service;
+- the certificate identity and validation expectations intended for ordinary TLS clients;
 - the exact meaning of `otaif` and every member of `otap`;
 - whether the ports, message sequence, and `secured` values are stable across firmware versions or device models;
-- whether 9443 is intended or suitable as an alternative transport for this FHEM module.
+- whether any listener is intended or suitable as an alternative transport for this FHEM module.
 
-No alternative module transport or unauthenticated write path should be implemented solely from these observations. Any such change requires a separate issue, a safety and privacy analysis, reproducible sanitized tests, and explicit protocol-source documentation.
+No alternative module transport should be implemented solely from these observations. Any such change requires a separate issue, safety and privacy analysis, reproducible sanitized tests, and explicit protocol-source documentation.
