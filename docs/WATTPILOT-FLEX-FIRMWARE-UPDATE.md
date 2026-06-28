@@ -8,7 +8,7 @@ Related diagnostic record: Issue #98.
 
 ## Evidence and privacy boundary
 
-The retained evidence consists of sanitized network observations, certificate-chain inspection, HTTP response metadata, device status messages, and a static analysis of a maintainer-provided Android application package.
+The retained evidence consists of sanitized network observations, certificate-chain inspection, HTTP response metadata, device status messages, a controlled temporary interruption of update-server reachability, and a static analysis of a maintainer-provided Android application package.
 
 Raw traffic captures and the APK are deliberately **not committed**. They may contain authentication challenges, HMAC-protected messages, device identifiers, local network details, tokens, configuration data, or third-party copyrighted application code. Examples below remove request IDs, HMAC values, the real serial number, tokens, addresses, and unrelated status fields.
 
@@ -152,9 +152,43 @@ update.wattpilot.io:443
 
 The TLS ClientHello used SNI `update.wattpilot.io` and advertised HTTP/1.1. At the time of observation, DNS resolution included `lb2-fsn.go-e.io` and an address in the provider network. Those intermediate names and addresses are operational details and must not be pinned because they can change.
 
-The Wattpilot received approximately 82.3 MiB. The phone transferred only a small amount of metadata and control traffic. This confirms that the device, not the app, downloaded the firmware image.
+The phone transferred only a small amount of metadata and control traffic. The Wattpilot itself received the firmware transfer, confirming that the app does not relay the image.
 
 The full HTTPS request path was not visible because the device-to-server connection remained TLS encrypted. The app traffic and static app code contained only the target version, not the final download URL.
+
+### Immediate pre-download sequence
+
+A full packet capture starting about 15 seconds before the successful download showed this sequence:
+
+1. one short cloud-to-device application record consistent in size with the known `otaCloud` command;
+2. one short device-to-cloud record consistent in size with the correlated success response;
+3. A and AAAA lookups for `update.wattpilot.io` about 31 milliseconds later;
+4. a TCP connection to the resolved update-server address;
+5. a TLS ClientHello with SNI `update.wattpilot.io`;
+6. one encrypted HTTP request after the TLS handshake;
+7. the firmware response immediately afterwards.
+
+The observed TLS 1.3 application-record sizes are exactly consistent with the known JSON messages when using a 36-character request UUID, ordinary WebSocket framing, the TLS 1.3 authentication tag, and no record padding:
+
+```json
+{"requestId":"<36-character UUID>","type":"otaCloud","firmware":"43.4"}
+```
+
+```json
+{"type":"response","requestId":"<36-character UUID>","success":true}
+```
+
+This is strong size-correlation evidence rather than decrypted payload proof. It supports the conclusion that the cloud message carries the requested version and request ID, not an additional download URL or long access token.
+
+Within the captured pre-download window, the Wattpilot contacted no separate DNS name or new HTTPS endpoint for a manifest, token, checksum, or object identifier. A value obtained and cached before the capture began cannot be excluded.
+
+### Single encrypted HTTP request
+
+After the TLS handshake, the Wattpilot sent exactly one TLS application record containing the HTTP request. Its encrypted record payload was 155 bytes. Under the observed TLS 1.3 framing, and assuming no optional record padding, this permits about 138 bytes of HTTP plaintext.
+
+The server then began its response immediately. No second request, redirect round trip, or authentication challenge was observed on that connection. This rules out a separate manifest request on the same connection and makes conventional long AWS Signature Version 4 presigned URLs or `Authorization` headers unlikely. It does not exclude a compact proprietary header, a short capability path or query value, mutual TLS, or authorization state already available to the device.
+
+Two successful captures showed the same basic request shape. The server delivered roughly 86.8 MB of unique TCP payload per download, including TLS and HTTP overhead; the firmware body is therefore slightly smaller. The bulk transfer completed in approximately 13 to 15 seconds in the observed network conditions.
 
 ## Private certificate hierarchy
 
@@ -309,14 +343,68 @@ The final observed state included:
 
 At that point, the image was installed but the device still reported the old running firmware until a subsequent reboot activated 43.4.
 
+## Blocked-download retry and automatic recovery
+
+A controlled test temporarily rejected only TCP connections from the Wattpilot to `update.wattpilot.io:443`. DNS, the existing cloud WebSocket, local access, and other network traffic remained available.
+
+The device accepted the original `otaCloud` request and entered the normal updating state. The first relevant status included:
+
+```json
+{
+  "ocs": 1,
+  "ocm": "Downloading... curl: (7) Failed to connect to update.wattpilot.io port 443 ...",
+  "oca": {
+    "project_name": "wattpilot_flex-secure-release",
+    "version": "43.4",
+    "secure_version": 0,
+    "idf_ver": "43.4",
+    "sha256": ""
+  }
+}
+```
+
+The diagnostic text also exposed these implementation details:
+
+```text
+cURL --interface eth0 (alternate: wlan0)
+Cgroup: /uca_ota (max 200 MB)
+```
+
+The device repeatedly reported `Will retry...`. After about ten seconds without a successful connection, `ocm` added a stall counter and the text `timeout termination in 9 min...`. During the retained blocked interval, `ocs` stayed at `1` (`Updating`); a connection failure did not immediately transition it to the app-defined failed state `ocs=2`.
+
+### Retry cadence
+
+The packet captures establish the retry behavior for this failure mode:
+
+- 299 rejected TCP connection attempts were observed in the first capture;
+- 14 more rejected attempts occurred in the continuation capture before success;
+- the median interval between TCP attempts was about 1.003 seconds;
+- the median interval between repeated A/AAAA DNS lookups was about 3.096 seconds;
+- each rejected TCP attempt received an immediate reset, matching cURL error 7 in `ocm`.
+
+The status text indicates an overall failure window of roughly ten minutes, but the test deliberately restored reachability before that timeout. The final state after a complete timeout was therefore not observed.
+
+### Automatic continuation after reachability returned
+
+No new action was taken in the app when the block was removed. The last rejected TCP attempt occurred about 1.08 seconds before the next retry successfully established a TLS connection. No second cloud-to-device record with the observed `otaCloud` record size appeared before that successful connection.
+
+The already running OTA operation therefore continued automatically. It did not require a second firmware-selection command or a device reboot. The successful retry used the same single encrypted HTTP-request shape documented above and proceeded directly to the firmware transfer.
+
 ## Controlled update reboot versus spontaneous reboot
 
-The controlled firmware update visibly prepared for reboot:
+After the successful retry, the firmware-transfer connection closed cleanly. The Wattpilot remained online during the installation phase and continued exchanging status traffic before deliberately preparing for restart.
 
-- existing external connections were closed;
+The controlled update reboot showed this sequence:
+
+- the active cloud connection was closed by the Wattpilot;
 - multicast memberships were left;
-- the device disappeared from the network;
-- it later returned and announced firmware 43.4.
+- the remaining previous cloud connection was reset;
+- the device stopped responding on the network;
+- approximately 84.6 seconds after the prepared shutdown began, the device rejoined multicast groups and emitted new discovery traffic;
+- it resolved `iot.wattpilot.com` and established a new cloud connection;
+- it subsequently announced firmware 43.4.
+
+The download connection began about 49.5 seconds before the prepared shutdown. The bulk transfer itself completed roughly 36 seconds before that shutdown, confirming that download, installation, and activation/reboot are separate phases.
 
 This differs from the spontaneous-restart behavior tracked in Issue #98. During those failures, inbound WebSocket data stopped immediately but the old client socket remained apparently open and was only reported as `remoteSocketClosed` much later. The firmware-update observation must therefore not be used to claim that every Wattpilot reboot closes existing WebSocket connections cleanly.
 
@@ -327,27 +415,37 @@ For the observed Wattpilot Flex Home 22 C6, firmware transition, and analyzed ap
 - release notes are obtained from `data.v3.go-e.io/firmware_changelog`;
 - the observed product/application discriminator is `wattpilot_flex-secure-release`;
 - selecting a concrete firmware version uses `otaCloud` with the version string;
+- the cloud command and success response record sizes are consistent with the known JSON only, without a visible additional URL or long token;
 - the app also contains a default update trigger that maps to `oct=1`;
 - rollback uses `switchAppPartition` followed by a reboot request;
 - the Wattpilot downloads the image directly from `update.wattpilot.io` over HTTPS;
+- no separate manifest or token endpoint appeared in the captured immediate pre-download sequence;
+- the successful download uses one short encrypted HTTP request followed directly by the firmware response;
 - the update server uses a private go-e/Wattpilot certificate hierarchy;
 - the Wattpilot rejects an untrusted certificate authority;
 - the update host fronts the private `goe-firmware-bin` object bucket;
 - anonymous requests cannot distinguish existing from nonexistent object paths;
 - the analyzed app contains neither the visible final download host nor the bucket name or S3-signature vocabulary;
 - `ocs`, `ocp`, `ocl`, `ocm`, and `oca` participate in the observed or app-defined OTA state;
-- installation completion and activation after reboot are distinct stages.
+- a blocked TCP connection is retried about once per second, with DNS refreshed about every three seconds;
+- `ocs` remains `1` during the observed connection-failure retry period;
+- restoring update-server reachability allows the existing OTA operation to continue automatically without a second app action;
+- the device reports use of `eth0`, fallback interface `wlan0`, OTA cgroup `/uca_ota`, and a 200 MB cgroup limit;
+- download, installation, and activation after a controlled reboot are distinct stages;
+- the controlled update reboot closes connections and leaves multicast groups before an observed network absence of about 84.6 seconds.
 
 ## What remains unknown
 
 The evidence does not establish:
 
-- the full firmware object path or HTTP request headers;
+- the full firmware object path or decrypted HTTP request headers;
 - the exact authorization mechanism used for the firmware object;
 - whether the image is encrypted or signed and where verification occurs;
 - which private CA certificate or public key is stored on the device;
 - whether additional certificate or public-key pinning is used;
-- accepted versions, downgrade restrictions, anti-rollback behavior, or retry rules;
+- accepted versions, downgrade restrictions, anti-rollback behavior, or server-side selection policy;
+- the exact terminal status and cleanup behavior after the approximately ten-minute retry window expires completely;
+- whether retry cadence, timeout, cgroup path, or interface preference are stable across releases and device models;
 - complete device-side semantics, units, and guarantees for all OTA fields;
 - whether the commands are supported on other Wattpilot models or firmware families;
 - whether update commands may safely be exposed through this FHEM module;
