@@ -75,7 +75,7 @@ A slow targeted follow-up around ports 1234 through 1236 used the same payload f
 | 1235 | `closed`, ICMP `port unreachable` |
 | 1236 | `open|filtered`, no response |
 
-The same port-specific result had already appeared independently through both Ethernet and hotspot. This makes a purely accidental ICMP-rate-limit artifact less likely and indicates a reproducible port-specific reject or filtering rule for UDP 1235. Its purpose is unknown.
+The same port-specific result had already appeared independently through both Ethernet and hotspot. This makes a purely accidental ICMP-rate-limit artifact less likely and indicates reproducible port-specific reject or filtering behavior for UDP 1235. Its purpose is unknown.
 
 Nmap's service name for port 1235 is only a static name-to-port mapping. It does not indicate that the named service is installed or running; the port was explicitly closed.
 
@@ -84,6 +84,8 @@ The correct conclusion is limited to:
 - no UDP service was confirmed open;
 - UDP 1235 was reproducibly rejected on both interfaces;
 - the state of all nonresponding UDP ports remains indeterminate between open and filtered from this scan alone.
+
+The scans do not establish that the device intentionally used the UDP response as deception. An explicit firewall `REJECT`, a port-specific network-stack rule, or another internal policy are all possible explanations.
 
 ## Hotspot SSH listener
 
