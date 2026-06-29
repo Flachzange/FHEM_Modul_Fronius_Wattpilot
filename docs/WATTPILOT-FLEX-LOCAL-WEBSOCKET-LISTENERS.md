@@ -61,7 +61,7 @@ The TLS listeners on 443, 8443, and 9443 presented the same device-specific cert
 
 ## Complete UDP scans
 
-Complete scans of all UDP port numbers were performed through both the Ethernet interface and the device hotspot.
+Complete scans of all UDP port numbers were performed through both the Ethernet interface and the device hotspot. The Ethernet scan completed on 2026-06-29, followed by the longer hotspot scan.
 
 No UDP port was confirmed `open` on either interface.
 
