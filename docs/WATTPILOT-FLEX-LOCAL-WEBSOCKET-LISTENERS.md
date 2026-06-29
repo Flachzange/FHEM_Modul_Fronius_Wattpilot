@@ -1,8 +1,8 @@
-# Wattpilot Flex local WebSocket listener observations
+# Wattpilot Flex local listener observations
 
-Checked on 2026-06-28 on one Wattpilot Flex Home 22 C6 running firmware 43.4.
+Checked on 2026-06-28 and 2026-06-29 on one Wattpilot Flex Home 22 C6 running firmware 43.4.
 
-This note records sanitized empirical observations of local TCP, SSH, and WebSocket listeners. It is not an official Fronius protocol specification and does not establish cross-model or cross-version behavior.
+This note records sanitized empirical observations of local TCP, UDP, SSH, and WebSocket listeners. It is not an official Fronius protocol specification and does not establish cross-model or cross-version behavior.
 
 Related records:
 
@@ -12,9 +12,9 @@ Related records:
 
 ## Evidence and privacy boundary
 
-The retained evidence consists of complete TCP connect scans, service detection, ordinary HTTP requests, standards-compliant WebSocket upgrades, passive WebSocket captures, one SSH authentication-method query with an intentionally nonexistent probe user, and controlled no-op setter checks that wrote back a value already active on the device.
+The retained evidence consists of complete TCP connect scans, complete UDP scans, service detection, ordinary HTTP requests, standards-compliant WebSocket upgrades, passive WebSocket captures, one SSH authentication-method query with an intentionally nonexistent probe user, and controlled no-op setter checks that wrote back a value already active on the device.
 
-No raw captures are committed. The local full-status stream contains device identifiers, network configuration, backend information, operational state, and other potentially sensitive data. Examples and summaries below remove the real serial number, local addresses, request identifiers, authentication values, SSIDs, BSSIDs, certificate fingerprints, and unrelated status values.
+No raw captures are committed. The local full-status stream contains device identifiers, network configuration, backend information, operational state, and other potentially sensitive data. Examples and summaries below remove the real serial number, local addresses, MAC addresses, request identifiers, authentication values, SSIDs, BSSIDs, certificate fingerprints, and unrelated status values.
 
 No reboot, OTA, partition, network, force-state, charging-mode, or changed-value command was sent. No SSH key was tested and no SSH login was attempted.
 
@@ -59,7 +59,31 @@ A complete TCP connect scan through the Wattpilot's own WLAN hotspot found exact
 
 The TLS listeners on 443, 8443, and 9443 presented the same device-specific certificate issued by the private `Wattpilot production CA`. Identifying certificate data and fingerprints are deliberately omitted.
 
-The scan was TCP-only. It does not establish whether additional UDP services exist.
+## Complete UDP scans
+
+Complete scans of all UDP port numbers were performed through both the Ethernet interface and the device hotspot.
+
+No UDP port was confirmed `open` on either interface.
+
+On both interfaces, UDP port 1235 was explicitly reported `closed` because the device returned ICMP `port unreachable`. Every other scanned UDP port produced no response and was therefore classified by Nmap as `open|filtered`. This classification does not mean those ports are open; it means the scan could not distinguish an unresponsive UDP service from silent packet filtering or a closed port whose ICMP error was suppressed.
+
+A slow targeted follow-up around ports 1234 through 1236 used the same payload for each port and reproduced the result:
+
+| UDP port | Result |
+| ---: | --- |
+| 1234 | `open|filtered`, no response |
+| 1235 | `closed`, ICMP `port unreachable` |
+| 1236 | `open|filtered`, no response |
+
+The same port-specific result had already appeared independently through both Ethernet and hotspot. This makes a purely accidental ICMP-rate-limit artifact less likely and indicates a reproducible port-specific reject or filtering rule for UDP 1235. Its purpose is unknown.
+
+Nmap's service name for port 1235 is only a static name-to-port mapping. It does not indicate that the named service is installed or running; the port was explicitly closed.
+
+The correct conclusion is limited to:
+
+- no UDP service was confirmed open;
+- UDP 1235 was reproducibly rejected on both interfaces;
+- the state of all nonresponding UDP ports remains indeterminate between open and filtered from this scan alone.
 
 ## Hotspot SSH listener
 
@@ -162,6 +186,8 @@ For the observed device and firmware, clients associated with the hotspot could 
 
 The Ethernet result is more security-relevant than the hotspot-only result because the access boundary is the surrounding local network rather than association with the device hotspot. This may still be an intentional trusted-LAN integration design. The observations alone do not establish a vulnerability classification or vendor intent.
 
+The UDP observations do not identify an exposed UDP service. They only show a reproducible explicit rejection on port 1235 and silence on all other tested UDP ports.
+
 Raw captures and full status payloads must therefore be treated as sensitive and must not be committed or posted publicly without sanitization.
 
 ## What remains unknown
@@ -172,10 +198,12 @@ The investigation does not establish:
 - whether every supported setter is available through all `secured:false` listeners;
 - whether any command classes have additional authorization checks;
 - whether the behavior is implemented by nginx routing, separate backend listeners, or another network-policy layer;
+- why UDP port 1235 is explicitly rejected while other UDP ports remain silent;
+- whether any nonresponding UDP port actually has a service behind filtering;
 - the intended purpose of the hotspot-local SSH service;
 - the certificate identity and validation expectations intended for ordinary TLS clients;
 - the exact meaning of `otaif` and every member of `otap`;
-- whether the ports, message sequence, `secured` values, and setter behavior are stable across firmware versions or device models;
+- whether the ports, message sequence, `secured` values, setter behavior, and UDP filtering are stable across firmware versions or device models;
 - whether any listener is intended or suitable as an alternative transport for this FHEM module.
 
 No alternative module transport should be implemented solely from these observations. Any such change requires a separate issue, safety and privacy analysis, reproducible sanitized tests, and explicit protocol-source documentation.
