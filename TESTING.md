@@ -196,3 +196,5 @@ Version 2.1.10 adds `t/inbound_watchdog.t` for issue #90. The regression reprodu
 
 
 Version 2.1.11 extends `t/inbound_watchdog.t` and `t/fhem_interface_validation.t` with the diagnostic `inboundWatchdog` switch. The tests model the pinned FHEM attribute order in which `AttrFn` runs before framework storage, verify immediate timer cancellation for value `0`, stale-callback rejection, unchanged connection state and reconnect counters, persistence through module reload, one-timer re-enable/delete behavior with a fresh grace period, strict boolean validation, and the negative control that ordinary socket-loss recovery remains active while only the silence watchdog is suspended.
+
+Version 2.1.12 updates the authoritative public-reading inventory and `t/device_health_diagnostics.t` for the verified `tma[2]` through `tma[5]` component names. The focused test proves that only the new public names are updated, the former numeric names receive no updates or duplicate events, invalid/missing positions still preserve values, and the established diagnostic cleanup, interval gate, and two-decimal formatting remain unchanged.

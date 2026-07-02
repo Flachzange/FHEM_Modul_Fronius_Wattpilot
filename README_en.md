@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.11**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.12**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -388,7 +388,8 @@ The module exposes exactly these 88 public readings:
 | `deviceControllerResetReason` | Raw string from `cc4.reset_reason`; tokens are not decoded and the value is not equated with `deviceRebootCount`. |
 | `deviceControllerMidFirmwareVersion` | Raw string from `cc4.mid_firmware_version`. |
 | `deviceControllerHardwareId` | Raw string from `cc4.hwid`. |
-| `diag_temperatureSensor1` through `diag_temperatureSensor6` | Optional numeric values from `tma[0]` through `tma[5]`, formatted with exactly two decimal places. No physical sensor assignment, unit, maximum, or derating meaning is claimed. |
+| `diag_temperatureSensor1`, `diag_temperatureSensor2` | Optional numeric values from `tma[0]` and `tma[1]`, formatted with exactly two decimal places. Their physical assignment remains unconfirmed. |
+| `diag_temperatureGridConnector`, `diag_temperatureCurrentSensor`, `diag_temperatureType2ScrewTerminals`, `diag_temperatureMID` | Optional numeric values from `tma[2]` through `tma[5]`. The grid connector, current sensor, Type 2 screw terminals, and MID mapping was verified on a Wattpilot Flex Home 22 C6. Unit, limits, derating thresholds, and applicability to other hardware revisions remain unconfirmed. |
 | `diag_fbuf_pGrid` | Optional raw scalar from `fbuf_pGrid`; no meaning, unit, or sign convention is claimed. |
 | `diag_fbuf_pPv` | Optional raw scalar from `fbuf_pPv`; no meaning or unit is claimed. |
 | `diag_pvopt_averagePGrid` | Optional raw scalar from `pvopt_averagePGrid`; aggregation and semantics remain unknown. |

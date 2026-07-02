@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.11 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.12 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.1.11; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.1.12; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.11 uses the exact `config` prefix for every configuration reading. The grouped Set commands keep their established protocol mappings, and `chargingCurrent` additionally uses a usable device-confirmed `configMaximumCurrentLimit` only as a local FHEM upper bound. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.12 uses the exact `config` prefix for every configuration reading. The grouped Set commands keep their established protocol mappings, and `chargingCurrent` additionally uses a usable device-confirmed `configMaximumCurrentLimit` only as a local FHEM upper bound. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -223,7 +223,7 @@ The following conflicts remain visible because the observed Flex 43.4 payload, p
 Version 2.1.0 validates consumed fields by their actual decoded JSON kind before conversion: strings remain strings, numbers must be finite JSON numbers, integers must be JSON integer numbers, and booleans must be JSON booleans. Numeric strings and `0`/`1` boolean substitutes are not coerced. `ftt` and battery clock fields additionally require an in-range whole-minute value; `pdlo` alone permits `86400`/`24:00`.
 
 
-The names below describe the current version-2.1.11 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.12 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
@@ -243,7 +243,11 @@ The names below describe the current version-2.1.11 implementation. They describ
 | `cc4.reset_reason` | `deviceControllerResetReason` | raw string; tokens not decoded and not equated with `rbc` | observed nested member/type/value only |
 | `cc4.mid_firmware_version` | `deviceControllerMidFirmwareVersion` | raw string | observed nested member/type/value only |
 | `cc4.hwid` | `deviceControllerHardwareId` | raw string | observed nested member/type/value only |
-| `tma[0..5]` | `diag_temperatureSensor1..6` | optional finite numbers, two decimals, diagnostic interval/idle gate; no maximum or derating derivation | observed six-position array plus historical temperature-array candidate; physical mapping and unit unknown |
+| `tma[0..1]` | `diag_temperatureSensor1`, `diag_temperatureSensor2` | optional finite numbers, two decimals, diagnostic interval/idle gate | observed six-position array plus historical temperature-array candidate; physical mapping and unit unknown |
+| `tma[2]` | `diag_temperatureGridConnector` | optional finite number, two decimals, diagnostic interval/idle gate; no maximum or derating derivation | maintainer real-device verification on Flex Home 22 C6; unit and cross-model equivalence unknown |
+| `tma[3]` | `diag_temperatureCurrentSensor` | optional finite number, two decimals, diagnostic interval/idle gate; no maximum or derating derivation | maintainer real-device verification on Flex Home 22 C6; unit and cross-model equivalence unknown |
+| `tma[4]` | `diag_temperatureType2ScrewTerminals` | optional finite number, two decimals, diagnostic interval/idle gate; no maximum or derating derivation | maintainer real-device verification on Flex Home 22 C6; unit and cross-model equivalence unknown |
+| `tma[5]` | `diag_temperatureMID` | optional finite number, two decimals, diagnostic interval/idle gate; no maximum or derating derivation | maintainer real-device verification on Flex Home 22 C6; unit and cross-model equivalence unknown |
 | selected raw diagnostic fields | exact `diag_` + protocol key | optional validated scalar; numbers formatted to two decimals without scaling, strings unchanged, booleans as `0|1` | observed field/type only; semantics remain unknown |
 | `car` | `carState` | 0 `unknown`, 1 `idle`, 2 `charging`, 3 `waitingForCar`, 4 `complete`, 5 `error`; other values become `unknown:<raw-value>` | current implementation inference |
 | `frc` | `configForceState` / Set `forceState` | 0 `neutral`, 1 `off`, 2 `on`; Set uses the same numeric values | current implementation plus pinned third-party evidence; Flex writability unverified |
@@ -281,7 +285,7 @@ Version 2.1.5 uses the already published, device-confirmed `configMaximumCurrent
 
 Version 2.1.7 adds the identity, device-health, and raw-diagnostic mappings listed above. The shared interval now has five independent owners (`energy`, `nrg`, `device_health`, `device_uptime`, and `diagnostic`). `device_health` is not idle-gated; `device_uptime` and `diagnostic` are eligible only while charging or with `update_while_idle=1`. `fbuf_akkuSOC` and `fbuf_pAkku` now belong to the optional `diagnostic` owner rather than a separate battery owner. `diagnosticReadings=0` removes the optional readings and owner state. These are module publication rules, not Wattpilot protocol semantics.
 
-Version 2.1.8 adds the seven validated `cc4` member mappings and six optional numeric `tma` positions listed above. They reuse the existing `device_health` and `diagnostic` owners, respectively. Missing or invalid nested values preserve readings. This is an implementation boundary based on one sanitized Flex 43.4 capture; it is not an official Fronius specification of controller scope, physical sensor placement, units, requiredness, update frequency, or health interpretation.
+Version 2.1.8 added the seven validated `cc4` member mappings and six optional numeric `tma` positions listed above. Version 2.1.12 gives `tma[2]` through `tma[5]` component-specific public names based on maintainer real-device verification on a Flex Home 22 C6, while `tma[0]` and `tma[1]` remain generic. The fields reuse the existing `device_health` and `diagnostic` owners. Missing or invalid nested values preserve readings. This remains an empirical implementation boundary, not an official Fronius specification of controller scope, units, limits, requiredness, update frequency, derating behavior, or cross-model sensor placement.
 
 Version 2.1.9 adds the write-only command mapping Set `reboot` to secured `setValue` key `rst` with JSON boolean `true`. The pinned third-party registry names `rst` as `rebootCharger`, marks it write-only, and declares JSON type `any`; it does not establish the exact trigger value. Successful dispatch publishes the FHEM lifecycle state `rebooting`. A returned device response is handled normally; rejection, malformed response, or timeout on a still-open authenticated session restores `connected`. If the socket closes first, only the pending request identified by its existing protocol key `rst` is completed successfully and the existing reconnect lifecycle proceeds. This is an FHEM-side request-lifecycle rule and still requires real-device confirmation.
 
@@ -788,7 +792,7 @@ There is exactly one row for each of the 558 direct keys beneath `status`. “Ob
 | `tcl` | null | `null` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `tds` | number | `1` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `ten` | boolean | `false` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
-| `tma` | array | `[null,null,39,41,40,38.5]` | optional numeric `diag_temperatureSensor1..6`; physical mapping and unit unknown | none claimed | read-only diagnostic mapping; no writability evidence | empirical array shape/value plus historical temperature-array candidate | Version 2.1.8 accepts finite numeric positions only and derives no maximum or derating state. |
+| `tma` | array | `[null,null,39,41,40,38.5]` | optional numeric `diag_temperatureSensor1`, `diag_temperatureSensor2`, `diag_temperatureGridConnector`, `diag_temperatureCurrentSensor`, `diag_temperatureType2ScrewTerminals`, `diag_temperatureMID`; positions 2–5 use the verified Flex Home 22 C6 mapping | none claimed | read-only diagnostic mapping; no writability evidence | empirical array shape/value plus maintainer real-device mapping verification | Version 2.1.12 keeps finite-number validation and derives no unit, maximum, derating state, or cross-model equivalence. |
 | `tof` | number | `60` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `tou` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |
 | `tpa` | number | `0` | unknown | unknown | observation only; no writability evidence | empirical structure/value only; semantics unknown | Issue #11 sanitized capture; historical API aliases are not promoted to facts. |

@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.11**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.12**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -390,7 +390,8 @@ Das Modul stellt exakt folgende 88 öffentlichen Readings bereit:
 | `deviceControllerResetReason` | Roher String aus `cc4.reset_reason`; Tokens werden nicht dekodiert und das Feld wird nicht mit `deviceRebootCount` gleichgesetzt. |
 | `deviceControllerMidFirmwareVersion` | Roher String aus `cc4.mid_firmware_version`. |
 | `deviceControllerHardwareId` | Roher String aus `cc4.hwid`. |
-| `diag_temperatureSensor1` bis `diag_temperatureSensor6` | Optionale numerische Werte aus `tma[0]` bis `tma[5]`, mit genau zwei Nachkommastellen. Physische Sensorzuordnung, Einheit, Maximum und Derating-Bedeutung werden nicht behauptet. |
+| `diag_temperatureSensor1`, `diag_temperatureSensor2` | Optionale numerische Werte aus `tma[0]` und `tma[1]`, mit genau zwei Nachkommastellen. Die physische Zuordnung bleibt unbestätigt. |
+| `diag_temperatureGridConnector`, `diag_temperatureCurrentSensor`, `diag_temperatureType2ScrewTerminals`, `diag_temperatureMID` | Optionale numerische Werte aus `tma[2]` bis `tma[5]`. Das Mapping Grid Connector, Current Sensor, Type-2-Schraubklemmen und MID wurde an einem Wattpilot Flex Home 22 C6 verifiziert. Einheit, Grenzwerte, Derating-Schwellen und die Übertragbarkeit auf andere Hardware-Revisionen bleiben unbestätigt. |
 | `diag_fbuf_pGrid` | Optionaler Rohskalar aus `fbuf_pGrid`; keine Behauptung zu Bedeutung, Einheit oder Vorzeichen. |
 | `diag_fbuf_pPv` | Optionaler Rohskalar aus `fbuf_pPv`; keine Behauptung zu Bedeutung oder Einheit. |
 | `diag_pvopt_averagePGrid` | Optionaler Rohskalar aus `pvopt_averagePGrid`; Aggregation und Semantik unbekannt. |
