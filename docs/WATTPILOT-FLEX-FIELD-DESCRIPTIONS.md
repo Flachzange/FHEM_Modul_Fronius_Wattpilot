@@ -254,7 +254,11 @@ A future description change should update the applicable empirical field row or 
 
 | Key/path | Public reading | Confirmed implementation boundary | Evidence |
 |---|---|---|---|
-| `tma[0]` … `tma[5]` | `diag_temperatureSensor1` … `diag_temperatureSensor6` | Optional finite numeric positions only, formatted with two decimals; no physical assignment, unit, maximum, or derating meaning | observed six-position Flex array plus historical temperature-array candidate |
+| `tma[0]`, `tma[1]` | `diag_temperatureSensor1`, `diag_temperatureSensor2` | Optional finite numeric positions only, formatted with two decimals; physical assignment and unit remain unknown | observed six-position Flex array plus historical temperature-array candidate |
+| `tma[2]` | `diag_temperatureGridConnector` | Optional finite numeric value mapped to the grid connector on the verified Flex Home 22 C6; unit, limits, and cross-model equivalence remain unknown | maintainer real-device verification, 2026-07-02 |
+| `tma[3]` | `diag_temperatureCurrentSensor` | Optional finite numeric value mapped to the current sensor on the verified Flex Home 22 C6; unit, limits, and cross-model equivalence remain unknown | maintainer real-device verification, 2026-07-02 |
+| `tma[4]` | `diag_temperatureType2ScrewTerminals` | Optional finite numeric value mapped to the Type 2 screw terminals on the verified Flex Home 22 C6; unit, limits, and cross-model equivalence remain unknown | maintainer real-device verification, 2026-07-02 |
+| `tma[5]` | `diag_temperatureMID` | Optional finite numeric value mapped to the MID on the verified Flex Home 22 C6; unit, limits, and cross-model equivalence remain unknown | maintainer real-device verification, 2026-07-02 |
 | `cc4.firmware_version` | `deviceControllerFirmwareVersion` | Raw JSON string on the shared device-health interval | observed object member/type/value only |
 | `cc4.firmware_crc` | `deviceControllerFirmwareCRC` | Raw JSON string; no CRC decoding or verification | observed object member/type/value only |
 | `cc4.firmware_integrity` | `deviceControllerFirmwareIntegrity` | Raw JSON string; no enum or health verdict | observed object member/type/value only |

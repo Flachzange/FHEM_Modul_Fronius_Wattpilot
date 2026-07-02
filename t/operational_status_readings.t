@@ -24,6 +24,7 @@ sub fresh_device {
         SERIAL => '2000000000000201',
         STATE => 'connected',
         TEST_OPEN => 1,
+        helper => { lifecycleState => 'connected' },
     };
     $defs{$hash->{NAME}} = $hash;
     return $hash;

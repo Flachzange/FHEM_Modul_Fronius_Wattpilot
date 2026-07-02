@@ -1,5 +1,24 @@
 # Changelog
 
+## [v2.1.12] - 2026-07-02
+
+### Runtime lifecycle independent of `stateFormat`
+
+- Introduces transient `helper.lifecycleState` as the sole authoritative lifecycle source. The public `state` reading is output-only, and formatted Internal `STATE` no longer participates in authentication, initialization, watchdog, reconnect, command-admission, timeout, reboot, or cleanup decisions.
+- Updates the internal lifecycle before publishing its reading, so event-driven reentrant commands observe the new state. Restored or manually manipulated lifecycle readings cannot create connectivity or command capability.
+- On module reload, invalidates unverifiable transport, authentication, timers, requests, and callback ownership, advances the lifecycle generation, and schedules at most one controlled reconnect instead of trusting old `STATE` or preserved readings.
+- Adds FHEM-revision-pinned coverage for compound `stateFormat`, complete/partial/delta initialization, manual reading manipulation, reentrant Set execution, process recreation, watchdog operation, stale callbacks, and active-session reload.
+- The defect was reproduced on a Wattpilot Flex Home 22 C6 with firmware 43.4. No post-fix real-device or real-FHEM reload test was performed in this implementation environment.
+
+### Verified component names for temperature diagnostics
+
+- Replaces `diag_temperatureSensor3` through `diag_temperatureSensor6` with `diag_temperatureGridConnector`, `diag_temperatureCurrentSensor`, `diag_temperatureType2ScrewTerminals`, and `diag_temperatureMID` for `tma[2]` through `tma[5]`.
+- Records the maintainer real-device verification on a Wattpilot Flex Home 22 C6: Grid Connector, Current Sensor, Type 2 Screw Terminals, and MID. `tma[0]`/`tma[1]`, units, limits, derating thresholds, and applicability to other models or hardware revisions remain unconfirmed.
+- Keeps the existing optional-diagnostic switch, numeric validation, two-decimal formatting, interval/idle gate, cache ownership, and missing/invalid-value preservation unchanged.
+- Adds no compatibility aliases, duplicate events, automatic reading cleanup, DbLog conversion, or transition period. Existing `diag_temperatureSensor3` through `diag_temperatureSensor6` entries may remain stale after `reload 72_Wattpilot` and must be removed or consumers updated manually.
+- Updates the English and German command references, README files, protocol provenance, field documentation, authoritative reading inventory, and focused tests.
+- No real FHEM reload, WebSocket, authentication, network, or post-change live-reading test was performed in this implementation environment; the mapping itself was supplied as maintainer-verified real-device evidence.
+
 ## [v2.1.11] - 2026-06-27
 
 ### Optional inbound-watchdog suspension for diagnostics

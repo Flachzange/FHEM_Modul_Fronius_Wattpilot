@@ -12,6 +12,7 @@ our (%GET_KEY_ERROR_QUEUE, %SET_KEY_ERROR_QUEUE);
 our (%READYFNLIST, %SELECTLIST);
 our ($OPEN_ERROR, $OPEN_MODE);
 our (@LOGS, @WRITES, @READS, @OPENS, @OPEN_CALLBACKS, @TRIGGERS, @CLOSES, @TIMERS, @ACTIVE_TIMERS, @REMOVED_TIMERS, @KEY_OPERATIONS, @READING_UPDATES, @READING_EVENTS, @RENAMES, @IGNORED_RENAME_REPLIES);
+our $READING_EVENT_HOOK;
 
 sub reset_test_state {
     %KEY_VALUES = ();
@@ -40,6 +41,7 @@ sub reset_test_state {
     @READING_EVENTS = ();
     @RENAMES = ();
     @IGNORED_RENAME_REPLIES = ();
+    $READING_EVENT_HOOK = undef;
     $NOW = undef;
 }
 
@@ -320,6 +322,43 @@ sub AttrVal {
     return $ATTR_VALUES{"$name|$attribute"} if exists $ATTR_VALUES{"$name|$attribute"};
     return $default;
 }
+sub ReadingsVal {
+    my ($name, $reading, $default) = @_;
+    return $default
+        if !defined($main::defs{$name})
+        || !defined($main::defs{$name}{READINGS}{$reading})
+        || !defined($main::defs{$name}{READINGS}{$reading}{VAL});
+    return $main::defs{$name}{READINGS}{$reading}{VAL};
+}
+sub ReadingsNum {
+    my ($name, $reading, $default) = @_;
+    my $value = ReadingsVal($name, $reading, $default);
+    return $default if !defined($value) || $value !~ /(-?\d+(?:\.\d+)?)/;
+    return 0 + $1;
+}
+sub evalStateFormat {
+    my ($hash) = @_;
+    my $name = $hash->{NAME};
+    my $state = $hash->{READINGS}{state};
+    my $format = AttrVal($name, 'stateFormat', undef);
+
+    if (!$format) {
+        $state = $state->{VAL} if defined $state;
+    }
+    elsif ($format =~ /^\{(.*)\}$/s) {
+        my $code = $1;
+        $state = eval $code;
+        $state = "Error evaluating $name stateFormat: $@" if $@;
+    }
+    else {
+        $state = $format;
+        my $readings = $hash->{READINGS};
+        $state =~ s/\$name/$name/g;
+        $state =~ s/\b([A-Za-z\d_.-]+)\b/($readings->{$1} ? $readings->{$1}{VAL} : $1)/ge;
+    }
+    $hash->{STATE} = $state if defined $state;
+    return;
+}
 sub InternalTimer {
     my $timer = [@_];
     push @TIMERS, $timer;
@@ -352,11 +391,11 @@ sub gettimeofday { return defined($NOW) ? $NOW : time }
 # readingsBulkUpdateIfChanged returns before setReadingsVal/addEvent when the
 # public value is unchanged, preserving both reading timestamp and event list.
 sub readingsSingleUpdate {
-    my ($hash, $reading, $value) = @_;
+    my ($hash, $reading, $value, $dotrigger) = @_;
+    $dotrigger = 1 if !defined $dotrigger;
     readingsBeginUpdate($hash);
     readingsBulkUpdate($hash, $reading, $value);
-    readingsEndUpdate($hash, 1);
-    $hash->{STATE} = $value if $reading eq 'state';
+    readingsEndUpdate($hash, $dotrigger);
     return;
 }
 sub readingsBeginUpdate {
@@ -365,6 +404,7 @@ sub readingsBeginUpdate {
     $hash->{'.updateTime'} = $now;
     $hash->{'.updateTimestamp'} = "$now";
     $hash->{CHANGED} = [] if !defined $hash->{CHANGED};
+    $hash->{'.changedStart'} = scalar @{$hash->{CHANGED}};
     return $hash->{'.updateTimestamp'};
 }
 sub readingsBulkUpdateIfChanged {
@@ -382,17 +422,24 @@ sub readingsBulkUpdate {
     $hash->{READINGS}{$reading}{VAL} = $value;
     $hash->{READINGS}{$reading}{TIME} = $hash->{'.updateTimestamp'};
     $changed = 1 if !defined $changed && substr($reading, 0, 1) ne '.';
+    my $event = "$reading: $value";
     if ($changed) {
-        my $event = "$reading: $value";
+        $event = $value if $reading eq 'state';
         push @{$hash->{CHANGED}}, $event;
         push @READING_EVENTS, [$hash, $reading, $value, $event];
     }
-    return "$reading: $value";
+    return $event;
 }
 sub readingsEndUpdate {
-    my ($hash) = @_;
+    my ($hash, $dotrigger) = @_;
+    evalStateFormat($hash);
+    my $start = delete($hash->{'.changedStart'}) // 0;
+    my @events = @{$hash->{CHANGED} // []}[$start .. $#{$hash->{CHANGED} // []}]
+        if $start <= $#{$hash->{CHANGED} // []};
     delete $hash->{'.updateTimestamp'};
     delete $hash->{'.updateTime'};
+    $READING_EVENT_HOOK->($hash, \@events)
+        if $dotrigger && ref($READING_EVENT_HOOK) eq 'CODE' && @events;
     return;
 }
 sub getKeyValue {

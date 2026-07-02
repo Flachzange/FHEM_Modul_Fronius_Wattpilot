@@ -23,7 +23,7 @@ sub fresh_device {
         DeviceName => 'ws:192.0.2.64:80/ws',
         STATE => 'connected',
         TEST_OPEN => 1,
-        helper => { authenticated => 1 },
+        helper => { authenticated => 1, lifecycleState => 'connected' },
     };
     $defs{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} =

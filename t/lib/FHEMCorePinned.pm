@@ -87,7 +87,7 @@ sub getAllAttr {
     return $modules{$defs{$name}{TYPE}}{AttrList} // '';
 }
 sub perlSyntaxCheck { return undef; }
-sub evalStateFormat { return undef; }
+sub evalStateFormat { return DevIo::evalStateFormat($_[0]); }
 sub fhem_setIoDev { return undef; }
 sub Log { return DevIo::Log3('FHEMCorePinned', @_); }
 sub Wattpilot_Initialize { goto &main::Wattpilot_Initialize; }

@@ -312,16 +312,22 @@ is(timer_count('inbound_watchdog'), 1,
     'watchdog reschedules while rebooting');
 my $registration = {};
 main::Wattpilot_Initialize($registration);
-is(timer_count('inbound_watchdog'), 1,
-    'reload replaces rather than drops the watchdog while rebooting');
+is(timer_count('inbound_watchdog'), 0,
+    'reload removes the watchdog owned by the unverifiable old session');
+is(timer_count('command_timeout'), 0,
+    'reload cancels the old reboot command timeout');
+is($hash->{STATE}, 'disconnected',
+    'reload invalidates the rebooting session before reconnect');
+is($hash->{READINGS}{lastCommandStatus}{VAL}, 'failed',
+    'reload finalizes the old reboot request instead of allowing a stale timeout');
+is($hash->{READINGS}{lastCommandError}{VAL}, 'session replaced',
+    'reload exposes the stable session-replacement reason');
+is(timer_count('connect'), 1,
+    'reload schedules one controlled reconnect');
 $DevIo::NOW = 1031;
 DevIo::run_due_timers($DevIo::NOW);
-is($hash->{STATE}, 'connected',
-    'normal reboot command timeout restores connected');
-is($hash->{READINGS}{lastCommandStatus}{VAL}, 'timeout',
-    'normal reboot timeout remains authoritative');
-is(timer_count('inbound_watchdog'), 1,
-    'command timeout does not remove the session watchdog');
+is($hash->{STATE}, 'authenticating',
+    'controlled post-reload reconnect starts a fresh authentication lifecycle');
 
 $hash = fresh_device();
 main::Wattpilot_MarkInitialized($hash);

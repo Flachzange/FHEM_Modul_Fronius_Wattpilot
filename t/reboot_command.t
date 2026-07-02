@@ -29,6 +29,7 @@ sub fresh_device {
         TEST_OPEN => 1,
         helper => {
             authenticated => 1,
+            lifecycleState => 'connected',
             protocol => 4,
             deviceType => 'wattpilot_flex',
         },

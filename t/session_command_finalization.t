@@ -26,7 +26,7 @@ sub fresh_device {
         TEST_OPEN => 1,
         TCPDev => 1,
         FD => 99,
-        helper => { authenticated => 1 },
+        helper => { authenticated => 1, lifecycleState => 'connected' },
     };
     $defs{$hash->{NAME}} = $hash;
     return $hash;

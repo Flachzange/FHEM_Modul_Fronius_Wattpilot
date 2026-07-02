@@ -12,7 +12,14 @@ our ($readingFnAttributes, %modules, %defs, %attr);
 my $root = File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..'));
 require File::Spec->catfile($root, '72_Wattpilot.pm');
 
-my @temperature_readings = map { "diag_temperatureSensor$_" } 1 .. 6;
+my @temperature_readings = qw(
+    diag_temperatureSensor1
+    diag_temperatureSensor2
+    diag_temperatureGridConnector
+    diag_temperatureCurrentSensor
+    diag_temperatureType2ScrewTerminals
+    diag_temperatureMID
+);
 my @controller_readings = qw(
     deviceControllerFirmwareVersion
     deviceControllerFirmwareCRC
@@ -36,7 +43,7 @@ sub fresh_device {
         DeviceName => 'ws:192.0.2.91:80/ws',
         STATE => 'connected',
         TEST_OPEN => 1,
-        helper => { authenticated => 1 },
+        helper => { authenticated => 1, lifecycleState => 'connected' },
     };
     $defs{$name} = $hash;
     return $hash;
@@ -147,7 +154,7 @@ subtest 'controller fields are ordinary interval-controlled device readings' => 
         'no derived controller-health verdict is invented');
 };
 
-subtest 'temperature array is optional diagnostic data with six generic positions' => sub {
+subtest 'temperature array uses the verified Flex component mapping for positions three through six' => sub {
     my $hash = fresh_device('temperatureDiagnosticsWallbox');
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 1;
@@ -164,6 +171,19 @@ subtest 'temperature array is optional diagnostic data with six generic position
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 1), undef,
         'temperature diagnostics can be enabled');
+    my @former_temperature_readings = qw(
+        diag_temperatureSensor3
+        diag_temperatureSensor4
+        diag_temperatureSensor5
+        diag_temperatureSensor6
+    );
+    for my $reading (@former_temperature_readings) {
+        $hash->{READINGS}{$reading} = {
+            VAL => 'stale-before-rename',
+            TIME => 'before-reload',
+        };
+    }
+    my $updates_before_semantic_mapping = scalar @DevIo::READING_UPDATES;
     $DevIo::NOW = 2_010;
     ok(parse_status($hash, 'fullStatus', {
         car => 1,
@@ -173,14 +193,26 @@ subtest 'temperature array is optional diagnostic data with six generic position
         'null position one creates no reading');
     ok(!exists $hash->{READINGS}{diag_temperatureSensor2},
         'null position two creates no reading');
-    is(reading_value($hash, 'diag_temperatureSensor3'), '39.00',
-        'position three is formatted with two decimals');
-    is(reading_value($hash, 'diag_temperatureSensor4'), '41.00',
-        'position four is formatted with two decimals');
-    is(reading_value($hash, 'diag_temperatureSensor5'), '40.00',
-        'position five is formatted with two decimals');
-    is(reading_value($hash, 'diag_temperatureSensor6'), '38.50',
-        'position six is formatted with two decimals');
+    is(reading_value($hash, 'diag_temperatureGridConnector'), '39.00',
+        'verified grid-connector position is formatted with two decimals');
+    is(reading_value($hash, 'diag_temperatureCurrentSensor'), '41.00',
+        'verified current-sensor position is formatted with two decimals');
+    is(reading_value($hash, 'diag_temperatureType2ScrewTerminals'), '40.00',
+        'verified Type 2 screw-terminal position is formatted with two decimals');
+    is(reading_value($hash, 'diag_temperatureMID'), '38.50',
+        'verified MID position is formatted with two decimals');
+    for my $reading (@former_temperature_readings) {
+        is(reading_value($hash, $reading), 'stale-before-rename',
+            "$reading is not updated as a compatibility alias");
+    }
+    my @temperature_updates = @DevIo::READING_UPDATES[
+        $updates_before_semantic_mapping .. $#DevIo::READING_UPDATES
+    ];
+    my %updated_temperature_reading = map { $_->[1] => 1 } @temperature_updates;
+    for my $reading (@former_temperature_readings) {
+        ok(!$updated_temperature_reading{$reading},
+            "$reading produces no duplicate reading update or event");
+    }
 
     $DevIo::NOW = 2_039;
     ok(parse_status($hash, 'deltaStatus', {
@@ -191,19 +223,19 @@ subtest 'temperature array is optional diagnostic data with six generic position
         'new numeric position one is published');
     ok(!exists $hash->{READINGS}{diag_temperatureSensor2},
         'invalid string position two creates no reading');
-    is(reading_value($hash, 'diag_temperatureSensor3'), '39.00',
+    is(reading_value($hash, 'diag_temperatureGridConnector'), '39.00',
         'null position three preserves the previous reading');
-    is(reading_value($hash, 'diag_temperatureSensor4'), '41.00',
+    is(reading_value($hash, 'diag_temperatureCurrentSensor'), '41.00',
         'object position four preserves the previous reading');
-    is(reading_value($hash, 'diag_temperatureSensor5'), '42.13',
+    is(reading_value($hash, 'diag_temperatureType2ScrewTerminals'), '42.13',
         'changed position five is rounded to two decimals');
-    is(reading_value($hash, 'diag_temperatureSensor6'), '37.00',
+    is(reading_value($hash, 'diag_temperatureMID'), '37.00',
         'integer position six is formatted with trailing zeroes');
 
     ok(parse_status($hash, 'deltaStatus', { tma => 'invalid-container' }),
         'wrong-shaped temperature container is ignored');
     DevIo::run_due_timers(2_070);
-    is(reading_value($hash, 'diag_temperatureSensor5'), '42.13',
+    is(reading_value($hash, 'diag_temperatureType2ScrewTerminals'), '42.13',
         'wrong-shaped temperature container preserves existing readings');
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 0), undef,
@@ -211,6 +243,10 @@ subtest 'temperature array is optional diagnostic data with six generic position
     for my $reading (@temperature_readings) {
         ok(!exists $hash->{READINGS}{$reading},
             "$reading is removed immediately when diagnostics are disabled");
+    }
+    for my $reading (@former_temperature_readings) {
+        is(reading_value($hash, $reading), 'stale-before-rename',
+            "$reading remains untouched because the module performs no automatic migration cleanup");
     }
     ok(!exists $hash->{helper}{telemetryPublication}{diagnostic},
         'disabling diagnostics clears temperature cache and dirty state');
@@ -248,7 +284,7 @@ subtest 'reading policies retain the requested categories and evidence limits' =
         is($policy->{$key}{category}, 'optional_diagnostic',
             "$key is optional diagnostic data");
         is($policy->{$key}{source}, 'status:tma[' . ($index - 1) . ']',
-            "$key retains only its generic array position");
+            "$key retains its exact array source position");
         is($policy->{$key}{formatter}, 'decimal2',
             "$key uses two-decimal physical-value formatting");
         is($policy->{$key}{validator}, 'number',

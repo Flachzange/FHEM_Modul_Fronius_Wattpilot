@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.11';
+my $WATTPILOT_VERSION = '2.1.12';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -148,13 +148,13 @@ my @WATTPILOT_READING_DEFINITION = (
             status:tma[0] interval diagnostic diagnostic decimal2 number none)],
     [qw(diag_temperature_sensor_2 diag_temperatureSensor2 optional_diagnostic
             status:tma[1] interval diagnostic diagnostic decimal2 number none)],
-    [qw(diag_temperature_sensor_3 diag_temperatureSensor3 optional_diagnostic
+    [qw(diag_temperature_sensor_3 diag_temperatureGridConnector optional_diagnostic
             status:tma[2] interval diagnostic diagnostic decimal2 number none)],
-    [qw(diag_temperature_sensor_4 diag_temperatureSensor4 optional_diagnostic
+    [qw(diag_temperature_sensor_4 diag_temperatureCurrentSensor optional_diagnostic
             status:tma[3] interval diagnostic diagnostic decimal2 number none)],
-    [qw(diag_temperature_sensor_5 diag_temperatureSensor5 optional_diagnostic
+    [qw(diag_temperature_sensor_5 diag_temperatureType2ScrewTerminals optional_diagnostic
             status:tma[4] interval diagnostic diagnostic decimal2 number none)],
-    [qw(diag_temperature_sensor_6 diag_temperatureSensor6 optional_diagnostic
+    [qw(diag_temperature_sensor_6 diag_temperatureMID optional_diagnostic
             status:tma[5] interval diagnostic diagnostic decimal2 number none)],
     [qw(diag_fbuf_akku_mode diag_fbuf_akkuMode optional_diagnostic
             status:fbuf_akkuMode interval diagnostic diagnostic diagnostic2 raw_scalar none)],
@@ -507,15 +507,20 @@ sub Wattpilot_Initialize($) {
     my ($hash) = @_;
 
     # FHEM CommandReload calls Initialize while existing device hashes remain
-    # in %defs. Preserve the live session, initialize the two persistent
-    # connection diagnostics without events, and ensure exactly one watchdog
-    # for an already connected device.
+    # in %defs. Runtime ownership from the previously loaded code cannot be
+    # trusted across that boundary, so invalidate it and establish one fresh
+    # connection lifecycle instead of reconstructing state from STATE or the
+    # persisted public state reading.
     for my $device_hash (values %defs) {
         next if ref($device_hash) ne 'HASH';
         next if ($device_hash->{TYPE} // '') ne 'Wattpilot';
+        my $was_runtime_active = Wattpilot_IsRuntimeActive($device_hash);
         $device_hash->{VERSION} = $WATTPILOT_VERSION;
         Wattpilot_InitializeConnectionDiagnostics($device_hash);
-        Wattpilot_StartInboundWatchdog($device_hash);
+        Wattpilot_InvalidateSession(
+            $device_hash, undef, 'session replaced');
+        Wattpilot_ApplyConfiguredState(
+            $device_hash, 1, undef, $was_runtime_active);
         if (AttrVal($device_hash->{NAME}, 'diagnosticReadings', 0) eq '1') {
             Wattpilot_ClearOptionalDiagnosticCache($device_hash);
         }
@@ -585,6 +590,35 @@ sub Wattpilot_CurrentLifecycleGeneration($) {
     my ($hash) = @_;
     $hash->{helper}{lifecycleGeneration} //= 0;
     return $hash->{helper}{lifecycleGeneration};
+}
+
+sub Wattpilot_CommitLifecycleState($$) {
+    my ($hash, $state) = @_;
+    $hash->{helper} = {} if ref($hash->{helper}) ne 'HASH';
+    $hash->{helper}{lifecycleState} = $state;
+    return $state;
+}
+
+sub Wattpilot_CurrentLifecycleState($) {
+    my ($hash) = @_;
+    return $hash->{helper}{lifecycleState}
+        if ref($hash->{helper}) eq 'HASH'
+        && defined($hash->{helper}{lifecycleState});
+    return Wattpilot_CommitLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
+}
+
+sub Wattpilot_SetLifecycleState($$;$) {
+    my ($hash, $state, $trigger) = @_;
+    $trigger = 1 if !defined $trigger;
+
+    # Internal runtime ownership must change before the public reading is
+    # published: readingsEndUpdate evaluates stateFormat and may trigger
+    # reentrant commands before this function returns.
+    Wattpilot_CommitLifecycleState($hash, $state);
+    readingsSingleUpdate(
+        $hash, $WATTPILOT_READING_NAME{state}, $state, $trigger);
+    return $state;
 }
 
 sub Wattpilot_IsRuntimeActive($;$) {
@@ -688,7 +722,7 @@ sub Wattpilot_StartInboundWatchdog($;$$) {
         $hash->{READINGS}{$WATTPILOT_READING_NAME{device_type}}{VAL}
         if !defined($device_type) || $device_type eq '';
     return undef if ($device_type // '') ne 'wattpilot_flex';
-    my $state = $hash->{STATE} // '';
+    my $state = Wattpilot_CurrentLifecycleState($hash);
     return undef if $state ne $WATTPILOT_LIFECYCLE_STATE{connected}
         && $state ne $WATTPILOT_LIFECYCLE_STATE{rebooting};
 
@@ -749,6 +783,8 @@ sub Wattpilot_CloseDevIoForContext($;$) {
 sub Wattpilot_InvalidateSession($;$$) {
     my ($hash, $close_ctx, $command_reason) = @_;
     my $open_ctx = $hash->{helper}{openInFlight};
+    Wattpilot_CommitLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
     Wattpilot_ClearConnectionState($hash, $command_reason);
@@ -767,26 +803,30 @@ sub Wattpilot_ApplyConfiguredState($;$$$) {
         : Wattpilot_IsDisabled($hash->{NAME});
     if ($disabled) {
         delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disabled}, 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{disabled});
         return $WATTPILOT_LIFECYCLE_STATE{disabled};
     }
 
     my $password_result = Wattpilot_GetPassword($hash);
     if ($password_result->{status} eq "error") {
         delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{credential_error}, 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{credential_error});
         return $WATTPILOT_LIFECYCLE_STATE{credential_error};
     }
     if ($password_result->{status} ne "value"
         || $password_result->{value} eq "") {
         delete $hash->{helper}{pendingReconnectAfterOpen};
-        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{password_missing}, 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{password_missing});
         return $WATTPILOT_LIFECYCLE_STATE{password_missing};
     }
 
     return "configured" if !$connect;
 
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
     if ($hash->{helper}{openInFlight}) {
         $hash->{helper}{pendingReconnectAfterOpen} = 1;
     } else {
@@ -870,6 +910,7 @@ sub Wattpilot_Define($$) {
     delete $hash->{helper}{deleting};
     delete $hash->{helper}{shuttingDown};
     delete $hash->{helper}{timeoutRetryUsed};
+    Wattpilot_CurrentLifecycleState($hash);
 
     $hash->{DeviceName} = $definition->{device_name};
     $hash->{VERSION} = $WATTPILOT_VERSION;
@@ -926,7 +967,8 @@ sub Wattpilot_Shutdown($) {
     my ($hash) = @_;
     $hash->{helper}{shuttingDown} = 1;
     Wattpilot_InvalidateSession($hash, undef, 'session removed');
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
     RemoveInternalTimer($hash);
     return undef;
 }
@@ -967,10 +1009,11 @@ sub Wattpilot_StartOpen($$) {
     my ($hash, $reopen) = @_;
     return 0 if !Wattpilot_IsRuntimeActive($hash);
     return 0 if DevIo_IsOpen($hash) || $hash->{helper}{openInFlight};
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{connecting});
     Wattpilot_ClearConnectionState($hash, 'connection lost');
     
     Log3 $hash, 3, "Wattpilot ($hash->{NAME}) - Opening WebSocket connection";
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connecting}, 1);
     my $generation = Wattpilot_CurrentLifecycleGeneration($hash);
     my $open_ctx = {
         generation => $generation,
@@ -1000,20 +1043,19 @@ sub Wattpilot_StartOpen($$) {
             if ($pending_reconnect && Wattpilot_IsRuntimeActive($hash)) {
                 Wattpilot_ApplyConfiguredState($hash, 1);
             } elsif (Wattpilot_IsDisabled($hash->{NAME})) {
-                readingsSingleUpdate(
-                    $hash, $WATTPILOT_READING_NAME{state},
-                    $WATTPILOT_LIFECYCLE_STATE{disabled}, 1);
+                Wattpilot_SetLifecycleState(
+                    $hash, $WATTPILOT_LIFECYCLE_STATE{disabled});
             } elsif ($hash->{helper}{shuttingDown}) {
-                readingsSingleUpdate(
-                    $hash, $WATTPILOT_READING_NAME{state},
-                    $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
+                Wattpilot_SetLifecycleState(
+                    $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
             }
             return;
         }
         delete $hash->{helper}{openInFlight};
         if($error) {
             Log3 $hash, 1, "Wattpilot ($hash->{NAME}) - WebSocket connection failed";
-            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connection_failed}, 1);
+            Wattpilot_SetLifecycleState(
+                $hash, $WATTPILOT_LIFECYCLE_STATE{connection_failed});
             if (!defined($hash->{NEXT_OPEN}) || $hash->{NEXT_OPEN} <= gettimeofday()) {
                 Wattpilot_RecordReconnect($hash, 'socketError', 1);
                 Wattpilot_ScheduleConnect($hash, 60);
@@ -1021,11 +1063,11 @@ sub Wattpilot_StartOpen($$) {
             return;
         }
         if (!DevIo_IsOpen($hash)) {
-            readingsSingleUpdate(
-                $hash, $WATTPILOT_READING_NAME{state},
-                $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1)
+            Wattpilot_SetLifecycleState(
+                $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected})
                 if Wattpilot_IsRuntimeActive($hash)
-                && ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected};
+                && Wattpilot_CurrentLifecycleState($hash)
+                    ne $WATTPILOT_LIFECYCLE_STATE{disconnected};
             return;
         }
         Wattpilot_DoInit($hash);
@@ -1046,7 +1088,8 @@ sub Wattpilot_OpenDev($$$) {
 sub Wattpilot_DoInit($) {
     my ($hash) = @_;
     return if !Wattpilot_IsRuntimeActive($hash);
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{authenticating}, 1);
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{authenticating});
     Wattpilot_ScheduleTimer(
         $hash, 'lifecycle_timeout', $WATTPILOT_AUTH_TIMEOUT,
         'Wattpilot_LifecycleTimeout', { phase => 'auth' });
@@ -1065,7 +1108,7 @@ sub Wattpilot_LifecycleTimeout($) {
         ? $WATTPILOT_LIFECYCLE_STATE{initialization_timeout}
         : $WATTPILOT_LIFECYCLE_STATE{auth_timeout};
     Log3 $hash->{NAME}, 1, "Wattpilot ($hash->{NAME}) - $state";
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $state, 1);
+    Wattpilot_SetLifecycleState($hash, $state);
 
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
@@ -1081,7 +1124,7 @@ sub Wattpilot_LifecycleTimeout($) {
 
 sub Wattpilot_Read($) {
     my ($hash) = @_;
-    my $state_before_read = $hash->{STATE} // '';
+    my $state_before_read = Wattpilot_CurrentLifecycleState($hash);
     my $buf = DevIo_SimpleRead($hash);
 
     if (!defined($buf)) {
@@ -1098,14 +1141,16 @@ sub Wattpilot_Read($) {
         }
         delete $hash->{helper}{idleRefreshPending};
         delete $hash->{helper}{openInFlight};
+        Wattpilot_CommitLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
         Wattpilot_ClearConnectionState($hash, 'connection lost');
         if (Wattpilot_IsRuntimeActive($hash)) {
             Wattpilot_RecordReconnect($hash, 'socketClosed', 1)
                 if $was_live_session;
-            readingsSingleUpdate(
-                $hash, $WATTPILOT_READING_NAME{state},
-                $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1)
-                if ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected};
+            Wattpilot_SetLifecycleState(
+                $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected})
+                if $state_before_read
+                    ne $WATTPILOT_LIFECYCLE_STATE{disconnected};
             Wattpilot_ScheduleConnect($hash, 1) if !$devio_owns_reconnect;
         }
         return "";
@@ -1523,9 +1568,8 @@ sub Wattpilot_DispatchMessage($$) {
         delete $hash->{helper}{authPending};
         delete $hash->{helper}{authHashMode};
         Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
-        readingsSingleUpdate(
-            $hash, $WATTPILOT_READING_NAME{state},
-            $WATTPILOT_LIFECYCLE_STATE{initializing}, 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{initializing});
         Wattpilot_ScheduleTimer(
             $hash, 'lifecycle_timeout', $WATTPILOT_INITIALIZATION_TIMEOUT,
             'Wattpilot_LifecycleTimeout', { phase => 'initialization' });
@@ -1554,7 +1598,8 @@ sub Wattpilot_DispatchMessage($$) {
         Wattpilot_UpdateReadings($hash, $status, $message);
         Wattpilot_MarkInitialized($hash)
             if $hash->{helper}{authenticated}
-            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{initializing};
+            && Wattpilot_CurrentLifecycleState($hash)
+                eq $WATTPILOT_LIFECYCLE_STATE{initializing};
     } elsif ($type eq 'response') {
         if (exists($json->{success})
             && !Wattpilot_IsJsonBoolean($json->{success})) {
@@ -1589,7 +1634,8 @@ sub Wattpilot_MarkInitialized($) {
     my ($hash) = @_;
     Wattpilot_CancelTimer($hash, 'lifecycle_timeout');
     delete $hash->{helper}{timeoutRetryUsed};
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{connected}, 1);
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{connected});
     Wattpilot_StartInboundWatchdog($hash);
 }
 
@@ -1601,7 +1647,7 @@ sub Wattpilot_InboundWatchdog($) {
 
     return if AttrVal($hash->{NAME}, 'inboundWatchdog', 1) ne '1';
     return if !DevIo_IsOpen($hash);
-    my $state = $hash->{STATE} // '';
+    my $state = Wattpilot_CurrentLifecycleState($hash);
     return if $state ne $WATTPILOT_LIFECYCLE_STATE{connected}
         && $state ne $WATTPILOT_LIFECYCLE_STATE{rebooting};
 
@@ -1619,11 +1665,10 @@ sub Wattpilot_InboundWatchdog($) {
         Log3 $hash->{NAME}, 2,
             "Wattpilot ($hash->{NAME}) - no inbound JSON for "
             . int($age) . " seconds; reconnecting silent session";
-        Wattpilot_RecordReconnect($hash, 'inboundTimeout', 1);
         Wattpilot_InvalidateSession($hash, undef, 'connection lost');
-        readingsSingleUpdate(
-            $hash, $WATTPILOT_READING_NAME{state},
-            $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
+        Wattpilot_RecordReconnect($hash, 'inboundTimeout', 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
         Wattpilot_ScheduleConnect($hash, 1);
         return;
     }
@@ -1667,9 +1712,10 @@ sub Wattpilot_IdleRefreshTimeout($) {
     $hash->{helper}{idleRefreshAwaitingReconnectNrg} = 1;
     Log3 $hash->{NAME}, 3,
         "Wattpilot ($hash->{NAME}) - idle refresh fallback closes the session once for this idle episode";
-    Wattpilot_RecordReconnect($hash, 'idleRefreshTimeout', 1);
     Wattpilot_InvalidateSession($hash, undef, 'connection lost');
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disconnected}, 1);
+    Wattpilot_RecordReconnect($hash, 'idleRefreshTimeout', 1);
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{disconnected});
     Wattpilot_ScheduleConnect($hash, 1);
 }
 
@@ -2356,11 +2402,6 @@ sub Wattpilot_AbortPendingRequests($$;$) {
     }
 }
 
-sub Wattpilot_AbortPendingRequestsForReconnect($) {
-    my ($hash) = @_;
-    return Wattpilot_AbortPendingRequests($hash, 'reconnect requested');
-}
-
 sub Wattpilot_ManualReconnect($) {
     my ($hash) = @_;
 
@@ -2374,13 +2415,12 @@ sub Wattpilot_ManualReconnect($) {
         if $password_result->{status} ne 'value'
         || $password_result->{value} eq '';
 
-    Wattpilot_AbortPendingRequestsForReconnect($hash);
     delete $hash->{helper}{timeoutRetryUsed};
     delete $hash->{helper}{pendingReconnectAfterOpen};
     Wattpilot_StopIdleRefresh($hash);
     delete $hash->{helper}{idleRefreshAttempted};
-    Wattpilot_RecordReconnect($hash, 'manual', 0);
     Wattpilot_InvalidateSession($hash, undef, 'reconnect requested');
+    Wattpilot_RecordReconnect($hash, 'manual', 0);
     Wattpilot_ApplyConfiguredState($hash, 0);
     return undef;
 }
@@ -2575,9 +2615,8 @@ sub Wattpilot_Set($@) {
         my $error = Wattpilot_SendSecure(
             $hash, $schema->{protocolKey}, JSON::true);
         return $error if defined $error;
-        readingsSingleUpdate(
-            $hash, $WATTPILOT_READING_NAME{state},
-            $WATTPILOT_LIFECYCLE_STATE{rebooting}, 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{rebooting});
         return undef;
     }
     if (exists $WATTPILOT_GROUPED_COMMAND_BY_NAME{$cmd}) {
@@ -2623,18 +2662,17 @@ sub Wattpilot_SendSecure($$$) {
 
     return "Device is disabled" if Wattpilot_IsDisabled($name);
     return "Wattpilot is disconnected" if !DevIo_IsOpen($hash);
+    my $lifecycle_state = Wattpilot_CurrentLifecycleState($hash);
     return "Wattpilot is rebooting"
-        if (($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{rebooting})
-        || (($hash->{READINGS}{$WATTPILOT_READING_NAME{state}}{VAL} // '')
-            eq $WATTPILOT_LIFECYCLE_STATE{rebooting});
+        if $lifecycle_state eq $WATTPILOT_LIFECYCLE_STATE{rebooting};
     return "Wattpilot is not authenticated" if !$hash->{helper}{authenticated}
-        || (($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{connected}
-            && (($hash->{READINGS}{$WATTPILOT_READING_NAME{state}}{VAL} // '') ne $WATTPILOT_LIFECYCLE_STATE{connected}));
+        || $lifecycle_state ne $WATTPILOT_LIFECYCLE_STATE{connected};
 
     my $stored_hash_result = Wattpilot_GetPasswordHash($hash);
     if ($stored_hash_result->{status} eq "error") {
         Log3 $name, 1, "Wattpilot ($name) - Cannot send command because credential storage is unavailable";
-        readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{credential_error}, 1);
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{credential_error});
         return "Wattpilot credential storage is unavailable";
     }
     my $stored_hash = $stored_hash_result->{status} eq "value" ? $stored_hash_result->{value} : undef;
@@ -2744,9 +2782,10 @@ sub Wattpilot_AbortAuthentication($$) {
     my ($hash, $state) = @_;
     Wattpilot_NextLifecycleGeneration($hash);
     Wattpilot_CancelAllTimers($hash);
+    Wattpilot_CommitLifecycleState($hash, $state);
     Wattpilot_ClearConnectionState($hash, 'authentication aborted');
     delete $hash->{helper}{openInFlight};
-    readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $state, 1);
+    Wattpilot_SetLifecycleState($hash, $state);
     DevIo_CloseDev($hash);
 }
 
@@ -2773,12 +2812,12 @@ sub Wattpilot_CleanupPendingRequests($) {
         Log3 $hash->{NAME}, 1,
             "Wattpilot ($hash->{NAME}) - Command response timeout key=$key requestId=$request_id";
         Wattpilot_SetCommandReadings($hash, $request_id, 'timeout', 'response timeout');
-        readingsSingleUpdate(
-            $hash, $WATTPILOT_READING_NAME{state},
-            $WATTPILOT_LIFECYCLE_STATE{connected}, 1)
+        Wattpilot_SetLifecycleState(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{connected})
             if defined($key)
             && $key eq $WATTPILOT_COMMAND_SCHEMA{reboot}{protocolKey}
-            && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{rebooting}
+            && Wattpilot_CurrentLifecycleState($hash)
+                eq $WATTPILOT_LIFECYCLE_STATE{rebooting}
             && DevIo_IsOpen($hash)
             && $hash->{helper}{authenticated};
     }
@@ -2833,11 +2872,11 @@ sub Wattpilot_HandleResponse($$) {
     }
 
     Wattpilot_SetCommandReadings($hash, $request_id, 'failed', $error);
-    readingsSingleUpdate(
-        $hash, $WATTPILOT_READING_NAME{state},
-        $WATTPILOT_LIFECYCLE_STATE{connected}, 1)
+    Wattpilot_SetLifecycleState(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{connected})
         if $is_reboot
-        && ($hash->{STATE} // '') eq $WATTPILOT_LIFECYCLE_STATE{rebooting}
+        && Wattpilot_CurrentLifecycleState($hash)
+            eq $WATTPILOT_LIFECYCLE_STATE{rebooting}
         && DevIo_IsOpen($hash)
         && $hash->{helper}{authenticated};
 }
@@ -2845,8 +2884,9 @@ sub Wattpilot_HandleResponse($$) {
 sub Wattpilot_Ready($) {
     my ($hash) = @_;
     return 0 if !Wattpilot_IsRuntimeActive($hash);
-    return 0 if ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{disconnected}
-        && ($hash->{STATE} // '') ne $WATTPILOT_LIFECYCLE_STATE{connection_failed};
+    my $state = Wattpilot_CurrentLifecycleState($hash);
+    return 0 if $state ne $WATTPILOT_LIFECYCLE_STATE{disconnected}
+        && $state ne $WATTPILOT_LIFECYCLE_STATE{connection_failed};
     Wattpilot_ClearConnectionState($hash, 'connection lost');
     return 0 if defined($hash->{helper}{timers}{connect});
     return Wattpilot_StartOpen($hash, 1) ? 1 : 0;
@@ -2867,7 +2907,8 @@ sub Wattpilot_Attr(@) {
             RemoveInternalTimer($hash, 'Wattpilot_Connect');
             RemoveInternalTimer($hash, 'Wattpilot_RequestTimeout');
             delete $hash->{helper}{pendingReconnectAfterOpen};
-            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{disabled}, 1);
+            Wattpilot_SetLifecycleState(
+                $hash, $WATTPILOT_LIFECYCLE_STATE{disabled});
         } elsif($cmd eq "del" || $attrVal eq "0") {
             delete $hash->{helper}{timeoutRetryUsed};
             Wattpilot_InvalidateSession($hash, undef, 'session replaced');
@@ -2885,7 +2926,8 @@ sub Wattpilot_Attr(@) {
 
         if (defined $hash_error) {
             delete $hash->{helper}{pendingReconnectAfterOpen};
-            readingsSingleUpdate($hash, $WATTPILOT_READING_NAME{state}, $WATTPILOT_LIFECYCLE_STATE{credential_error}, 1);
+            Wattpilot_SetLifecycleState(
+                $hash, $WATTPILOT_LIFECYCLE_STATE{credential_error});
         } else {
             Wattpilot_ApplyConfiguredState($hash, 1);
         }
@@ -3239,6 +3281,14 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.7 exposes the hello firmware string as <code>deviceFirmwareVersion</code>, adds exact device identity readings, separates <code>deviceHelloProtocol</code> from <code>deviceStatusProtocol</code>, adds interval-controlled <code>deviceRebootCount</code> and <code>uptime</code>, and introduces fifteen optional scalar field-research readings behind <code>diagnosticReadings</code>. The observed <code>rbt</code> progression is treated as milliseconds, divided by 1,000, and rendered as cumulative hours and minutes in <code>H:MM</code>; the exact device process or lifecycle represented by the counter remains unconfirmed. The former standalone stationary-battery mode/SOC/power readings are replaced by raw <code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code>, and <code>diag_fbuf_pAkku</code>. Optional diagnostics are removed immediately when disabled and make no semantic, unit, sign, aggregation, or enum claims.</p>
   <p>Version 2.1.8 adds six optional numeric temperature-array readings <code>diag_temperatureSensor1</code> through <code>diag_temperatureSensor6</code> and seven interval-controlled controller-health readings from the observed <code>cc4</code> object. Temperature positions have no claimed physical sensor assignment, unit, maximum, or derating meaning. Controller strings and the non-negative stack-size value are exposed without decoding tokens, inventing enums, or deriving a combined health verdict. Missing, <code>null</code>, malformed, and wrong-type nested values preserve existing readings.</p>
   <p>Version 2.1.9 adds <code>set &lt;name&gt; reboot</code>. It sends protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> path and immediately publishes <code>state=rebooting</code> after dispatch. A normal device response remains authoritative; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the Wattpilot closes the socket before responding, only the pending reboot request identified by protocol key <code>rst</code> is completed successfully and the existing automatic reconnect path takes over; unrelated pending commands retain the normal connection-loss failure behavior. The exact trigger value and disconnect timing require real-device confirmation.</p>
+  <p>Version 2.1.12 decouples transient lifecycle control from the public <code>state</code> reading and presentation-formatted <code>STATE</code>. A dedicated runtime lifecycle is updated before reading publication; restored or manually changed readings cannot authorize commands, watchdogs, or connectivity. Reload invalidates unverifiable old ownership and starts one controlled reconnect. The same version replaces the four generic readings for the verified <code>tma[2]</code> through <code>tma[5]</code> positions with component-specific names. The mapping was verified on a Wattpilot Flex Home 22 C6; no unit, limit, derating threshold, or cross-model equivalence is inferred. Publication cadence, formatting, validation, and <code>diagnosticReadings</code> behavior are unchanged. No aliases or automatic cleanup are provided; old reading entries may remain stale after a module reload and must be removed manually if desired.</p>
+  <table class="block wide">
+    <tr><th>Reading through 2.1.11</th><th>Reading from 2.1.12</th></tr>
+    <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
+    <tr><td><code>diag_temperatureSensor4</code></td><td><code>diag_temperatureCurrentSensor</code></td></tr>
+    <tr><td><code>diag_temperatureSensor5</code></td><td><code>diag_temperatureType2ScrewTerminals</code></td></tr>
+    <tr><td><code>diag_temperatureSensor6</code></td><td><code>diag_temperatureMID</code></td></tr>
+  </table>
   <table class="block wide">
     <tr><th>Reading through 2.0.6</th><th>Reading from 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3421,7 +3471,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>uptime</code><br>Non-negative raw <code>rbt</code> value whose progression on the tested Flex was consistent with milliseconds. It is divided by 1,000 and rendered as cumulative hours and minutes in <code>H:MM</code>; remaining seconds and milliseconds are discarded. The exact device process or lifecycle represented by the counter is unconfirmed. Publication uses the normal interval while charging or with <code>update_while_idle=1</code>.</li>
     <li><code>deviceControllerFirmwareVersion</code>, <code>deviceControllerFirmwareCRC</code>, <code>deviceControllerFirmwareIntegrity</code>, <code>deviceControllerResetReason</code>, <code>deviceControllerMidFirmwareVersion</code>, <code>deviceControllerHardwareId</code><br>Raw strings from the corresponding members of the observed <code>cc4</code> object. They publish on the shared interval without idle gating. No relationship to the main firmware reading, enum, token decoding, or health verdict is inferred.</li>
     <li><code>deviceControllerStackSize</code><br>Raw non-negative integer from <code>cc4.stack_size</code>, published with the other device-health values. Unit and exact meaning remain unconfirmed.</li>
-    <li><code>diag_temperatureSensor1</code>, <code>diag_temperatureSensor2</code>, <code>diag_temperatureSensor3</code>, <code>diag_temperatureSensor4</code>, <code>diag_temperatureSensor5</code>, <code>diag_temperatureSensor6</code><br>Optional numeric values from <code>tma[0]</code> through <code>tma[5]</code>, formatted with exactly two decimal places. Physical sensor mapping, unit, maximum, and derating meaning remain unconfirmed; missing, <code>null</code>, malformed, or non-numeric positions preserve existing readings.</li>
+    <li><code>diag_temperatureSensor1</code>, <code>diag_temperatureSensor2</code>, <code>diag_temperatureGridConnector</code>, <code>diag_temperatureCurrentSensor</code>, <code>diag_temperatureType2ScrewTerminals</code>, <code>diag_temperatureMID</code><br>Optional numeric values from <code>tma[0]</code> through <code>tma[5]</code>, formatted with exactly two decimal places. On the verified Wattpilot Flex Home 22 C6 mapping, <code>tma[2]</code> is the grid connector, <code>tma[3]</code> the current sensor, <code>tma[4]</code> the Type 2 screw terminals, and <code>tma[5]</code> the MID. Positions <code>tma[0]</code> and <code>tma[1]</code>, the unit, limits, derating thresholds, and applicability to other hardware revisions remain unconfirmed; missing, <code>null</code>, malformed, or non-numeric positions preserve existing readings.</li>
     <li><code>diag_fbuf_pGrid</code>, <code>diag_fbuf_pPv</code>, <code>diag_pvopt_averagePGrid</code>, <code>diag_pvopt_averagePPv</code>, <code>diag_pvopt_averagePAkku</code>, <code>diag_pvopt_averagePOhmpilot</code>, <code>diag_pvopt_deltaP</code>, <code>diag_pvopt_deltaA</code>, <code>diag_pvopt_specialCase</code>, <code>diag_fbuf_pAcTotal</code>, <code>diag_fbuf_ohmpilotState</code>, <code>diag_fbuf_ohmpilotTemperature</code><br>Optional raw scalar field-research readings enabled by <code>diagnosticReadings=1</code>. Their original protocol wording is retained after <code>diag_</code>; no meaning, unit, sign, aggregation, or enum is claimed.</li>
     <li><code>configPvBatteryChargeAboveSoC</code><br>App setting <code>Charge above</code> from <code>fam</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped setter accepts whole percentages only.</li>
     <li><code>configPvBatteryDischargeEnabled</code><br>App switch <code>Discharge until</code> from <code>pdte</code>, exposed as <code>0</code> or <code>1</code>.</li>
@@ -3518,6 +3568,14 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.7 stellt den Firmware-String aus der Hello-Nachricht als <code>deviceFirmwareVersion</code> bereit, ergänzt exakte Geräteidentitätsreadings, trennt <code>deviceHelloProtocol</code> von <code>deviceStatusProtocol</code>, ergänzt intervallgesteuerte <code>deviceRebootCount</code> und <code>uptime</code> sowie fünfzehn optionale skalare Felderkundungsreadings hinter <code>diagnosticReadings</code>. Der beobachtete Fortschritt von <code>rbt</code> wird als Millisekunden behandelt, durch 1.000 geteilt und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben; welcher Geräteprozess oder Lifecycle durch den Zähler genau abgebildet wird, bleibt unbestätigt. Die bisherigen eigenständigen stationären Speicher-Modus-/SOC-/Leistungsreadings werden durch rohe <code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code> und <code>diag_fbuf_pAkku</code> ersetzt. Optionale Diagnosen werden beim Abschalten sofort gelöscht und behaupten weder Semantik, Einheit, Vorzeichen, Aggregation noch Enum.</p>
   <p>Version 2.1.8 ergänzt sechs optionale numerische Temperatur-Array-Readings <code>diag_temperatureSensor1</code> bis <code>diag_temperatureSensor6</code> sowie sieben intervallgesteuerte Controller-Health-Readings aus dem beobachteten <code>cc4</code>-Objekt. Für die Temperaturpositionen werden weder physische Sensorzuordnung, Einheit, Maximum noch Derating-Bedeutung behauptet. Controller-Strings und der nicht negative Stack-Size-Wert werden ohne Token-Dekodierung, erfundene Enums oder abgeleiteten Health-Gesamtzustand ausgegeben. Fehlende, <code>null</code>-, strukturell falsche und typfalsche verschachtelte Werte erhalten vorhandene Readings.</p>
   <p>Version 2.1.9 ergänzt <code>set &lt;name&gt; reboot</code>. Der Befehl sendet den Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den bestehenden authentifizierten <code>setValue</code>/<code>securedMsg</code>-Pfad und veröffentlicht danach sofort <code>state=rebooting</code>. Eine normale Geräteantwort bleibt maßgeblich; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt der Wattpilot die Verbindung vor der Antwort, wird ausschließlich der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request erfolgreich abgeschlossen und der vorhandene automatische Reconnect übernimmt; andere ausstehende Befehle behalten ihr normales Fehlerverhalten bei Verbindungsverlust. Der exakte Triggerwert und das Trennungsverhalten müssen am Realgerät bestätigt werden.</p>
+  <p>Version 2.1.12 entkoppelt die transiente Lifecycle-Steuerung vom öffentlichen Reading <code>state</code> und vom durch <code>stateFormat</code> formatierten <code>STATE</code>. Ein eigener Runtime-Lifecycle wird vor der Reading-Veröffentlichung aktualisiert; wiederhergestellte oder manuell geänderte Readings können weder Befehle noch Watchdog oder Verbindung autorisieren. Beim Reload wird nicht verifizierbare alte Ownership invalidiert und genau ein kontrollierter Reconnect gestartet. Dieselbe Version ersetzt die vier generischen Readings für die verifizierten Positionen <code>tma[2]</code> bis <code>tma[5]</code> durch komponentenspezifische Namen. Das Mapping wurde an einem Wattpilot Flex Home 22 C6 verifiziert; daraus werden weder Einheit, Grenzwert, Derating-Schwelle noch eine Übertragbarkeit auf andere Modelle abgeleitet. Aktualisierungstakt, Formatierung, Validierung und das Verhalten von <code>diagnosticReadings</code> bleiben unverändert. Es gibt keine Aliase oder automatische Bereinigung; alte Reading-Einträge können nach einem Modul-Reload als nicht mehr aktualisierte Werte bestehen bleiben und bei Bedarf manuell entfernt werden.</p>
+  <table class="block wide">
+    <tr><th>Reading bis 2.1.11</th><th>Reading ab 2.1.12</th></tr>
+    <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
+    <tr><td><code>diag_temperatureSensor4</code></td><td><code>diag_temperatureCurrentSensor</code></td></tr>
+    <tr><td><code>diag_temperatureSensor5</code></td><td><code>diag_temperatureType2ScrewTerminals</code></td></tr>
+    <tr><td><code>diag_temperatureSensor6</code></td><td><code>diag_temperatureMID</code></td></tr>
+  </table>
   <table class="block wide">
     <tr><th>Reading bis 2.0.6</th><th>Reading ab 2.0.7</th></tr>
     <tr><td><code>forceState</code></td><td><code>configForceState</code></td></tr>
@@ -3700,7 +3758,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>uptime</code><br>Nicht negativer Rohwert aus <code>rbt</code>, dessen Fortschritt beim getesteten Flex mit Millisekunden konsistent war. Er wird durch 1.000 geteilt und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben; verbleibende Sekunden und Millisekunden werden verworfen. Welchen Geräteprozess oder Lifecycle der Zähler genau abbildet, ist nicht bestätigt. Aktualisierung im normalen Intervall beim Laden oder mit <code>update_while_idle=1</code>.</li>
     <li><code>deviceControllerFirmwareVersion</code>, <code>deviceControllerFirmwareCRC</code>, <code>deviceControllerFirmwareIntegrity</code>, <code>deviceControllerResetReason</code>, <code>deviceControllerMidFirmwareVersion</code>, <code>deviceControllerHardwareId</code><br>Rohe Strings aus den entsprechenden Feldern des beobachteten <code>cc4</code>-Objekts. Sie werden im gemeinsamen Intervall ohne Idle-Sperre veröffentlicht. Eine Beziehung zum Haupt-Firmware-Reading, Enums, Token-Dekodierung oder ein Health-Gesamturteil werden nicht abgeleitet.</li>
     <li><code>deviceControllerStackSize</code><br>Roher nicht negativer Ganzzahlwert aus <code>cc4.stack_size</code>, veröffentlicht mit den übrigen Gerätegesundheitswerten. Einheit und genaue Bedeutung bleiben unbestätigt.</li>
-    <li><code>diag_temperatureSensor1</code>, <code>diag_temperatureSensor2</code>, <code>diag_temperatureSensor3</code>, <code>diag_temperatureSensor4</code>, <code>diag_temperatureSensor5</code>, <code>diag_temperatureSensor6</code><br>Optionale numerische Werte aus <code>tma[0]</code> bis <code>tma[5]</code>, formatiert mit genau zwei Nachkommastellen. Physische Sensorzuordnung, Einheit, Maximum und Derating-Bedeutung bleiben unbestätigt; fehlende, <code>null</code>-, strukturell falsche oder nicht numerische Positionen erhalten vorhandene Readings.</li>
+    <li><code>diag_temperatureSensor1</code>, <code>diag_temperatureSensor2</code>, <code>diag_temperatureGridConnector</code>, <code>diag_temperatureCurrentSensor</code>, <code>diag_temperatureType2ScrewTerminals</code>, <code>diag_temperatureMID</code><br>Optionale numerische Werte aus <code>tma[0]</code> bis <code>tma[5]</code>, formatiert mit genau zwei Nachkommastellen. Beim verifizierten Mapping des Wattpilot Flex Home 22 C6 bezeichnet <code>tma[2]</code> den Grid Connector, <code>tma[3]</code> den Current Sensor, <code>tma[4]</code> die Type-2-Schraubklemmen und <code>tma[5]</code> den MID. Die Positionen <code>tma[0]</code> und <code>tma[1]</code>, Einheit, Grenzwerte, Derating-Schwellen und die Übertragbarkeit auf andere Hardware-Revisionen bleiben unbestätigt; fehlende, <code>null</code>-, strukturell falsche oder nicht numerische Positionen erhalten vorhandene Readings.</li>
     <li><code>diag_fbuf_pGrid</code>, <code>diag_fbuf_pPv</code>, <code>diag_pvopt_averagePGrid</code>, <code>diag_pvopt_averagePPv</code>, <code>diag_pvopt_averagePAkku</code>, <code>diag_pvopt_averagePOhmpilot</code>, <code>diag_pvopt_deltaP</code>, <code>diag_pvopt_deltaA</code>, <code>diag_pvopt_specialCase</code>, <code>diag_fbuf_pAcTotal</code>, <code>diag_fbuf_ohmpilotState</code>, <code>diag_fbuf_ohmpilotTemperature</code><br>Optionale rohe skalare Felderkundungsreadings mit <code>diagnosticReadings=1</code>. Nach <code>diag_</code> bleibt die originale Protokollschreibweise erhalten; Bedeutung, Einheit, Vorzeichen, Aggregation und Enum werden nicht behauptet.</li>
     <li><code>configPvBatteryChargeAboveSoC</code><br>App-Einstellung <code>Charge above</code> aus <code>fam</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Der gruppierte Setter akzeptiert nur ganze Prozentwerte.</li>
     <li><code>configPvBatteryDischargeEnabled</code><br>App-Schalter <code>Discharge until</code> aus <code>pdte</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
@@ -3773,7 +3831,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.11",
+  "version": "v2.1.12",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

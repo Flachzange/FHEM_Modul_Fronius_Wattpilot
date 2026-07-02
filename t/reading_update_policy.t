@@ -25,6 +25,7 @@ sub fresh_device {
         TEST_OPEN => 1,
         helper => {
             authenticated => 1,
+            lifecycleState => 'connected',
             deviceType => 'wattpilot_flex',
         },
     };
@@ -686,7 +687,7 @@ subtest 'invalid or incomplete telemetry never advances cadence' => sub {
     }
 };
 
-subtest '2.1.0 hot-reload state activates the new policy without lifecycle side effects' => sub {
+subtest '2.1.0 hot-reload state invalidates old ownership and activates the new policy' => sub {
     my $hash = fresh_device();
     my $timer = { kind => 'connect', generation => 7 };
     $hash->{VERSION} = '2.1.0';
@@ -700,23 +701,29 @@ subtest '2.1.0 hot-reload state activates the new policy without lifecycle side 
         fbuf_pAkku => -1,
     };
 
+    $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_password'} =
+        'synthetic-reload-password';
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.11',
+    is($hash->{VERSION}, '2.1.12',
 
         'reload-style Initialize refreshes the module version');
-    is($hash->{FD}, 69,
-        'reload-style Initialize preserves the open transport');
-    is($hash->{helper}{timers}{connect}, $timer,
-        'reload-style Initialize preserves existing timer ownership');
-    ok(ref($hash->{helper}{timers}{inbound_watchdog}) eq 'HASH',
-        'reload-style Initialize adds one watchdog to an already connected session');
+    ok(!exists $hash->{FD},
+        'reload-style Initialize closes the unverifiable old transport');
+    isnt($hash->{helper}{timers}{connect}, $timer,
+        'reload-style Initialize replaces stale timer ownership');
+    ok(ref($hash->{helper}{timers}{connect}) eq 'HASH',
+        'reload-style Initialize schedules one fresh reconnect');
+    ok(!exists $hash->{helper}{timers}{inbound_watchdog},
+        'reload-style Initialize does not retain a watchdog without a verified session');
     is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'none',
         'reload-style Initialize adds the persistent reconnect reason');
     is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 0,
         'reload-style Initialize adds the persistent reconnect counter');
-    is($hash->{helper}{lifecycleGeneration}, 7,
-        'reload-style Initialize preserves lifecycle generation');
+    is($hash->{helper}{lifecycleGeneration}, 8,
+        'reload-style Initialize advances lifecycle generation');
+    is(main::Wattpilot_CurrentLifecycleState($hash), 'disconnected',
+        'reload-style Initialize starts from a conservative runtime lifecycle');
 
     $attr{$hash->{NAME}}{interval} = 30;
     $attr{$hash->{NAME}}{update_while_idle} = 0;

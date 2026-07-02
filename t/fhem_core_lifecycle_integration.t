@@ -37,6 +37,7 @@ sub existing_device {
         TEST_OPEN  => 1,
         helper     => {
             authenticated => 1,
+            lifecycleState => 'connected',
             deviceType => 'wattpilot_flex',
         },
     };
@@ -238,7 +239,7 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
     $hash->{helper}{reloadSentinel} = 'preserved';
     my $original_hash = $hash;
     my $original_device_name = $hash->{DeviceName};
-    my $original_open = $hash->{TEST_OPEN};
+    my $original_generation = main::Wattpilot_CurrentLifecycleGeneration($hash);
     my $password_key = 'Wattpilot_' . $hash->{FUUID} . '_password';
     my $original_password = $DevIo::KEY_VALUES{$password_key};
 
@@ -263,17 +264,25 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'pinned CommandReload executes the real module reload path');
     is($defs{wallbox}, $original_hash,
         'real reload preserves the existing device hash identity');
-    is($hash->{VERSION}, '2.1.11',
+    is($hash->{VERSION}, '2.1.12',
 
         'real reload refreshes the module version internal');
     is($hash->{DeviceName}, $original_device_name,
         'real reload preserves the configured endpoint');
-    is($hash->{TEST_OPEN}, $original_open,
-        'real reload preserves the open transport state');
+    is($hash->{TEST_OPEN}, 0,
+        'real reload closes the unverifiable pre-reload transport');
+    is(main::Wattpilot_CurrentLifecycleState($hash), 'disconnected',
+        'real reload resets the authoritative runtime lifecycle');
+    is(main::Wattpilot_CurrentLifecycleGeneration($hash), $original_generation + 1,
+        'real reload invalidates callbacks from the prior module generation');
     is($hash->{helper}{reloadSentinel}, 'preserved',
         'real reload preserves runtime helper state');
-    ok(ref($hash->{helper}{timers}{inbound_watchdog}) eq 'HASH',
-        'real reload adds exactly one inbound watchdog to the connected session');
+    ok(!exists $hash->{helper}{timers}{inbound_watchdog},
+        'real reload removes the pre-reload watchdog');
+    ok(ref($hash->{helper}{timers}{connect}) eq 'HASH',
+        'real reload schedules exactly one controlled reconnect');
+    is(scalar @DevIo::CLOSES, 1,
+        'real reload closes the old DevIo session exactly once');
     is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'none',
         'real reload initializes the reconnect reason without replacing the device');
     is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 0,

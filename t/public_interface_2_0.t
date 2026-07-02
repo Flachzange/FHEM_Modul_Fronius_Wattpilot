@@ -41,8 +41,8 @@ my @public_readings = qw(
     deviceControllerFirmwareIntegrity deviceControllerStackSize
     deviceControllerResetReason deviceControllerMidFirmwareVersion
     deviceControllerHardwareId
-    diag_temperatureSensor1 diag_temperatureSensor2 diag_temperatureSensor3
-    diag_temperatureSensor4 diag_temperatureSensor5 diag_temperatureSensor6
+    diag_temperatureSensor1 diag_temperatureSensor2 diag_temperatureGridConnector
+    diag_temperatureCurrentSensor diag_temperatureType2ScrewTerminals diag_temperatureMID
     diag_fbuf_akkuMode diag_fbuf_akkuSOC diag_fbuf_pAkku diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
     diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
     diag_pvopt_deltaA diag_pvopt_specialCase diag_fbuf_pAcTotal

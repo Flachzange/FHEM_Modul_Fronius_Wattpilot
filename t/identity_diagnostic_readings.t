@@ -43,7 +43,7 @@ sub fresh_device {
         DeviceName => 'ws:192.0.2.87:80/ws',
         STATE => 'connected',
         TEST_OPEN => 1,
-        helper => { authenticated => 1 },
+        helper => { authenticated => 1, lifecycleState => 'connected' },
     };
     $defs{$name} = $hash;
     return $hash;

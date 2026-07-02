@@ -57,6 +57,20 @@ like($runtime, qr/Unknown Wattpilot reading formatter/,
 unlike($runtime, qr/\bdecimal1\b/,
     'the unused one-decimal formatter classification is absent');
 
+unlike($runtime, qr/\$hash->\{STATE\}/,
+    'executable module code never uses FHEM presentation STATE as runtime authority');
+unlike($runtime,
+    qr/\$hash->\{READINGS\}\{\$WATTPILOT_READING_NAME\{state\}\}/,
+    'executable module code never reads the public state reading as runtime authority');
+unlike($runtime, qr/Readings(?:Val|Num)\([^\n;]*?["']state["']/,
+    'executable module code never obtains lifecycle authority through FHEM reading helpers');
+like($runtime,
+    qr/sub\s+Wattpilot_CommitLifecycleState\b.*?\$hash->\{helper\}\{lifecycleState\}\s*=\s*\$state/s,
+    'one explicit helper owns authoritative runtime lifecycle assignment');
+like($runtime,
+    qr/sub\s+Wattpilot_SetLifecycleState\b.*?Wattpilot_CommitLifecycleState\(\$hash,\s*\$state\).*?readingsSingleUpdate\(\s*\$hash,\s*\$WATTPILOT_READING_NAME\{state\}/s,
+    'runtime lifecycle is committed before the public state reading is published');
+
 for my $table (qw(
     WATTPILOT_DEVICE_HEALTH_TELEMETRY
     WATTPILOT_DEVICE_UPTIME_TELEMETRY
