@@ -18,7 +18,7 @@ sub fresh_device {
         NAME => 'testWallbox', TYPE => 'Wattpilot',
         FUUID => '00000000-0000-0000-0000-000000000008',
         DeviceName => 'ws:192.0.2.10:80/ws', STATE => 'connected',
-        TEST_OPEN => 1, helper => { authenticated => 1 },
+        TEST_OPEN => 1, helper => { authenticated => 1, lifecycleState => 'connected' },
     };
     $defs{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} = 'synthetic-command-key';

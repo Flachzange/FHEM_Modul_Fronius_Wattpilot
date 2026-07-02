@@ -40,6 +40,8 @@ This repository contains the FHEM module `Wattpilot` for local communication wit
 
 - Verify uncertain FHEM behavior against the current FHEM commandref or current FHEM source.
 - Do not invent attributes, readings, callbacks, DevIo behavior, or module mechanisms.
+- `$hash->{STATE}` is presentation state and may be rewritten by FHEM `stateFormat`. Public readings are observable output and may be restored or changed independently of the live runtime. Neither `$hash->{STATE}` nor a public reading may be authoritative for transient lifecycle, authentication, watchdog, reconnect, command-admission, timer, socket-ownership, or cleanup control flow; keep that state in a dedicated internal runtime value and publish readings only as projections.
+- Update authoritative transient runtime state before publishing a reading or event, because reading updates can trigger reentrant FHEM actions. Lifecycle tests must include nontrivial `stateFormat`, restored stale readings after process recreation, direct reading manipulation, and reentrant event-driven commands.
 - Prefer explicit documented interfaces over hidden or implicit behavior.
 - Keep existing public readings, set commands, attribute names, and command semantics stable unless the scoped issue explicitly changes them.
 - Public readings that expose stored or user-selectable configuration use the exact camel-case prefix `config`, for example `configChargingMode`. Read-only configuration values use the same prefix as writable configuration values. Effective runtime limits, live status, telemetry, lifecycle state, identity, and diagnostics must not be prefixed merely because they are related to configuration.

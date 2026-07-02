@@ -121,6 +121,8 @@ define testWallbox Wattpilot 192.0.2.10
 set testWallbox password documentation-value-only
 ```
 
+**Lifecycle and `stateFormat`:** Connection and authentication lifecycle is held transiently in the device hash. The public `state` reading is output only, while FHEM remains free to compose Internal `STATE` through `stateFormat`. Restored or `setreading`-modified values cannot authorize connectivity or commands. `reload 72_Wattpilot` discards unverifiable old session ownership and starts exactly one controlled reconnect.
+
 ## 4. Functions & Commands (Control)
 
 After defining the device, set the password first:

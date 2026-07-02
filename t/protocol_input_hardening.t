@@ -93,6 +93,7 @@ is($DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'},
     'authentication persists the deterministic signing key');
 
 $hash->{STATE} = 'connected';
+$hash->{helper}{lifecycleState} = 'connected';
 $hash->{helper}{authenticated} = 1;
 $hash->{TEST_OPEN} = 1;
 @DevIo::WRITES = ();

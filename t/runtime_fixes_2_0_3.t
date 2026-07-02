@@ -47,14 +47,14 @@ is($hash->{VERSION}, '2.1.12',
     'reload-style Initialize refreshes VERSION to the module version');
 is($other->{VERSION}, 'unchanged',
     'reload-style Initialize does not alter unrelated devices');
-is($hash->{STATE}, $state_before,
-    'reload-style VERSION refresh leaves lifecycle state unchanged');
+is($hash->{STATE}, 'passwordMissing',
+    'reload-style initialization derives runtime state from live configuration, not stale STATE');
 is(scalar @DevIo::OPENS, 0,
     'reload-style VERSION refresh opens no connection');
 is(scalar @DevIo::ACTIVE_TIMERS, 0,
     'reload-style VERSION refresh schedules no timer');
-is(scalar @DevIo::READING_UPDATES, 2,
-    'reload-style initialization adds exactly the two connection diagnostics');
+is(scalar @DevIo::READING_UPDATES, 3,
+    'reload-style initialization adds diagnostics and republishes truthful lifecycle state');
 is($hash->{READINGS}{connectionLastReconnectReason}{VAL}, 'none',
     'reload-style initialization adds the default reconnect reason without changing state');
 is($hash->{READINGS}{connectionAutomaticReconnectCount}{VAL}, 0,

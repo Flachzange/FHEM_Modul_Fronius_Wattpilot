@@ -45,6 +45,7 @@ sub mark_command_ready {
     my ($hash) = @_;
     $hash->{TEST_OPEN} = 1;
     $hash->{STATE} = 'connected';
+    $hash->{helper}{lifecycleState} = 'connected';
     $hash->{helper}{authenticated} = 1;
     delete $hash->{helper}{pendingRequests};
     delete $hash->{msg_id};

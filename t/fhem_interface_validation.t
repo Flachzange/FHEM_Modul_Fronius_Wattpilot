@@ -28,6 +28,7 @@ sub fresh_device {
         TEST_OPEN  => 1,
         helper     => {
             authenticated                  => 1,
+            lifecycleState                 => 'connected',
             authPending                    => 1,
             authHashMode                   => 'pbkdf2',
             jsonBuffer                     => '{',

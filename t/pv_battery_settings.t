@@ -23,7 +23,7 @@ sub fresh_device {
         DeviceName => 'ws:192.0.2.52:80/ws',
         STATE => 'initializing',
         TEST_OPEN => 1,
-        helper => { authenticated => 1 },
+        helper => { authenticated => 1, lifecycleState => 'initializing' },
     };
     $defs{$hash->{NAME}} = $hash;
     $DevIo::KEY_VALUES{'Wattpilot_' . $hash->{FUUID} . '_passwordhash'} =
@@ -35,6 +35,7 @@ sub fresh_device {
 sub fresh_set_device {
     my $hash = fresh_device();
     $hash->{STATE} = 'connected';
+    $hash->{helper}{lifecycleState} = 'connected';
     $hash->{READINGS}{state}{VAL} = 'connected';
     return $hash;
 }
