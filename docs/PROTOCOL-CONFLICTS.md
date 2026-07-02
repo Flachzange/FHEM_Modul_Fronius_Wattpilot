@@ -1,6 +1,6 @@
 # Known Wattpilot protocol evidence conflicts
 
-This document preserves conflicts between the observed Wattpilot Flex 43.4 payload, current FHEM behavior, pinned Wattpilot-specific third-party implementations, and implemented compatibility mappings. None of the third-party sources is an official Fronius specification.
+This document preserves conflicts between the observed Wattpilot Flex 43.4 payload, historical and current FHEM behavior, pinned Wattpilot-specific third-party implementations, and implemented compatibility mappings. None of the third-party sources is an official Fronius specification.
 
 ## `frc` force-state enum
 
