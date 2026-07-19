@@ -311,13 +311,23 @@ is(reading_value($hash, 'lastCommandError'), 'none',
 
 $hash = fresh_set_device();
 is(main::Wattpilot_Set(
-        $hash, $hash->{NAME}, 'pvBatteryDischarge', '1,35'),
-    undef, 'combined PV-battery setter accepts FHEMWEB comma syntax');
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 'on,35'),
+    undef, 'combined PV-battery setter accepts the FHEMWEB on value');
 my (undef, $comma_inner) = inner_payload($DevIo::WRITES[0]);
 is($comma_inner->{key}, 'pdt',
-    'FHEMWEB comma syntax follows the same safe enabling order');
+    'FHEMWEB on syntax follows the same safe enabling order');
 is($comma_inner->{value}, 35,
-    'FHEMWEB comma syntax preserves the threshold');
+    'FHEMWEB on syntax preserves the free-text threshold');
+
+$hash = fresh_set_device();
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', '1,36'),
+    undef, 'previous numeric comma syntax remains accepted');
+my (undef, $numeric_comma_inner) = inner_payload($DevIo::WRITES[0]);
+is($numeric_comma_inner->{key}, 'pdt',
+    'numeric comma syntax retains the safe enabling order');
+is($numeric_comma_inner->{value}, 36,
+    'numeric comma syntax retains the requested threshold');
 
 $hash = fresh_set_device();
 main::Wattpilot_UpdateReadings($hash, {
@@ -351,6 +361,16 @@ is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 0,
 is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 40,
     'disabling sequence confirms the new threshold');
 
+$hash = fresh_set_device();
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 'off,45'),
+    undef, 'combined PV-battery setter accepts the FHEMWEB off value');
+my (undef, $off_inner) = inner_payload($DevIo::WRITES[0]);
+is($off_inner->{key}, 'pdte',
+    'FHEMWEB off syntax follows the safe disabling order');
+ok(JSON::is_bool($off_inner->{value}) && !$off_inner->{value},
+    'FHEMWEB off syntax maps to a false JSON boolean');
+
 for my $case (
     [],
     [1],
@@ -358,6 +378,7 @@ for my $case (
     ['1,20,30'],
     [''],
     ['true', 20],
+    ['enabled', 20],
     [2, 20],
     [-1, 20],
     [1, -1],
@@ -365,6 +386,9 @@ for my $case (
     [1, '20.0'],
     [1, '020'],
     ['1,101'],
+    ['on,'],
+    ['on,20.0'],
+    ['off,101'],
 ) {
     $hash = fresh_set_device();
     like(main::Wattpilot_Set(
@@ -605,8 +629,8 @@ $hash = fresh_set_device();
 my $help = main::Wattpilot_Set($hash, $hash->{NAME}, '?');
 like($help, qr/\bpvBattery\b/,
     'Set help exposes one grouped pvBattery command');
-like($help, qr/\bpvBatteryDischarge:widgetList,3,select,0,1,6,selectnumbers,0,1,100,0,lin\b/,
-    'Set help exposes the combined command with two FHEMWEB controls');
+like($help, qr/\bpvBatteryDischarge:widgetList,3,select,off,on,3,textField,SoC%,4\b/,
+    'Set help exposes the off/on dropdown and SoC free-text field');
 for my $subcommand (qw(
     chargeAboveSoC dischargeEnabled dischargeUntilSoC
     dischargeTimeLimitEnabled dischargeStartTime dischargeStopTime
