@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.13';
+my $WATTPILOT_VERSION = '2.1.14';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -327,7 +327,7 @@ my @WATTPILOT_COMMAND_DEFINITION = (
     ['reconnect', 'reconnect', 'noArg', 'none', 'special', 'none', 'usage'],
     ['reboot', 'reboot', 'noArg', 'rst', 'special', 'none', 'usage'],
     ['pv_battery', 'pvBattery', 'none', 'none', 'special', 'none', 'usage'],
-    ['pv_battery_discharge', 'pvBatteryDischarge', 'widgetList,3,select,0,1,6,selectnumbers,0,1,100,0,lin', 'none', 'special', '<0|1> <0-100>', 'usage'],
+    ['pv_battery_discharge', 'pvBatteryDischarge', 'widgetList,3,select,off,on,3,textField,SoC%,4', 'none', 'special', '<0|1> <0-100>', 'usage'],
     ['next_trip_time', 'nextTripTime', 'none', 'ftt', 'clock', '<HH:MM>', 'usage'],
 );
 
@@ -2534,10 +2534,17 @@ sub Wattpilot_SetPvBatteryDischarge($@) {
     return Wattpilot_PvBatteryDischargeUsage($name) if @args != 2;
 
     my ($enabled, $discharge_until_soc) = @args;
+    my %enabled_value = (
+        '0' => 0,
+        '1' => 1,
+        off => 0,
+        on => 1,
+    );
     return Wattpilot_PvBatteryDischargeUsage($name)
-        if !defined($enabled) || $enabled !~ /^(?:0|1)$/
+        if !defined($enabled) || !exists($enabled_value{$enabled})
         || !defined($discharge_until_soc)
         || $discharge_until_soc !~ /^(?:0|[1-9]\d?|100)$/;
+    $enabled = $enabled_value{$enabled};
     return "PV battery discharge configuration command is already pending"
         if Wattpilot_PvBatteryDischargeWritePending($hash);
 
@@ -3434,6 +3441,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.9 adds <code>set &lt;name&gt; reboot</code>. It sends protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> path and immediately publishes <code>state=rebooting</code> after dispatch. A normal device response remains authoritative; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the Wattpilot closes the socket before responding, only the pending reboot request identified by protocol key <code>rst</code> is completed successfully and the existing automatic reconnect path takes over; unrelated pending commands retain the normal connection-loss failure behavior. The exact trigger value and disconnect timing require real-device confirmation.</p>
   <p>Version 2.1.12 decouples transient lifecycle control from the public <code>state</code> reading and presentation-formatted <code>STATE</code>. A dedicated runtime lifecycle is updated before reading publication; restored or manually changed readings cannot authorize commands, watchdogs, or connectivity. Reload invalidates unverifiable old ownership and starts one controlled reconnect. The same version replaces the four generic readings for the verified <code>tma[2]</code> through <code>tma[5]</code> positions with component-specific names. The mapping was verified on a Wattpilot Flex Home 22 C6; no unit, limit, derating threshold, or cross-model equivalence is inferred. Publication cadence, formatting, validation, and <code>diagnosticReadings</code> behavior are unchanged. No aliases or automatic cleanup are provided; old reading entries may remain stale after a module reload and must be removed manually if desired.</p>
   <p>Version 2.1.13 adds the combined <code>pvBatteryDischarge</code> command with mandatory enable and SoC values. FHEMWEB renders two controls through <code>widgetList</code>. The module confirms the first secured write before sending the second, uses threshold-before-enable and disable-before-threshold ordering, blocks overlapping <code>pdt</code>/<code>pdte</code> writes, and reports the failed step plus any confirmed partial application without optimistic reading updates.</p>
+  <p>Version 2.1.14 refines only the FHEMWEB presentation of <code>pvBatteryDischarge</code>: the first widget offers <code>off</code>/<code>on</code>, and the SoC threshold is entered in a compact free-text field with an <code>SoC%</code> placeholder instead of a 101-entry selector. The documented command-line values <code>0</code>/<code>1</code> remain supported; FHEMWEB-generated <code>off</code>/<code>on</code> values are normalized to the same booleans before the unchanged validation and confirmed two-step write sequence.</p>
   <table class="block wide">
     <tr><th>Reading through 2.1.11</th><th>Reading from 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3554,7 +3562,7 @@ sub Wattpilot_WriteJson($$) {
         <code>dischargeStopTime &lt;HH:MM|24:00&gt;</code> &rarr; <code>pdlo</code> as seconds after midnight.<br>
         No reading is changed optimistically; only returned device status confirms a value. All six grouped setters were changed individually on a Wattpilot Flex Home 22 C6 running firmware 43.4, confirmed through device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and other firmware/model variants remain unverified.</li>
     <li><code>set &lt;name&gt; pvBatteryDischarge &lt;0|1&gt; &lt;0-100&gt;</code><br>
-        Combines <code>dischargeEnabled</code> and <code>dischargeUntilSoC</code>; both values are mandatory. FHEMWEB renders a <code>0|1</code> selector and a whole-number SoC selector. When enabling, <code>pdt</code> is sent and confirmed before <code>pdte=true</code>; when disabling, <code>pdte=false</code> is confirmed before the new <code>pdt</code> value is sent. Related grouped writes are blocked while either step is pending. A rejection, timeout, connection loss, or local second-step send failure identifies the failed setting in <code>lastCommandError</code> and reports partial application when the first step was already confirmed. Readings remain device-confirmed only.</li>
+        Combines <code>dischargeEnabled</code> and <code>dischargeUntilSoC</code>; both values are mandatory. FHEMWEB renders an <code>off|on</code> selector and a compact free-text field with the placeholder <code>SoC%</code>. When enabling, <code>pdt</code> is sent and confirmed before <code>pdte=true</code>; when disabling, <code>pdte=false</code> is confirmed before the new <code>pdt</code> value is sent. Related grouped writes are blocked while either step is pending. A rejection, timeout, connection loss, or local second-step send failure identifies the failed setting in <code>lastCommandError</code> and reports partial application when the first step was already confirmed. Readings remain device-confirmed only.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
         Performs a local controlled WebSocket reconnect without sending a Wattpilot protocol command. Session-owned timers, authentication state, partial JSON, and pending secured commands are invalidated; operational readings and configuration remain intact. Pending commands terminate with <code>lastCommandStatus=failed</code> and <code>lastCommandError=reconnect requested</code>. The command is not a <code>fullStatus</code> request; any initial status after login is device-supplied. Initialized live sessions of the empirically evidenced <code>wattpilot_flex</code> device profile are also guarded by an independent inbound watchdog: every complete decoded JSON document refreshes liveness, and at least 180 seconds without one triggers exactly one automatic reconnect at the next 30-second check. The watchdog is independent of <code>interval</code> and <code>update_while_idle</code> and can be suspended temporarily with <code>inboundWatchdog=0</code> without closing the session or disabling other reconnect paths. The legacy <code>devicetype=wattpilot</code> profile deliberately receives no such timeout because no sufficiently bounded idle-message cadence is evidenced for it.</li>
     <li><code>set &lt;name&gt; reboot</code><br>
@@ -3724,6 +3732,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.9 ergänzt <code>set &lt;name&gt; reboot</code>. Der Befehl sendet den Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den bestehenden authentifizierten <code>setValue</code>/<code>securedMsg</code>-Pfad und veröffentlicht danach sofort <code>state=rebooting</code>. Eine normale Geräteantwort bleibt maßgeblich; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt der Wattpilot die Verbindung vor der Antwort, wird ausschließlich der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request erfolgreich abgeschlossen und der vorhandene automatische Reconnect übernimmt; andere ausstehende Befehle behalten ihr normales Fehlerverhalten bei Verbindungsverlust. Der exakte Triggerwert und das Trennungsverhalten müssen am Realgerät bestätigt werden.</p>
   <p>Version 2.1.12 entkoppelt die transiente Lifecycle-Steuerung vom öffentlichen Reading <code>state</code> und vom durch <code>stateFormat</code> formatierten <code>STATE</code>. Ein eigener Runtime-Lifecycle wird vor der Reading-Veröffentlichung aktualisiert; wiederhergestellte oder manuell geänderte Readings können weder Befehle noch Watchdog oder Verbindung autorisieren. Beim Reload wird nicht verifizierbare alte Ownership invalidiert und genau ein kontrollierter Reconnect gestartet. Dieselbe Version ersetzt die vier generischen Readings für die verifizierten Positionen <code>tma[2]</code> bis <code>tma[5]</code> durch komponentenspezifische Namen. Das Mapping wurde an einem Wattpilot Flex Home 22 C6 verifiziert; daraus werden weder Einheit, Grenzwert, Derating-Schwelle noch eine Übertragbarkeit auf andere Modelle abgeleitet. Aktualisierungstakt, Formatierung, Validierung und das Verhalten von <code>diagnosticReadings</code> bleiben unverändert. Es gibt keine Aliase oder automatische Bereinigung; alte Reading-Einträge können nach einem Modul-Reload als nicht mehr aktualisierte Werte bestehen bleiben und bei Bedarf manuell entfernt werden.</p>
   <p>Version 2.1.13 ergänzt den kombinierten Befehl <code>pvBatteryDischarge</code> mit verpflichtendem Schalt- und SoC-Wert. FHEMWEB zeigt über <code>widgetList</code> zwei Bedienelemente. Das Modul bestätigt den ersten gesicherten Schreibvorgang, bevor es den zweiten sendet, verwendet die Reihenfolge Grenzwert-vor-Aktivierung beziehungsweise Deaktivierung-vor-Grenzwert, sperrt überlappende <code>pdt</code>/<code>pdte</code>-Schreibzugriffe und meldet den fehlgeschlagenen Schritt samt bereits bestätigter Teilanwendung ohne optimistische Reading-Updates.</p>
+  <p>Version 2.1.14 verfeinert ausschließlich die FHEMWEB-Darstellung von <code>pvBatteryDischarge</code>: Das erste Widget bietet <code>off</code>/<code>on</code>, und der SoC-Grenzwert wird in einem kompakten Freitextfeld mit dem Platzhalter <code>SoC%</code> eingegeben statt über eine Auswahl mit 101 Einträgen. Die dokumentierten Kommandozeilenwerte <code>0</code>/<code>1</code> bleiben unterstützt; von FHEMWEB erzeugte Werte <code>off</code>/<code>on</code> werden vor der unveränderten Validierung und bestätigten Zweischritt-Sequenz auf dieselben Boolean-Werte abgebildet.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.1.11</th><th>Reading ab 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3844,7 +3853,7 @@ sub Wattpilot_WriteJson($$) {
         <code>dischargeStopTime &lt;HH:MM|24:00&gt;</code> &rarr; <code>pdlo</code> als Sekunden seit Mitternacht.<br>
         Kein Reading wird optimistisch geändert; nur vom Gerät zurückgelieferter Status bestätigt einen Wert. Alle sechs gruppierten Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
     <li><code>set &lt;name&gt; pvBatteryDischarge &lt;0|1&gt; &lt;0-100&gt;</code><br>
-        Kombiniert <code>dischargeEnabled</code> und <code>dischargeUntilSoC</code>; beide Werte sind verpflichtend. FHEMWEB zeigt einen <code>0|1</code>-Selektor und eine ganzzahlige SoC-Auswahl. Beim Aktivieren wird <code>pdt</code> gesendet und bestätigt, bevor <code>pdte=true</code> folgt; beim Deaktivieren wird <code>pdte=false</code> bestätigt, bevor der neue <code>pdt</code>-Wert gesendet wird. Zugehörige gruppierte Schreibzugriffe sind gesperrt, solange einer der Schritte aussteht. Ablehnung, Timeout, Verbindungsverlust oder ein lokaler Versandfehler des zweiten Schritts nennt die fehlgeschlagene Einstellung in <code>lastCommandError</code> und meldet eine Teilanwendung, wenn der erste Schritt bereits bestätigt wurde. Readings bleiben ausschließlich gerätebestätigt.</li>
+        Kombiniert <code>dischargeEnabled</code> und <code>dischargeUntilSoC</code>; beide Werte sind verpflichtend. FHEMWEB zeigt einen <code>off|on</code>-Selektor und ein kompaktes Freitextfeld mit dem Platzhalter <code>SoC%</code>. Beim Aktivieren wird <code>pdt</code> gesendet und bestätigt, bevor <code>pdte=true</code> folgt; beim Deaktivieren wird <code>pdte=false</code> bestätigt, bevor der neue <code>pdt</code>-Wert gesendet wird. Zugehörige gruppierte Schreibzugriffe sind gesperrt, solange einer der Schritte aussteht. Ablehnung, Timeout, Verbindungsverlust oder ein lokaler Versandfehler des zweiten Schritts nennt die fehlgeschlagene Einstellung in <code>lastCommandError</code> und meldet eine Teilanwendung, wenn der erste Schritt bereits bestätigt wurde. Readings bleiben ausschließlich gerätebestätigt.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
         Baut die lokale WebSocket-Verbindung kontrolliert neu auf, ohne ein Wattpilot-Protokollkommando zu senden. Sitzungsgebundene Timer, Authentifizierungszustand, Teil-JSON und ausstehende gesicherte Befehle werden verworfen; Betriebsreadings und Konfiguration bleiben erhalten. Ausstehende Befehle enden mit <code>lastCommandStatus=failed</code> und <code>lastCommandError=reconnect requested</code>. Der Befehl ist kein <code>fullStatus</code>-Request; ein Initialstatus nach der Anmeldung wird vom Gerät geliefert. Initialisierte aktive Sitzungen des empirisch belegten Geräteprofils <code>wattpilot_flex</code> werden zusätzlich durch einen unabhängigen Inbound-Watchdog überwacht: Jedes vollständig dekodierte JSON-Dokument erneuert die Liveness; mindestens 180 Sekunden ohne ein solches Dokument lösen beim nächsten 30-Sekunden-Prüflauf genau einen automatischen Reconnect aus. Der Watchdog ist unabhängig von <code>interval</code> und <code>update_while_idle</code> und kann mit <code>inboundWatchdog=0</code> vorübergehend ausgesetzt werden, ohne die Sitzung zu schließen oder andere Reconnect-Pfade abzuschalten. Das Legacy-Profil <code>devicetype=wattpilot</code> erhält bewusst keinen solchen Timeout, weil dafür keine hinreichend begrenzte Idle-Nachrichtenfrequenz belegt ist.</li>
     <li><code>set &lt;name&gt; reboot</code><br>
@@ -3988,7 +3997,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.13",
+  "version": "v2.1.14",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

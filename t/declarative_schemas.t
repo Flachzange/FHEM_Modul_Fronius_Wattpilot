@@ -72,8 +72,8 @@ for my $key (sort keys %$command_schema) {
 is_deeply(\@command_schema_errors, [],
     'ordinary command schema metadata is complete and public names are unique');
 is($command_schema->{pv_battery_discharge}{widget},
-    'widgetList,3,select,0,1,6,selectnumbers,0,1,100,0,lin',
-    'combined PV-battery command exposes two FHEMWEB controls');
+    'widgetList,3,select,off,on,3,textField,SoC%,4',
+    'combined PV-battery command exposes an off/on selector and SoC text field');
 
 my @ordinary_cases = (
     [force_state => 'on', 'frc', 2, 'number'],
