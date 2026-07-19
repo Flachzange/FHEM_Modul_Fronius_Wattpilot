@@ -37,7 +37,8 @@ my @public_readings = qw(
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
     configMinimumChargingInterval configLoadBalancingEnabled configLoadBalancingPriority
-    configLoadBalancingFallbackCurrent configLoadBalancingPhaseAssignment
+    configLoadBalancingFallbackCurrent configLoadBalancingGridConnectionCurrent
+    configLoadBalancingSupplyLineCurrent configLoadBalancingPhaseAssignment
     configLoadBalancingSourceLabel loadBalancingSourceConnected deviceRebootCount uptime
     deviceControllerFirmwareVersion deviceControllerFirmwareCRC
     deviceControllerFirmwareIntegrity deviceControllerStackSize
@@ -108,6 +109,7 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
     loe => JSON::true(),
     lop => 50,
     lof => 0,
+    lot => { amp => 32, dyn => 32, sta => 32, ts => 0 },
     map => [1, 2, 3],
     cci => {
         label => 'Synthetic PV source',
@@ -155,7 +157,7 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 95 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 97 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

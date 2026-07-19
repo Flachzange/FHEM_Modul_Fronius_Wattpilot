@@ -54,8 +54,8 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 95,
-    'central reading definition contains all 95 public readings');
+is(scalar(keys %{$interface->{readings}}), 97,
+    'central reading definition contains all 97 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -98,6 +98,8 @@ is_deeply(
         load_balancing_enabled => 'configLoadBalancingEnabled',
         load_balancing_priority => 'configLoadBalancingPriority',
         load_balancing_fallback_current => 'configLoadBalancingFallbackCurrent',
+        load_balancing_grid_connection_current => 'configLoadBalancingGridConnectionCurrent',
+        load_balancing_supply_line_current => 'configLoadBalancingSupplyLineCurrent',
         load_balancing_phase_assignment => 'configLoadBalancingPhaseAssignment',
         load_balancing_source_label => 'configLoadBalancingSourceLabel',
         load_balancing_source_connected => 'loadBalancingSourceConnected',
@@ -155,7 +157,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 95 public reading names match the 2.x contract');
+    'all 97 public reading names match the 2.x contract');
 is_deeply(
     $interface->{readingCategories},
     {
@@ -198,6 +200,8 @@ is_deeply(
         load_balancing_enabled => 'configuration',
         load_balancing_priority => 'configuration',
         load_balancing_fallback_current => 'configuration',
+        load_balancing_grid_connection_current => 'configuration',
+        load_balancing_supply_line_current => 'configuration',
         load_balancing_phase_assignment => 'configuration',
         load_balancing_source_label => 'configuration',
         load_balancing_source_connected => 'status',

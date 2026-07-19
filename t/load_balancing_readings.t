@@ -51,6 +51,10 @@ is(reading_value($hash, 'configLoadBalancingPriority'), 'medium',
     'lop maps the observed medium priority code');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'lof preserves the configured zero-amp fallback value');
+is(reading_value($hash, 'configLoadBalancingGridConnectionCurrent'), 32,
+    'lot.amp publishes the configured grid-connection current');
+is(reading_value($hash, 'configLoadBalancingSupplyLineCurrent'), 32,
+    'lot.sta publishes the configured supply-line current');
 is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
     'map publishes the selected phase assignment');
 is(reading_value($hash, 'configLoadBalancingSourceLabel'), '<PV_SYSTEM_LABEL>',
@@ -114,7 +118,12 @@ is(reading_value($hash, 'loadBalancingSourceConnected'), 0,
 for my $case (
     [[0, 1, 0], 'L2', 'the confirmed L2-only slot vector maps to L2'],
     [[0, 0, 1], 'L3', 'the confirmed L3-only slot vector maps to L3'],
-    [[1, 2, 3], 'L1 L2 L3', 'the confirmed three-phase vector maps to all phases'],
+    [[1, 2, 3], 'L1 L2 L3', 'the identity three-phase vector preserves order'],
+    [[1, 3, 2], 'L1 L3 L2', 'a three-phase permutation preserves order'],
+    [[2, 1, 3], 'L2 L1 L3', 'a second three-phase permutation preserves order'],
+    [[2, 3, 1], 'L2 L3 L1', 'the real-device-confirmed rotated assignment preserves order'],
+    [[3, 1, 2], 'L3 L1 L2', 'a fourth three-phase permutation preserves order'],
+    [[3, 2, 1], 'L3 L2 L1', 'the reverse three-phase permutation preserves order'],
 ) {
     main::Wattpilot_DispatchMessage($hash, {
         type => 'deltaStatus',
@@ -123,6 +132,27 @@ for my $case (
     is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), $case->[1],
         $case->[2]);
 }
+
+
+main::Wattpilot_DispatchMessage($hash, {
+    type => 'deltaStatus',
+    status => { lot => { amp => 5, dyn => 5, sta => 25, ts => 1784487115 } },
+});
+is(reading_value($hash, 'configLoadBalancingGridConnectionCurrent'), 5,
+    'lot.amp independently updates the confirmed grid-connection limit');
+is(reading_value($hash, 'configLoadBalancingSupplyLineCurrent'), 25,
+    'lot.sta independently updates the confirmed supply-line limit');
+ok(!exists $hash->{READINGS}{configLoadBalancingDynamicCurrent},
+    'unconfirmed lot.dyn semantics are not exposed');
+
+main::Wattpilot_DispatchMessage($hash, {
+    type => 'deltaStatus',
+    status => { lot => { amp => undef, sta => '25' } },
+});
+is(reading_value($hash, 'configLoadBalancingGridConnectionCurrent'), 5,
+    'null lot.amp preserves the last valid grid-connection limit');
+is(reading_value($hash, 'configLoadBalancingSupplyLineCurrent'), 25,
+    'numeric-string lot.sta preserves the last valid supply-line limit');
 
 main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
@@ -143,7 +173,7 @@ is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'negative priority cannot overwrite the last valid value');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'numeric-string fallback cannot overwrite the last valid value');
-is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
+is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L2 L1',
     'a semantically invalid two-phase vector cannot overwrite the last valid assignment');
 is(reading_value($hash, 'configLoadBalancingSourceLabel'), 'Replacement source',
     'empty source label cannot overwrite the last valid label');
@@ -161,7 +191,7 @@ for my $invalid_map (
         type => 'deltaStatus',
         status => { map => $invalid_map },
     });
-    is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
+    is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L2 L1',
         'an unconfirmed or malformed phase vector preserves the last valid assignment');
 }
 
@@ -171,6 +201,7 @@ main::Wattpilot_DispatchMessage($hash, {
         loe => undef,
         lop => undef,
         lof => undef,
+        lot => undef,
         map => undef,
         cci => undef,
     },
@@ -179,7 +210,11 @@ is(reading_value($hash, 'configLoadBalancingEnabled'), 0,
     'null load-balancing fields preserve the last valid switch');
 is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'null load-balancing fields preserve the last valid priority');
-is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
+is(reading_value($hash, 'configLoadBalancingGridConnectionCurrent'), 5,
+    'null lot preserves the last valid grid-connection limit');
+is(reading_value($hash, 'configLoadBalancingSupplyLineCurrent'), 25,
+    'null lot preserves the last valid supply-line limit');
+is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L2 L1',
     'null load-balancing fields preserve the last valid phase assignment');
 is(reading_value($hash, 'configLoadBalancingSourceLabel'), 'Replacement source',
     'null cci preserves the selected source label');

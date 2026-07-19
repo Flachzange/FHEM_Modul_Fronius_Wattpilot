@@ -774,8 +774,8 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     my @configuration = grep {
         $policy->{$_}{category} eq 'configuration'
     } keys %$policy;
-    is(scalar @configuration, 29,
-        'all 29 configuration readings are inventoried');
+    is(scalar @configuration, 31,
+        'all 31 configuration readings are inventoried');
     for my $key (sort @configuration) {
         is($policy->{$key}{publication}, 'immediate',
             "$key remains immediate after device confirmation");

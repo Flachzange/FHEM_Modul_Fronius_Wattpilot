@@ -48,8 +48,8 @@ is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
 is(scalar(keys %$command_schema), 16,
     'command schema contains the complete 16-command public surface');
-is(scalar(keys %$status_fields), 75,
-    'status schema contains all 75 consumed protocol fields');
+is(scalar(keys %$status_fields), 77,
+    'status schema contains all 77 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],

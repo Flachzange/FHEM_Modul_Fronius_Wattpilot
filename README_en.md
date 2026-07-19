@@ -12,7 +12,7 @@ Version 2.x is a substantial redesign rather than a small extension of the origi
 | :--- | :--- | :--- |
 | Definition and password | Password included in the FHEM definition | Definition without password; storage through `set <Name> password <secret>` under stable FUUID-based keys |
 | Devices and authentication | Predecessor Wattpilot with PBKDF2 | Legacy profile retained; Wattpilot Flex authenticates exclusively with bcrypt |
-| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 95 readings, confirmed configuration readings, and grouped Set commands |
+| FHEM interface | A small set of German-named readings and Set commands | Consistent public names, 97 readings, confirmed configuration readings, and grouped Set commands |
 | Protocol handling | Basic `hello`, authentication, and status handling | Strict JSON type validation, partial status handling, robust message continuation, secured commands, and response correlation |
 | Runtime behavior | Basic interval and idle filtering | Controlled lifecycle behavior for reload, rename, `modify`, disable, reconnect, and delete, plus separate telemetry caches on one publication clock |
 | Quality assurance | Original functional scope | Extensive regression tests, pinned FHEM-core integration, documentation checks, and reproducible release verification |
@@ -350,7 +350,7 @@ Sets the bcrypt cost factor for newly derived authentication hashes. The default
 
 ## 6. Readings (Values)
 
-The module exposes exactly these 95 public readings:
+The module exposes exactly these 97 public readings:
 
 | Reading | Description |
 | :--- | :--- |
@@ -393,7 +393,9 @@ The module exposes exactly these 95 public readings:
 | `configLoadBalancingEnabled` | Boolean field `loe`, exposed as `0` or `1`; its correspondence to the app switch “Dynamic Load Balancing” was confirmed simultaneously on Flex 43.4. Read-only until writes are reproducibly verified. |
 | `configLoadBalancingPriority` | Priority from `lop`: `40 = high`, `50 = medium`, `60 = low`; unknown non-negative integers are exposed as `unknown:<value>`. All three mappings were confirmed on a Wattpilot Flex Home 22 C6 running firmware 43.4 by changing the app setting. |
 | `configLoadBalancingFallbackCurrent` | Non-negative integer from `lof`; observed value `0` matched the app fallback of 0 A. Read-only because the complete range and write behavior are not confirmed. |
-| `configLoadBalancingPhaseAssignment` | Fixed three-slot vector from `map`: `[1,0,0]`, `[0,1,0]`, `[0,0,1]`, and `[1,2,3]` render as `L1`, `L2`, `L3`, and `L1 L2 L3`. Two-phase, malformed, or unconfirmed vectors preserve the existing reading. |
+| `configLoadBalancingGridConnectionCurrent` | Maximum grid-connection current from `lot.amp`. An independent app change to `5 A` confirmed the mapping on Flex 43.4. |
+| `configLoadBalancingSupplyLineCurrent` | Maximum supply-line current from `lot.sta`. An independent app change to `25 A` confirmed the mapping on Flex 43.4. `lot.dyn` remains unresolved and is not published. |
+| `configLoadBalancingPhaseAssignment` | Fixed three-slot vector from `map`: `[1,0,0]`, `[0,1,0]`, and `[0,0,1]` render as `L1`, `L2`, and `L3`. Every permutation of `1,2,3` is valid for three-phase assignment and preserves its order; for example, `[2,3,1]` renders as `L2 L3 L1`. Two-phase, malformed, or unconfirmed vectors preserve the existing reading. |
 | `configLoadBalancingSourceLabel` | Label of the currently selected inverter/Smart-Meter source from `cci.label`. The device ID, common name, and private IP from `cci` are not published. |
 | `loadBalancingSourceConnected` | Boolean runtime state `cci.connected` of the selected source, exposed as `0` or `1` and published only on change. |
 | `diag_fbuf_akkuSOC` | Optional raw scalar from `fbuf_akkuSOC`; no percentage range, unit, or scaling is claimed. |

@@ -189,9 +189,11 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `lom` | none | `null` observed; exact member-list semantics unresolved | none | observed value plus historical candidate |
 | `lop` | `configLoadBalancingPriority` | Priority: `40=high`, `50=medium`, `60=low`, otherwise `unknown:<value>` | R | all three mappings confirmed through app changes on one Flex 43.4; writes remain untested |
 | `los` | none | JSON-encoded group-status string containing identifiers; tuple semantics not sufficiently established for public readings | none | observed string and issue research only |
-| `lot` | none | Object with observed `amp`, `dyn`, `sta`, and `ts`; exact meanings remain provisional | none | observed object plus issue research only |
+| `lot.amp` | `configLoadBalancingGridConnectionCurrent` | Maximum grid-connection current in amperes | R | independent app change to 5 A on one Flex 43.4 |
+| `lot.sta` | `configLoadBalancingSupplyLineCurrent` | Maximum supply-line current in amperes | R | independent app change to 25 A on one Flex 43.4 |
+| `lot.dyn`, `lot.ts` | none | Remaining members of the observed `lot` object; semantics unresolved | none | observed object only |
 | `loty` | none | Observed integer; historical static/dynamic enum remains unconfirmed | none | observed number plus historical candidate |
-| `map` | `configLoadBalancingPhaseAssignment` | Fixed three-slot phase vector; confirmed `[1,0,0]`/`[0,1,0]`/`[0,0,1]`/`[1,2,3]` map to `L1`/`L2`/`L3`/`L1 L2 L3` | R | live app/status evidence on one Flex 43.4; two-phase semantics absent; writes untested |
+| `map` | `configLoadBalancingPhaseAssignment` | Fixed three-slot phase vector; one-phase slot vectors map to `L1`/`L2`/`L3`, and every permutation of `1,2,3` preserves configured three-phase order, including observed `[2,3,1]` → `L2 L3 L1` | R | live app/status evidence on one Flex 43.4; two-phase semantics absent; writes untested |
 | `lopr` | none | Observed boolean; semantics unresolved | none | observed value only |
 
 ## Firmware and device identity fields
