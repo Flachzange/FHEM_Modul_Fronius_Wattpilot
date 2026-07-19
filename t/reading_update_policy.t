@@ -705,7 +705,7 @@ subtest '2.1.0 hot-reload state invalidates old ownership and activates the new 
         'synthetic-reload-password';
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.12',
+    is($hash->{VERSION}, '2.1.13',
 
         'reload-style Initialize refreshes the module version');
     ok(!exists $hash->{FD},

@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.12';
+my $WATTPILOT_VERSION = '2.1.13';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -327,6 +327,7 @@ my @WATTPILOT_COMMAND_DEFINITION = (
     ['reconnect', 'reconnect', 'noArg', 'none', 'special', 'none', 'usage'],
     ['reboot', 'reboot', 'noArg', 'rst', 'special', 'none', 'usage'],
     ['pv_battery', 'pvBattery', 'none', 'none', 'special', 'none', 'usage'],
+    ['pv_battery_discharge', 'pvBatteryDischarge', 'widgetList,3,select,0,1,6,selectnumbers,0,1,100,0,lin', 'none', 'special', '<0|1> <0-100>', 'usage'],
     ['next_trip_time', 'nextTripTime', 'none', 'ftt', 'clock', '<HH:MM>', 'usage'],
 );
 
@@ -2373,6 +2374,26 @@ sub Wattpilot_CommandReadingsMayBePublished($) {
     return 1;
 }
 
+sub Wattpilot_CommandFailureError($$) {
+    my ($request, $error) = @_;
+    return $error if ref($request) ne 'HASH';
+    my $context = $request->{context};
+    return $error if ref($context) ne 'HASH'
+        || !defined($context->{command})
+        || $context->{command}
+            ne $WATTPILOT_COMMAND_NAME{pv_battery_discharge};
+
+    my $step = $context->{step} // 'unknown step';
+    my @applied = ref($context->{applied}) eq 'ARRAY'
+        ? @{$context->{applied}}
+        : ();
+    return "$context->{command} partial failure after "
+        . join(' and ', @applied)
+        . "; $step failed: $error"
+        if @applied;
+    return "$context->{command} $step failed: $error";
+}
+
 sub Wattpilot_AbortPendingRequests($$;$) {
     my ($hash, $reason, $publish) = @_;
     my $pending = $hash->{helper}{pendingRequests};
@@ -2397,7 +2418,8 @@ sub Wattpilot_AbortPendingRequests($$;$) {
         }
         else {
             Wattpilot_SetCommandReadings(
-                $hash, $request_id, 'failed', $reason);
+                $hash, $request_id, 'failed',
+                Wattpilot_CommandFailureError($request, $reason));
         }
     }
 }
@@ -2434,6 +2456,24 @@ sub Wattpilot_PvBatteryUsage($) {
         . "<value>";
 }
 
+sub Wattpilot_PvBatteryDischargeUsage($) {
+    my ($name) = @_;
+    return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_battery_discharge} "
+        . "<0|1> <0-100>";
+}
+
+sub Wattpilot_PvBatteryDischargeWritePending($) {
+    my ($hash) = @_;
+    Wattpilot_CleanupPendingRequests($hash);
+    my $pending = $hash->{helper}{pendingRequests} // {};
+    for my $request (values %$pending) {
+        next if ref($request) ne 'HASH';
+        return 1 if defined($request->{key})
+            && ($request->{key} eq 'pdte' || $request->{key} eq 'pdt');
+    }
+    return 0;
+}
+
 sub Wattpilot_SetPvBattery($@) {
     my ($hash, @args) = @_;
     my $name = $hash->{NAME};
@@ -2450,12 +2490,16 @@ sub Wattpilot_SetPvBattery($@) {
     if ($setting eq 'dischargeEnabled') {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_battery} dischargeEnabled <0|1>"
             if $value !~ /^(?:0|1)$/;
+        return "PV battery discharge configuration command is already pending"
+            if Wattpilot_PvBatteryDischargeWritePending($hash);
         return Wattpilot_SendSecure(
             $hash, 'pdte', $value eq '1' ? JSON::true : JSON::false);
     }
     if ($setting eq 'dischargeUntilSoC') {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{pv_battery} dischargeUntilSoC <0-100>"
             if $value !~ /^(?:0|[1-9]\d?|100)$/;
+        return "PV battery discharge configuration command is already pending"
+            if Wattpilot_PvBatteryDischargeWritePending($hash);
         return Wattpilot_SendSecure($hash, 'pdt', int($value));
     }
     if ($setting eq 'dischargeTimeLimitEnabled') {
@@ -2477,6 +2521,51 @@ sub Wattpilot_SetPvBattery($@) {
         return Wattpilot_SendSecure($hash, 'pdlo', int($seconds));
     }
     return Wattpilot_PvBatteryUsage($name);
+}
+
+sub Wattpilot_SetPvBatteryDischarge($@) {
+    my ($hash, @args) = @_;
+    my $name = $hash->{NAME};
+
+    if (@args == 1 && defined($args[0])
+        && $args[0] =~ /^([^,]+),([^,]+)$/) {
+        @args = ($1, $2);
+    }
+    return Wattpilot_PvBatteryDischargeUsage($name) if @args != 2;
+
+    my ($enabled, $discharge_until_soc) = @args;
+    return Wattpilot_PvBatteryDischargeUsage($name)
+        if !defined($enabled) || $enabled !~ /^(?:0|1)$/
+        || !defined($discharge_until_soc)
+        || $discharge_until_soc !~ /^(?:0|[1-9]\d?|100)$/;
+    return "PV battery discharge configuration command is already pending"
+        if Wattpilot_PvBatteryDischargeWritePending($hash);
+
+    my ($first_key, $first_value, $first_step,
+        $next_key, $next_value, $next_step);
+    if ($enabled eq '1') {
+        ($first_key, $first_value, $first_step,
+            $next_key, $next_value, $next_step) = (
+            'pdt', int($discharge_until_soc), 'dischargeUntilSoC',
+            'pdte', JSON::true, 'dischargeEnabled');
+    }
+    else {
+        ($first_key, $first_value, $first_step,
+            $next_key, $next_value, $next_step) = (
+            'pdte', JSON::false, 'dischargeEnabled',
+            'pdt', int($discharge_until_soc), 'dischargeUntilSoC');
+    }
+
+    return Wattpilot_SendSecureWithContext(
+        $hash, $first_key, $first_value,
+        {
+            command => $WATTPILOT_COMMAND_NAME{pv_battery_discharge},
+            step => $first_step,
+            applied => [],
+            nextKey => $next_key,
+            nextValue => $next_value,
+            nextStep => $next_step,
+        });
 }
 
 sub Wattpilot_GroupedCommandUsage($$;$) {
@@ -2626,6 +2715,9 @@ sub Wattpilot_Set($@) {
     if ($cmd eq $WATTPILOT_COMMAND_NAME{pv_battery}) {
         return Wattpilot_SetPvBattery($hash, @a[2 .. $#a]);
     }
+    if ($cmd eq $WATTPILOT_COMMAND_NAME{pv_battery_discharge}) {
+        return Wattpilot_SetPvBatteryDischarge($hash, @a[2 .. $#a]);
+    }
     if ($cmd eq $WATTPILOT_COMMAND_NAME{password}) {
         return "Usage: set $name $WATTPILOT_COMMAND_NAME{password} <secret>"
             if @a != 3 || !defined($val) || $val eq '';
@@ -2658,6 +2750,23 @@ sub Wattpilot_Set($@) {
 
 sub Wattpilot_SendSecure($$$) {
     my ($hash, $key, $val) = @_;
+    return Wattpilot_SendSecureInternal($hash, $key, $val, undef);
+}
+
+sub Wattpilot_SendSecureWithContext($$$$) {
+    my ($hash, $key, $value, $context) = @_;
+    my $request_context = {
+        %$context,
+        applied => ref($context->{applied}) eq 'ARRAY'
+            ? [@{$context->{applied}}]
+            : [],
+    };
+    return Wattpilot_SendSecureInternal(
+        $hash, $key, $value, $request_context);
+}
+
+sub Wattpilot_SendSecureInternal($$$$) {
+    my ($hash, $key, $val, $context) = @_;
     my $name = $hash->{NAME};
 
     return "Device is disabled" if Wattpilot_IsDisabled($name);
@@ -2712,11 +2821,15 @@ sub Wattpilot_SendSecure($$$) {
     my $final_msg = JSON->new->canonical->encode($secure_msg);
     Log3 $name, 3, "Wattpilot ($name) - Sending secured command key=$key requestId=$requestId";
     Wattpilot_WriteJson($hash, $final_msg);
-    $pending->{$requestId} = {
+    my $request = {
         key => $key,
         value => $val,
         sentAt => gettimeofday(),
     };
+    if (ref($context) eq 'HASH') {
+        $request->{context} = $context;
+    }
+    $pending->{$requestId} = $request;
     Wattpilot_SetCommandReadings($hash, $requestId, 'pending', 'none');
     Wattpilot_ScheduleRequestTimeout($hash);
     return undef;
@@ -2807,11 +2920,14 @@ sub Wattpilot_CleanupPendingRequests($) {
     my $now = gettimeofday();
     for my $request_id (sort { $pending->{$a}{sentAt} <=> $pending->{$b}{sentAt} } keys %$pending) {
         next if $pending->{$request_id}{sentAt} + $WATTPILOT_REQUEST_TIMEOUT > $now;
-        my $key = $pending->{$request_id}{key};
+        my $request = $pending->{$request_id};
+        my $key = $request->{key};
         delete $pending->{$request_id};
         Log3 $hash->{NAME}, 1,
             "Wattpilot ($hash->{NAME}) - Command response timeout key=$key requestId=$request_id";
-        Wattpilot_SetCommandReadings($hash, $request_id, 'timeout', 'response timeout');
+        Wattpilot_SetCommandReadings(
+            $hash, $request_id, 'timeout',
+            Wattpilot_CommandFailureError($request, 'response timeout'));
         Wattpilot_SetLifecycleState(
             $hash, $WATTPILOT_LIFECYCLE_STATE{connected})
             if defined($key)
@@ -2860,6 +2976,39 @@ sub Wattpilot_HandleResponse($$) {
         $error = 'malformed response';
     }
     elsif ($json->{success}) {
+        my $context = $request->{context};
+        if (ref($context) eq 'HASH' && defined($context->{nextKey})) {
+            my @applied = ref($context->{applied}) eq 'ARRAY'
+                ? @{$context->{applied}}
+                : ();
+            push @applied, $context->{step}
+                if defined($context->{step});
+            my $next_context = {
+                command => $context->{command},
+                step => $context->{nextStep},
+                applied => \@applied,
+            };
+            my $sequence_generation =
+                Wattpilot_CurrentLifecycleGeneration($hash);
+            my $send_error = Wattpilot_SendSecureWithContext(
+                $hash, $context->{nextKey}, $context->{nextValue},
+                $next_context);
+            my $sequence_still_current =
+                Wattpilot_CurrentLifecycleGeneration($hash)
+                    == $sequence_generation
+                && Wattpilot_CommandReadingsMayBePublished($hash);
+            Wattpilot_UpdateReadings($hash, $json->{status}, 'response')
+                if $sequence_still_current
+                && ref($json->{status}) eq 'HASH';
+            if (defined($send_error) && $sequence_still_current) {
+                Wattpilot_SetCommandReadings(
+                    $hash, $request_id, 'failed',
+                    Wattpilot_CommandFailureError(
+                        {context => $next_context},
+                        "not sent: $send_error"));
+            }
+            return;
+        }
         Wattpilot_UpdateReadings($hash, $json->{status}, 'response')
             if ref($json->{status}) eq 'HASH';
         Wattpilot_SetCommandReadings($hash, $request_id, 'success', 'none');
@@ -2871,7 +3020,9 @@ sub Wattpilot_HandleResponse($$) {
         $error = "device rejected $request->{key}";
     }
 
-    Wattpilot_SetCommandReadings($hash, $request_id, 'failed', $error);
+    Wattpilot_SetCommandReadings(
+        $hash, $request_id, 'failed',
+        Wattpilot_CommandFailureError($request, $error));
     Wattpilot_SetLifecycleState(
         $hash, $WATTPILOT_LIFECYCLE_STATE{connected})
         if $is_reboot
@@ -3282,6 +3433,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.8 adds six optional numeric temperature-array readings <code>diag_temperatureSensor1</code> through <code>diag_temperatureSensor6</code> and seven interval-controlled controller-health readings from the observed <code>cc4</code> object. Temperature positions have no claimed physical sensor assignment, unit, maximum, or derating meaning. Controller strings and the non-negative stack-size value are exposed without decoding tokens, inventing enums, or deriving a combined health verdict. Missing, <code>null</code>, malformed, and wrong-type nested values preserve existing readings.</p>
   <p>Version 2.1.9 adds <code>set &lt;name&gt; reboot</code>. It sends protocol key <code>rst</code> with JSON boolean <code>true</code> through the existing authenticated <code>setValue</code>/<code>securedMsg</code> path and immediately publishes <code>state=rebooting</code> after dispatch. A normal device response remains authoritative; rejection, malformed response, or timeout on a still-open authenticated session restores <code>connected</code>. If the Wattpilot closes the socket before responding, only the pending reboot request identified by protocol key <code>rst</code> is completed successfully and the existing automatic reconnect path takes over; unrelated pending commands retain the normal connection-loss failure behavior. The exact trigger value and disconnect timing require real-device confirmation.</p>
   <p>Version 2.1.12 decouples transient lifecycle control from the public <code>state</code> reading and presentation-formatted <code>STATE</code>. A dedicated runtime lifecycle is updated before reading publication; restored or manually changed readings cannot authorize commands, watchdogs, or connectivity. Reload invalidates unverifiable old ownership and starts one controlled reconnect. The same version replaces the four generic readings for the verified <code>tma[2]</code> through <code>tma[5]</code> positions with component-specific names. The mapping was verified on a Wattpilot Flex Home 22 C6; no unit, limit, derating threshold, or cross-model equivalence is inferred. Publication cadence, formatting, validation, and <code>diagnosticReadings</code> behavior are unchanged. No aliases or automatic cleanup are provided; old reading entries may remain stale after a module reload and must be removed manually if desired.</p>
+  <p>Version 2.1.13 adds the combined <code>pvBatteryDischarge</code> command with mandatory enable and SoC values. FHEMWEB renders two controls through <code>widgetList</code>. The module confirms the first secured write before sending the second, uses threshold-before-enable and disable-before-threshold ordering, blocks overlapping <code>pdt</code>/<code>pdte</code> writes, and reports the failed step plus any confirmed partial application without optimistic reading updates.</p>
   <table class="block wide">
     <tr><th>Reading through 2.1.11</th><th>Reading from 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3401,6 +3553,8 @@ sub Wattpilot_WriteJson($$) {
         <code>dischargeStartTime &lt;HH:MM&gt;</code> &rarr; <code>pdls</code> as seconds after midnight;<br>
         <code>dischargeStopTime &lt;HH:MM|24:00&gt;</code> &rarr; <code>pdlo</code> as seconds after midnight.<br>
         No reading is changed optimistically; only returned device status confirms a value. All six grouped setters were changed individually on a Wattpilot Flex Home 22 C6 running firmware 43.4, confirmed through device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and other firmware/model variants remain unverified.</li>
+    <li><code>set &lt;name&gt; pvBatteryDischarge &lt;0|1&gt; &lt;0-100&gt;</code><br>
+        Combines <code>dischargeEnabled</code> and <code>dischargeUntilSoC</code>; both values are mandatory. FHEMWEB renders a <code>0|1</code> selector and a whole-number SoC selector. When enabling, <code>pdt</code> is sent and confirmed before <code>pdte=true</code>; when disabling, <code>pdte=false</code> is confirmed before the new <code>pdt</code> value is sent. Related grouped writes are blocked while either step is pending. A rejection, timeout, connection loss, or local second-step send failure identifies the failed setting in <code>lastCommandError</code> and reports partial application when the first step was already confirmed. Readings remain device-confirmed only.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
         Performs a local controlled WebSocket reconnect without sending a Wattpilot protocol command. Session-owned timers, authentication state, partial JSON, and pending secured commands are invalidated; operational readings and configuration remain intact. Pending commands terminate with <code>lastCommandStatus=failed</code> and <code>lastCommandError=reconnect requested</code>. The command is not a <code>fullStatus</code> request; any initial status after login is device-supplied. Initialized live sessions of the empirically evidenced <code>wattpilot_flex</code> device profile are also guarded by an independent inbound watchdog: every complete decoded JSON document refreshes liveness, and at least 180 seconds without one triggers exactly one automatic reconnect at the next 30-second check. The watchdog is independent of <code>interval</code> and <code>update_while_idle</code> and can be suspended temporarily with <code>inboundWatchdog=0</code> without closing the session or disabling other reconnect paths. The legacy <code>devicetype=wattpilot</code> profile deliberately receives no such timeout because no sufficiently bounded idle-message cadence is evidenced for it.</li>
     <li><code>set &lt;name&gt; reboot</code><br>
@@ -3474,8 +3628,8 @@ sub Wattpilot_WriteJson($$) {
     <li><code>diag_temperatureSensor1</code>, <code>diag_temperatureSensor2</code>, <code>diag_temperatureGridConnector</code>, <code>diag_temperatureCurrentSensor</code>, <code>diag_temperatureType2ScrewTerminals</code>, <code>diag_temperatureMID</code><br>Optional numeric values from <code>tma[0]</code> through <code>tma[5]</code>, formatted with exactly two decimal places. On the verified Wattpilot Flex Home 22 C6 mapping, <code>tma[2]</code> is the grid connector, <code>tma[3]</code> the current sensor, <code>tma[4]</code> the Type 2 screw terminals, and <code>tma[5]</code> the MID. Positions <code>tma[0]</code> and <code>tma[1]</code>, the unit, limits, derating thresholds, and applicability to other hardware revisions remain unconfirmed; missing, <code>null</code>, malformed, or non-numeric positions preserve existing readings.</li>
     <li><code>diag_fbuf_pGrid</code>, <code>diag_fbuf_pPv</code>, <code>diag_pvopt_averagePGrid</code>, <code>diag_pvopt_averagePPv</code>, <code>diag_pvopt_averagePAkku</code>, <code>diag_pvopt_averagePOhmpilot</code>, <code>diag_pvopt_deltaP</code>, <code>diag_pvopt_deltaA</code>, <code>diag_pvopt_specialCase</code>, <code>diag_fbuf_pAcTotal</code>, <code>diag_fbuf_ohmpilotState</code>, <code>diag_fbuf_ohmpilotTemperature</code><br>Optional raw scalar field-research readings enabled by <code>diagnosticReadings=1</code>. Their original protocol wording is retained after <code>diag_</code>; no meaning, unit, sign, aggregation, or enum is claimed.</li>
     <li><code>configPvBatteryChargeAboveSoC</code><br>App setting <code>Charge above</code> from <code>fam</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped setter accepts whole percentages only.</li>
-    <li><code>configPvBatteryDischargeEnabled</code><br>App switch <code>Discharge until</code> from <code>pdte</code>, exposed as <code>0</code> or <code>1</code>.</li>
-    <li><code>configPvBatteryDischargeUntilSoC</code><br>App setting <code>State of charge SoC</code> from <code>pdt</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped setter accepts whole percentages only.</li>
+    <li><code>configPvBatteryDischargeEnabled</code><br>App switch <code>Discharge until</code> from <code>pdte</code>, exposed as <code>0</code> or <code>1</code>. It can be written individually through grouped <code>pvBattery</code> or together with the threshold through <code>pvBatteryDischarge</code>.</li>
+    <li><code>configPvBatteryDischargeUntilSoC</code><br>App setting <code>State of charge SoC</code> from <code>pdt</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped and combined setters accept whole percentages only.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App switch <code>Limit discharging time</code> from <code>pdle</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App start/stop times from <code>pdls</code> and <code>pdlo</code>, converted from whole seconds after midnight to <code>HH:MM</code>. The six configuration mappings were matched to simultaneous Solar.wattpilot app values on one Flex Home 22 C6 running firmware 43.4. All six grouped setters were subsequently accepted on the same model/firmware, reflected in device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and broader firmware/model scope remain unverified.</li>
     <li>All 24 configuration readings update immediately after valid device confirmation. Identity readings and the device-supplied discrete readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code>, and <code>errorCode</code> publish immediately only when their public value changes. <code>authHashMode</code> updates when an authentication method is selected; <code>connectionLastReconnectReason</code> and <code>connectionAutomaticReconnectCount</code> record reconnect lifecycle events; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, and <code>lastCommandError</code> update with command lifecycle events. Energy, electrical <code>nrg</code>, device-health values, <code>uptime</code>, and enabled optional diagnostics keep separate caches and dirty fields but share one <code>interval</code> clock; one group never republishes stale values from another. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
@@ -3569,6 +3723,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.8 ergänzt sechs optionale numerische Temperatur-Array-Readings <code>diag_temperatureSensor1</code> bis <code>diag_temperatureSensor6</code> sowie sieben intervallgesteuerte Controller-Health-Readings aus dem beobachteten <code>cc4</code>-Objekt. Für die Temperaturpositionen werden weder physische Sensorzuordnung, Einheit, Maximum noch Derating-Bedeutung behauptet. Controller-Strings und der nicht negative Stack-Size-Wert werden ohne Token-Dekodierung, erfundene Enums oder abgeleiteten Health-Gesamtzustand ausgegeben. Fehlende, <code>null</code>-, strukturell falsche und typfalsche verschachtelte Werte erhalten vorhandene Readings.</p>
   <p>Version 2.1.9 ergänzt <code>set &lt;name&gt; reboot</code>. Der Befehl sendet den Protokollschlüssel <code>rst</code> mit dem JSON-Boolean <code>true</code> über den bestehenden authentifizierten <code>setValue</code>/<code>securedMsg</code>-Pfad und veröffentlicht danach sofort <code>state=rebooting</code>. Eine normale Geräteantwort bleibt maßgeblich; Ablehnung, fehlerhafte Response oder Timeout bei weiterhin offener authentifizierter Sitzung stellt <code>connected</code> wieder her. Trennt der Wattpilot die Verbindung vor der Antwort, wird ausschließlich der anhand des Protokollschlüssels <code>rst</code> erkannte Reboot-Request erfolgreich abgeschlossen und der vorhandene automatische Reconnect übernimmt; andere ausstehende Befehle behalten ihr normales Fehlerverhalten bei Verbindungsverlust. Der exakte Triggerwert und das Trennungsverhalten müssen am Realgerät bestätigt werden.</p>
   <p>Version 2.1.12 entkoppelt die transiente Lifecycle-Steuerung vom öffentlichen Reading <code>state</code> und vom durch <code>stateFormat</code> formatierten <code>STATE</code>. Ein eigener Runtime-Lifecycle wird vor der Reading-Veröffentlichung aktualisiert; wiederhergestellte oder manuell geänderte Readings können weder Befehle noch Watchdog oder Verbindung autorisieren. Beim Reload wird nicht verifizierbare alte Ownership invalidiert und genau ein kontrollierter Reconnect gestartet. Dieselbe Version ersetzt die vier generischen Readings für die verifizierten Positionen <code>tma[2]</code> bis <code>tma[5]</code> durch komponentenspezifische Namen. Das Mapping wurde an einem Wattpilot Flex Home 22 C6 verifiziert; daraus werden weder Einheit, Grenzwert, Derating-Schwelle noch eine Übertragbarkeit auf andere Modelle abgeleitet. Aktualisierungstakt, Formatierung, Validierung und das Verhalten von <code>diagnosticReadings</code> bleiben unverändert. Es gibt keine Aliase oder automatische Bereinigung; alte Reading-Einträge können nach einem Modul-Reload als nicht mehr aktualisierte Werte bestehen bleiben und bei Bedarf manuell entfernt werden.</p>
+  <p>Version 2.1.13 ergänzt den kombinierten Befehl <code>pvBatteryDischarge</code> mit verpflichtendem Schalt- und SoC-Wert. FHEMWEB zeigt über <code>widgetList</code> zwei Bedienelemente. Das Modul bestätigt den ersten gesicherten Schreibvorgang, bevor es den zweiten sendet, verwendet die Reihenfolge Grenzwert-vor-Aktivierung beziehungsweise Deaktivierung-vor-Grenzwert, sperrt überlappende <code>pdt</code>/<code>pdte</code>-Schreibzugriffe und meldet den fehlgeschlagenen Schritt samt bereits bestätigter Teilanwendung ohne optimistische Reading-Updates.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.1.11</th><th>Reading ab 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3688,6 +3843,8 @@ sub Wattpilot_WriteJson($$) {
         <code>dischargeStartTime &lt;HH:MM&gt;</code> &rarr; <code>pdls</code> als Sekunden seit Mitternacht;<br>
         <code>dischargeStopTime &lt;HH:MM|24:00&gt;</code> &rarr; <code>pdlo</code> als Sekunden seit Mitternacht.<br>
         Kein Reading wird optimistisch geändert; nur vom Gerät zurückgelieferter Status bestätigt einen Wert. Alle sechs gruppierten Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
+    <li><code>set &lt;name&gt; pvBatteryDischarge &lt;0|1&gt; &lt;0-100&gt;</code><br>
+        Kombiniert <code>dischargeEnabled</code> und <code>dischargeUntilSoC</code>; beide Werte sind verpflichtend. FHEMWEB zeigt einen <code>0|1</code>-Selektor und eine ganzzahlige SoC-Auswahl. Beim Aktivieren wird <code>pdt</code> gesendet und bestätigt, bevor <code>pdte=true</code> folgt; beim Deaktivieren wird <code>pdte=false</code> bestätigt, bevor der neue <code>pdt</code>-Wert gesendet wird. Zugehörige gruppierte Schreibzugriffe sind gesperrt, solange einer der Schritte aussteht. Ablehnung, Timeout, Verbindungsverlust oder ein lokaler Versandfehler des zweiten Schritts nennt die fehlgeschlagene Einstellung in <code>lastCommandError</code> und meldet eine Teilanwendung, wenn der erste Schritt bereits bestätigt wurde. Readings bleiben ausschließlich gerätebestätigt.</li>
     <li><code>set &lt;name&gt; reconnect</code><br>
         Baut die lokale WebSocket-Verbindung kontrolliert neu auf, ohne ein Wattpilot-Protokollkommando zu senden. Sitzungsgebundene Timer, Authentifizierungszustand, Teil-JSON und ausstehende gesicherte Befehle werden verworfen; Betriebsreadings und Konfiguration bleiben erhalten. Ausstehende Befehle enden mit <code>lastCommandStatus=failed</code> und <code>lastCommandError=reconnect requested</code>. Der Befehl ist kein <code>fullStatus</code>-Request; ein Initialstatus nach der Anmeldung wird vom Gerät geliefert. Initialisierte aktive Sitzungen des empirisch belegten Geräteprofils <code>wattpilot_flex</code> werden zusätzlich durch einen unabhängigen Inbound-Watchdog überwacht: Jedes vollständig dekodierte JSON-Dokument erneuert die Liveness; mindestens 180 Sekunden ohne ein solches Dokument lösen beim nächsten 30-Sekunden-Prüflauf genau einen automatischen Reconnect aus. Der Watchdog ist unabhängig von <code>interval</code> und <code>update_while_idle</code> und kann mit <code>inboundWatchdog=0</code> vorübergehend ausgesetzt werden, ohne die Sitzung zu schließen oder andere Reconnect-Pfade abzuschalten. Das Legacy-Profil <code>devicetype=wattpilot</code> erhält bewusst keinen solchen Timeout, weil dafür keine hinreichend begrenzte Idle-Nachrichtenfrequenz belegt ist.</li>
     <li><code>set &lt;name&gt; reboot</code><br>
@@ -3761,8 +3918,8 @@ sub Wattpilot_WriteJson($$) {
     <li><code>diag_temperatureSensor1</code>, <code>diag_temperatureSensor2</code>, <code>diag_temperatureGridConnector</code>, <code>diag_temperatureCurrentSensor</code>, <code>diag_temperatureType2ScrewTerminals</code>, <code>diag_temperatureMID</code><br>Optionale numerische Werte aus <code>tma[0]</code> bis <code>tma[5]</code>, formatiert mit genau zwei Nachkommastellen. Beim verifizierten Mapping des Wattpilot Flex Home 22 C6 bezeichnet <code>tma[2]</code> den Grid Connector, <code>tma[3]</code> den Current Sensor, <code>tma[4]</code> die Type-2-Schraubklemmen und <code>tma[5]</code> den MID. Die Positionen <code>tma[0]</code> und <code>tma[1]</code>, Einheit, Grenzwerte, Derating-Schwellen und die Übertragbarkeit auf andere Hardware-Revisionen bleiben unbestätigt; fehlende, <code>null</code>-, strukturell falsche oder nicht numerische Positionen erhalten vorhandene Readings.</li>
     <li><code>diag_fbuf_pGrid</code>, <code>diag_fbuf_pPv</code>, <code>diag_pvopt_averagePGrid</code>, <code>diag_pvopt_averagePPv</code>, <code>diag_pvopt_averagePAkku</code>, <code>diag_pvopt_averagePOhmpilot</code>, <code>diag_pvopt_deltaP</code>, <code>diag_pvopt_deltaA</code>, <code>diag_pvopt_specialCase</code>, <code>diag_fbuf_pAcTotal</code>, <code>diag_fbuf_ohmpilotState</code>, <code>diag_fbuf_ohmpilotTemperature</code><br>Optionale rohe skalare Felderkundungsreadings mit <code>diagnosticReadings=1</code>. Nach <code>diag_</code> bleibt die originale Protokollschreibweise erhalten; Bedeutung, Einheit, Vorzeichen, Aggregation und Enum werden nicht behauptet.</li>
     <li><code>configPvBatteryChargeAboveSoC</code><br>App-Einstellung <code>Charge above</code> aus <code>fam</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Der gruppierte Setter akzeptiert nur ganze Prozentwerte.</li>
-    <li><code>configPvBatteryDischargeEnabled</code><br>App-Schalter <code>Discharge until</code> aus <code>pdte</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
-    <li><code>configPvBatteryDischargeUntilSoC</code><br>App-Einstellung <code>State of charge SoC</code> aus <code>pdt</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Der gruppierte Setter akzeptiert nur ganze Prozentwerte.</li>
+    <li><code>configPvBatteryDischargeEnabled</code><br>App-Schalter <code>Discharge until</code> aus <code>pdte</code>, ausgegeben als <code>0</code> oder <code>1</code>. Der Wert kann einzeln über den gruppierten Befehl <code>pvBattery</code> oder gemeinsam mit dem Grenzwert über <code>pvBatteryDischarge</code> geschrieben werden.</li>
+    <li><code>configPvBatteryDischargeUntilSoC</code><br>App-Einstellung <code>State of charge SoC</code> aus <code>pdt</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Gruppierter und kombinierter Setter akzeptieren nur ganze Prozentwerte.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App-Schalter <code>Limit discharging time</code> aus <code>pdle</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App-Start-/Stoppzeiten aus <code>pdls</code> und <code>pdlo</code>, von ganzen Sekunden seit Mitternacht nach <code>HH:MM</code> umgerechnet. Die sechs Konfigurationszuordnungen wurden auf einem Flex Home 22 C6 mit Firmware 43.4 anhand zeitgleich übereinstimmender Solar.wattpilot-App-Werte belegt. Alle sechs gruppierten Setter wurden anschließend auf demselben Modell/Firmwarestand vom Gerät angenommen, im geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
     <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Identitätsreadings und die vom Gerät gelieferten diskreten Readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code> und <code>errorCode</code> werden sofort, aber nur bei einer tatsächlichen Änderung ihres öffentlichen Werts veröffentlicht. <code>authHashMode</code> wird bei der Auswahl eines Authentifizierungsverfahrens aktualisiert; <code>connectionLastReconnectReason</code> und <code>connectionAutomaticReconnectCount</code> dokumentieren Reconnect-Ereignisse; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code> und <code>lastCommandError</code> folgen den Ereignissen im Befehls-Lifecycle. Energie-, elektrische <code>nrg</code>-Telemetrie, Gerätegesundheitswerte, <code>uptime</code> und aktivierte optionale Diagnosen behalten getrennte Caches und Dirty-Felder, teilen aber einen <code>interval</code>-Takt; eine Gruppe veröffentlicht nie alte Werte einer anderen. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
@@ -3831,7 +3988,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.12",
+  "version": "v2.1.13",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

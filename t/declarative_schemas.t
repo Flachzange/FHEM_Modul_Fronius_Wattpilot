@@ -46,15 +46,15 @@ my $reading_policy = $interface->{readingPolicy};
 
 is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
-is(scalar(keys %$command_schema), 15,
-    'command schema contains the complete 15-command public surface');
+is(scalar(keys %$command_schema), 16,
+    'command schema contains the complete 16-command public surface');
 is(scalar(keys %$status_fields), 68,
     'status schema contains all 68 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
-    [qw(minimum_charging password phase_switch pv_battery reboot reconnect)],
-    'only grouped commands, password, pvBattery, reboot, and reconnect remain explicit Set handlers');
+    [qw(minimum_charging password phase_switch pv_battery pv_battery_discharge reboot reconnect)],
+    'only grouped commands, password, PV-battery commands, reboot, and reconnect remain explicit Set handlers');
 
 my (@command_schema_errors, %seen_public_name);
 for my $key (sort keys %$command_schema) {
@@ -71,6 +71,9 @@ for my $key (sort keys %$command_schema) {
 }
 is_deeply(\@command_schema_errors, [],
     'ordinary command schema metadata is complete and public names are unique');
+is($command_schema->{pv_battery_discharge}{widget},
+    'widgetList,3,select,0,1,6,selectnumbers,0,1,100,0,lin',
+    'combined PV-battery command exposes two FHEMWEB controls');
 
 my @ordinary_cases = (
     [force_state => 'on', 'frc', 2, 'number'],

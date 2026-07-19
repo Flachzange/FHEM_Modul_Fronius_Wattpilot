@@ -50,6 +50,7 @@ is_deeply(
         reconnect => 'reconnect',
         reboot => 'reboot',
         pv_battery => 'pvBattery',
+        pv_battery_discharge => 'pvBatteryDischarge',
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
