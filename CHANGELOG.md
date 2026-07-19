@@ -1,5 +1,16 @@
 # Changelog
 
+## [v2.1.16] - 2026-07-19
+
+### Confirmed read-only load-balancing core
+
+- Adds `configLoadBalancingEnabled`, `configLoadBalancingPriority`, `configLoadBalancingFallbackCurrent`, `configLoadBalancingGridConnectionCurrent`, `configLoadBalancingSupplyLineCurrent`, `configLoadBalancingPhaseAssignment`, `configLoadBalancingSourceLabel`, and `loadBalancingSourceConnected` through the existing declarative status inventory.
+- Grounds the mapping in a simultaneous Wattpilot Flex Home 22 C6 / firmware 43.4 app and `fullStatus` observation. Priority maps the real-device-confirmed codes `40 = high`, `50 = medium`, and `60 = low`; unknown non-negative integers remain explicit as `unknown:<value>`; phase assignment recognizes the three one-phase slot vectors and every permutation of `1,2,3`, preserving configured order; the live-observed `[2,3,1]` becomes `L2 L3 L1`, while two-phase, malformed, and unconfirmed vectors preserve the previous reading. Independent app changes to 5 A and 25 A confirm `lot.amp` as maximum grid-connection current and `lot.sta` as maximum supply-line current; `lot.dyn` remains unexposed.
+- Uses `cci` only for the selected source label and live connection state. Source identifiers, common names, and private IP addresses are deliberately not exposed.
+- Preserves existing readings for missing, `null`, malformed, wrong-type, negative, empty, or duplicate-phase values. No separate load-balancing update function is introduced.
+- Leaves `loa`, `lom`, `los`, `lot.dyn`, `lot.ts`, `loty`, `lopr`, `clearSmips`, and all load-balancing writes unresolved. No `loadBalancing` Set command is added until writability, values, ranges, and dependencies are reproducibly verified; issue #101 therefore remains open.
+- Updates command references, README files, protocol provenance, field documentation, the authoritative reading inventory, and focused regression coverage. No post-change physical-device or real-FHEM test was performed in the implementation environment.
+
 ## [v2.1.15] - 2026-07-19
 
 ### Optional PV phase-wish diagnostic

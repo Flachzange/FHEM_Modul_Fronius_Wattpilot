@@ -93,7 +93,7 @@ subtest 'reading inventory declares one intentional public format per reading' =
         'every public reading has an intentional formatter classification');
     my %known_formatter = map { $_ => 1 } qw(
         lifecycle text integer boolean seconds clock enum percentage
-        decimal2 diagnostic2 hours_minutes_ms
+        decimal2 diagnostic2 hours_minutes_ms phase_assignment
     );
     is_deeply(
         [sort grep { !$known_formatter{$policy->{$_}{formatter}} }

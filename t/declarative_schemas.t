@@ -48,8 +48,8 @@ is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
 is(scalar(keys %$command_schema), 16,
     'command schema contains the complete 16-command public surface');
-is(scalar(keys %$status_fields), 69,
-    'status schema contains all 69 consumed protocol fields');
+is(scalar(keys %$status_fields), 77,
+    'status schema contains all 77 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
@@ -190,6 +190,7 @@ my %valid_for_kind = (
     percentage => 42.5,
     clock_seconds => 3600,
     boolean => JSON::true,
+    phase_assignment => [1, 0, 0],
     nrg => [1 .. 12],
     string => 'synthetic',
     nonempty_string => 'synthetic',
@@ -203,6 +204,7 @@ my %invalid_for_kind = (
     percentage => 101,
     clock_seconds => 1,
     boolean => 1,
+    phase_assignment => [1, 2, 0],
     nrg => [1, 2],
     string => [],
     nonempty_string => '',
@@ -265,6 +267,7 @@ my %enum_sample = (
     pv_control => [1, 'default'],
     phase_switch => [1, 'force1'],
     phase_wish => [1, 'wish1'],
+    load_balancing_priority => [50, 'medium'],
 );
 my (%actual_formatter, %expected_formatter);
 for my $reading_key (sort keys %$reading_policy) {
@@ -289,6 +292,9 @@ for my $reading_key (sort keys %$reading_policy) {
         ($sample, $expected) = $policy->{detail} eq 'end_of_day'
             ? (86400, '24:00')
             : (3600, '01:00');
+    }
+    elsif ($policy->{formatter} eq 'phase_assignment') {
+        ($sample, $expected) = ([2], 'L2');
     }
     elsif ($policy->{formatter} eq 'decimal2') {
         ($sample, $expected) = (12.5, '12.50');

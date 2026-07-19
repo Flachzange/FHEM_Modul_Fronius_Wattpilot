@@ -108,7 +108,10 @@ my @public_readings = qw(
     configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
-    configMinimumChargingInterval deviceRebootCount uptime
+    configMinimumChargingInterval configLoadBalancingEnabled configLoadBalancingPriority
+    configLoadBalancingFallbackCurrent configLoadBalancingGridConnectionCurrent
+    configLoadBalancingSupplyLineCurrent configLoadBalancingPhaseAssignment
+    configLoadBalancingSourceLabel loadBalancingSourceConnected deviceRebootCount uptime
     diag_fbuf_akkuMode diag_fbuf_akkuSOC diag_fbuf_pAkku diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
     diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
     diag_pvopt_deltaA diag_pvopt_specialCase diag_pvopt_phaseWishMode diag_fbuf_pAcTotal
