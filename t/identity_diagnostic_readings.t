@@ -25,6 +25,7 @@ my @diag_readings = qw(
     diag_pvopt_deltaP
     diag_pvopt_deltaA
     diag_pvopt_specialCase
+    diag_pvopt_phaseWishMode
     diag_fbuf_pAcTotal
     diag_fbuf_ohmpilotState
     diag_fbuf_ohmpilotTemperature
@@ -93,6 +94,7 @@ sub diagnostic_status {
         pvopt_deltaP => -5.125,
         pvopt_deltaA => 6.625,
         pvopt_specialCase => 7,
+        pwm => 1,
         fbuf_pAcTotal => 'raw-ac-value',
         fbuf_ohmpilotState => JSON::true(),
         fbuf_ohmpilotTemperature => JSON::false(),
@@ -275,6 +277,8 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         'signed diagnostics are not reinterpreted');
     is(reading_value($hash, 'diag_pvopt_averagePGrid'), '1.23',
         'numeric diagnostic detail is rounded consistently');
+    is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'wish1',
+        'phase wish mode one maps to wish1');
     is(reading_value($hash, 'diag_fbuf_pAcTotal'), 'raw-ac-value',
         'string diagnostics are copied unchanged');
     is(reading_value($hash, 'diag_fbuf_ohmpilotState'), 1,
@@ -289,12 +293,28 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
         fbuf_pAcTotal => { nested => 1 },
         fbuf_ohmpilotState => [1, 2],
         fbuf_ohmpilotTemperature => undef,
+        pwm => 2,
     }), 'mixed diagnostic delta is accepted');
     is(reading_value($hash, 'diag_fbuf_pGrid'), '125.13',
         'changed numeric diagnostic waits for the interval');
+    is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'wish1',
+        'changed phase wish mode waits for the interval');
     DevIo::run_due_timers(3_040);
     is(reading_value($hash, 'diag_fbuf_pGrid'), '222.22',
         'changed numeric diagnostic publishes rounded at the interval');
+    is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'wish3',
+        'phase wish mode two maps to wish3 at the interval');
+    for my $case (
+        [undef, 'null'],
+        ['1', 'numeric string'],
+        [1.5, 'non-integer number'],
+        [{ nested => 1 }, 'object'],
+    ) {
+        ok(parse_status($hash, 'deltaStatus', { pwm => $case->[0] }),
+            "$case->[1] phase wish input is ignored field by field");
+        is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'wish3',
+            "$case->[1] phase wish input preserves the previous enum");
+    }
     is(reading_value($hash, 'diag_fbuf_pAcTotal'), 'raw-ac-value',
         'object diagnostic input preserves the previous scalar');
     is(reading_value($hash, 'diag_fbuf_ohmpilotState'), 1,
@@ -307,16 +327,21 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
     ok(parse_status($hash, 'deltaStatus', {
         car => 1,
         fbuf_pGrid => 333.3333333,
+        pwm => 0,
     }), 'idle diagnostic value is cached');
     DevIo::run_due_timers(3_070);
     is(reading_value($hash, 'diag_fbuf_pGrid'), '222.22',
         'all diagnostics stay gated while idle');
+    is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'wish3',
+        'phase wish mode stays gated while idle');
 
     is(DevIo::command_attr($hash->{NAME}, 'update_while_idle', 1), undef,
         'idle publication is enabled');
     DevIo::run_due_timers(3_100);
     is(reading_value($hash, 'diag_fbuf_pGrid'), '333.33',
         'the latest cached diagnostic publishes rounded after the gate opens');
+    is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'force3',
+        'phase wish mode zero maps to force3 after the gate opens');
 
     is(DevIo::command_attr($hash->{NAME}, 'diagnosticReadings', 0), undef,
         'diagnosticReadings accepts zero');
@@ -347,10 +372,13 @@ subtest 'optional raw diagnostics are boolean-enabled, interval-controlled, and 
     ok(parse_status($hash, 'deltaStatus', {
         car => 2,
         fbuf_pGrid => 555,
+        pwm => 9,
     }), 'diagnostic input is cached after re-enabling');
     DevIo::run_due_timers(3_160);
     is(reading_value($hash, 'diag_fbuf_pGrid'), '555.00',
         're-enabled numeric diagnostics publish with two decimals');
+    is(reading_value($hash, 'diag_pvopt_phaseWishMode'), 'unknown:9',
+        'unknown integer phase wish modes remain explicit');
     is(DevIo::command_delete_attr($hash->{NAME}, 'diagnosticReadings'), undef,
         'deleting the attribute is accepted');
     ok(!exists $hash->{READINGS}{diag_fbuf_pGrid},

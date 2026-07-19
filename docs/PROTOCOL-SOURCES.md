@@ -138,6 +138,15 @@ Version 2.1.0 distinguishes observed JSON kinds from Perl scalar text. Known num
 - Version 2.1.8 exposes those seven members as interval-controlled `deviceController...` readings. Strings remain unchanged and `stack_size` must be a non-negative integer. No token decoding, enum, CRC verification, reset-cause interpretation, or combined health verdict is performed.
 - Missing object members, short arrays, `null`, malformed containers, and wrong JSON kinds preserve existing readings and do not create telemetry dirty state. These are FHEM-side defensive publication rules, not claims about device update frequency or requiredness.
 
+
+## Phase-wish diagnostic mapping in version 2.1.15
+
+- The sanitized Wattpilot Flex Home 22 C6 `fullStatus` captured on firmware 43.4 contains numeric `pwm=0`. This establishes field presence, JSON integer shape, and one representative value only.
+- The repository's historical API compilation pinned at commit `a83f25a10cc6924dd72f18faad3ec83cb15efe60` names `pwm` as `phaseWishMode`, describes it as a read-only PV-optimization debugging value, and lists `Force_3=0`, `Wish_1=1`, and `Wish_3=2`. This is historical third-party compilation evidence, not an official Fronius Flex WebSocket specification.
+- Version 2.1.15 exposes the field conservatively as optional `diag_pvopt_phaseWishMode`, mapping the known integers to `force3`, `wish1`, and `wish3`; other integers remain `unknown:<value>`. Missing, `null`, non-integer, or structured values preserve the previous reading.
+- The reading reuses the existing `diagnosticReadings` owner, shared `interval`, `update_while_idle` gate, and immediate attribute-driven cleanup. These are FHEM publication rules, not device emission-frequency claims.
+- The mapping does not prove the exact timer behavior mentioned by the historical compilation, does not describe the configured `configPhaseSwitchMode`/`psm`, and does not establish that a requested or actual one-/three-phase transition occurred. The field remains read-only.
+
 ## Device reboot command in version 2.1.9
 
 - The pinned third-party registry at commit `4712ba3b8409fda55303870c047038b1b221d7ff` lists key `rst`, alias `rebootCharger`, JSON type `any`, and write-only access. This is compatibility evidence, not an official Fronius local-WebSocket specification.

@@ -1,5 +1,14 @@
 # Changelog
 
+## [v2.1.15] - 2026-07-19
+
+### Optional PV phase-wish diagnostic
+
+- Adds the optional reading `diag_pvopt_phaseWishMode` from status field `pwm` through the existing declarative diagnostic inventory.
+- Maps the documented integer values `0`, `1`, and `2` to `force3`, `wish1`, and `wish3`; unknown integer values remain visible as `unknown:<value>` instead of being discarded or misclassified.
+- Reuses the normal diagnostic `interval`, charging/`update_while_idle` gate, cache owner, cleanup on `diagnosticReadings=0`, and invalid-value preservation without introducing a special update path.
+- Updates both command references, README files, protocol provenance, field documentation, the authoritative reading inventory, and regression coverage. No real FHEM, WebSocket, or post-change physical-device test was performed in the implementation environment.
+
 ## [v2.1.14] - 2026-07-19
 
 ### FHEMWEB controls for combined PV-battery discharge

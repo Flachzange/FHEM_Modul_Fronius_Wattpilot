@@ -705,7 +705,7 @@ subtest '2.1.0 hot-reload state invalidates old ownership and activates the new 
         'synthetic-reload-password';
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.14',
+    is($hash->{VERSION}, '2.1.15',
 
         'reload-style Initialize refreshes the module version');
     ok(!exists $hash->{FD},
@@ -818,8 +818,8 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     my @optional_diagnostic = grep {
         $policy->{$_}{category} eq 'optional_diagnostic'
     } keys %$policy;
-    is(scalar @optional_diagnostic, 21,
-        'all twenty-one optional diagnostics are inventoried');
+    is(scalar @optional_diagnostic, 22,
+        'all twenty-two optional diagnostics are inventoried');
     for my $key (@optional_diagnostic) {
         is($policy->{$key}{publication}, 'interval',
             "$key follows the shared interval");
@@ -827,11 +827,13 @@ subtest 'authoritative reading policy inventory is complete' => sub {
             "$key uses the common diagnostic idle gate");
         is($policy->{$key}{owner}, 'diagnostic',
             "$key uses the diagnostic owner");
-        my $expected_formatter = $key =~ /^diag_temperature_sensor_/
-            ? 'decimal2'
-            : 'diagnostic2';
+        my $expected_formatter = $key eq 'diag_pvopt_phase_wish_mode'
+            ? 'enum'
+            : $key =~ /^diag_temperature_sensor_/
+                ? 'decimal2'
+                : 'diagnostic2';
         is($policy->{$key}{formatter}, $expected_formatter,
-            "$key uses its declared two-decimal diagnostic formatter");
+            "$key uses its declared diagnostic formatter");
     }
 };
 

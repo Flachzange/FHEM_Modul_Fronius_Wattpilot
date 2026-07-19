@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.14 retains the authoritative publication policy for every public
+Version 2.1.15 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -110,6 +110,7 @@ queries must be adapted explicitly.
 | `diag_pvopt_delta_p` | `diag_pvopt_deltaP` | `optional_diagnostic` | `status:pvopt_deltaP` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; compared quantities and unit remain unknown. |
 | `diag_pvopt_delta_a` | `diag_pvopt_deltaA` | `optional_diagnostic` | `status:pvopt_deltaA` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw field research value; compared quantities and unit remain unknown. |
 | `diag_pvopt_special_case` | `diag_pvopt_specialCase` | `optional_diagnostic` | `status:pvopt_specialCase` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw code; no enum or code meaning is claimed. |
+| `diag_pvopt_phase_wish_mode` | `diag_pvopt_phaseWishMode` | `optional_diagnostic` | `status:pwm` | `interval` | `diagnostic` | `diagnostic` | `enum` | `preserve` | Optional internal phase-wish enum: `0 force3`, `1 wish1`, `2 wish3`; unknown integers remain `unknown:<value>`. Distinct from configured phase-switch mode; no timer or actual transition is inferred. |
 | `diag_fbuf_p_ac_total` | `diag_fbuf_pAcTotal` | `optional_diagnostic` | `status:fbuf_pAcTotal` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw scalar when present; observed capture contained `null`. |
 | `diag_fbuf_ohmpilot_state` | `diag_fbuf_ohmpilotState` | `optional_diagnostic` | `status:fbuf_ohmpilotState` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw scalar when present; observed capture contained `null`. |
 | `diag_fbuf_ohmpilot_temperature` | `diag_fbuf_ohmpilotTemperature` | `optional_diagnostic` | `status:fbuf_ohmpilotTemperature` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw scalar when present; observed capture contained `null`. |
@@ -145,4 +146,4 @@ Paired decision code/text readings share one source and are updated in the same
 FHEM reading transaction.
 
 
-`deviceRebootCount` and `uptime` are normal public readings, not optional diagnostics. `deviceRebootCount` is always interval-eligible; `uptime` follows the charging/`update_while_idle` gate. The twenty-one `diag_...` readings exist only with `diagnosticReadings=1`; setting the attribute to `0` or deleting it removes those readings and clears their owner state immediately.
+`deviceRebootCount` and `uptime` are normal public readings, not optional diagnostics. `deviceRebootCount` is always interval-eligible; `uptime` follows the charging/`update_while_idle` gate. The twenty-two `diag_...` readings exist only with `diagnosticReadings=1`; setting the attribute to `0` or deleting it removes those readings and clears their owner state immediately.

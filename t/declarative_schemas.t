@@ -48,8 +48,8 @@ is_deeply([sort keys %$command_schema], [sort keys %$commands],
     'every public Set command has exactly one schema entry');
 is(scalar(keys %$command_schema), 16,
     'command schema contains the complete 16-command public surface');
-is(scalar(keys %$status_fields), 68,
-    'status schema contains all 68 consumed protocol fields');
+is(scalar(keys %$status_fields), 69,
+    'status schema contains all 69 consumed protocol fields');
 is_deeply(
     [sort grep { $command_schema->{$_}{parser} eq 'special' }
         keys %$command_schema],
@@ -264,6 +264,7 @@ my %enum_sample = (
     charging_decision => [0, 'notChargingBecauseNoChargeCtrlData'],
     pv_control => [1, 'default'],
     phase_switch => [1, 'force1'],
+    phase_wish => [1, 'wish1'],
 );
 my (%actual_formatter, %expected_formatter);
 for my $reading_key (sort keys %$reading_policy) {
