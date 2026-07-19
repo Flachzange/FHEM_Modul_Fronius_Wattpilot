@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.14**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.15**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -12,7 +12,7 @@ Version 2.x ist eine grundlegende Überarbeitung und keine bloße Erweiterung de
 | :--- | :--- | :--- |
 | Definition und Passwort | Passwort als Bestandteil der FHEM-Definition | Definition ohne Passwort; Speicherung über `set <Name> password <secret>` unter stabilen FUUID-basierten Schlüsseln |
 | Geräte und Authentifizierung | Vorgänger-Wattpilot mit PBKDF2 | Legacy-Profil bleibt erhalten; Wattpilot Flex wird ausschließlich über bcrypt authentifiziert |
-| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 88 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
+| FHEM-Schnittstelle | Wenige deutsch benannte Readings und Setter | Einheitliche öffentliche Namen, 89 Readings, bestätigte Konfigurationsreadings und gruppierte Setter |
 | Protokollverarbeitung | Grundlegende Verarbeitung von `hello`, Authentifizierung und Status | Strikte JSON-Typprüfung, partielle Statusmeldungen, robuste Nachrichtenfortsetzung, gesicherte Befehle und Antwortkorrelation |
 | Laufzeitverhalten | Einfaches Intervall und Idle-Filter | Kontrollierter Lifecycle für Reload, Rename, `modify`, Disable, Reconnect und Delete sowie getrennte Telemetrie-Caches mit gemeinsamem Veröffentlichungstakt |
 | Qualitätssicherung | Ursprünglicher Funktionsumfang | Umfangreiche Regressionstests, gepinnte FHEM-Core-Integration, Dokumentations- und reproduzierbare Releaseprüfungen |
@@ -290,11 +290,11 @@ Steuert die elektrische `nrg`-Telemetrie, `uptime` und aktivierte `diag_...`-Rea
 
 ### `diagnosticReadings` (0 oder 1)
 
-Steuert die einundzwanzig optionalen Diagnosereadings, deren Namen mit `diag_` beginnen: fünfzehn rohe skalare Felder sowie sechs numerische Positionen des beobachteten `tma`-Arrays.
+Steuert die zweiundzwanzig optionalen Diagnosereadings, deren Namen mit `diag_` beginnen: fünfzehn rohe skalare Felder, das abgebildete Enum `diag_pvopt_phaseWishMode` sowie sechs numerische Positionen des beobachteten `tma`-Arrays.
 
 * `0` (Standard): Diagnosefelder werden weder ausgewertet noch gepuffert. Vorhandene `diag_...`-Readings werden sofort gelöscht und ihr Cache-/Dirty-Zustand verworfen. Das Löschen des Attributs wirkt genauso.
-* `1`: Gültige Werte der einundzwanzig ausgewählten Protokollpositionen werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
-* Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. JSON-Zahlen werden ohne Skalierung oder Umrechnung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und JSON-Booleans erscheinen als `0` oder `1`. Daraus werden weiterhin keine Einheit, Bedeutung oder Vorzeichenkonvention abgeleitet. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
+* `1`: Gültige Werte der zweiundzwanzig ausgewählten Protokollpositionen werden über den normalen `interval`-Mechanismus veröffentlicht. Sie sind beim Laden oder mit `update_while_idle=1` zulässig.
+* Nach dem Präfix `diag_` bleibt die Protokollschreibweise exakt erhalten. Bei den fünfzehn Rohskalaren werden JSON-Zahlen ohne Skalierung oder Umrechnung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und JSON-Booleans erscheinen als `0` oder `1`. `diag_pvopt_phaseWishMode` bildet ausschließlich die dokumentierten Ganzzahlen `0|1|2` auf `force3|wish1|wish3` ab; andere Ganzzahlen erscheinen als `unknown:<Wert>`. Daraus werden keine darüber hinausgehenden Zustände, Timer oder Umschaltentscheidungen abgeleitet. Fehlende Felder, `null`, Objekte, Arrays und ungültige Werte lassen das bisherige Reading unverändert.
 
 ### `inboundWatchdog` (0 oder 1)
 
@@ -349,7 +349,7 @@ Legt den bcrypt-Kostenfaktor für neu abgeleitete Authentifizierungs-Hashes fest
 
 ## 6. Readings (Messwerte)
 
-Das Modul stellt exakt folgende 88 öffentlichen Readings bereit:
+Das Modul stellt exakt folgende 89 öffentlichen Readings bereit:
 
 | Reading | Beschreibung |
 | :--- | :--- |
@@ -412,6 +412,7 @@ Das Modul stellt exakt folgende 88 öffentlichen Readings bereit:
 | `diag_pvopt_deltaP` | Optionaler Rohskalar aus `pvopt_deltaP`; verglichene Größen und Einheit unbekannt. |
 | `diag_pvopt_deltaA` | Optionaler Rohskalar aus `pvopt_deltaA`; verglichene Größen und Einheit unbekannt. |
 | `diag_pvopt_specialCase` | Optionaler Rohcode aus `pvopt_specialCase`; keine Enum wird behauptet. |
+| `diag_pvopt_phaseWishMode` | Optionaler interner Phasenwunsch aus `pwm`: `force3`, `wish1`, `wish3` oder `unknown:<Rohwert>`. Das Reading beschreibt nicht die konfigurierte Phasenumschaltung und leitet keinen Timer oder tatsächlichen Umschaltvorgang ab. |
 | `diag_fbuf_pAcTotal` | Optionaler Rohskalar aus `fbuf_pAcTotal`; der aufbewahrte Mitschnitt enthält `null`, Typ und Semantik sind daher unbekannt. |
 | `diag_fbuf_ohmpilotState` | Optionaler Rohskalar aus `fbuf_ohmpilotState`; der aufbewahrte Mitschnitt enthält `null`, Typ und Semantik sind daher unbekannt. |
 | `diag_fbuf_ohmpilotTemperature` | Optionaler Rohskalar aus `fbuf_ohmpilotTemperature`; der aufbewahrte Mitschnitt enthält `null`, Typ, Einheit und Semantik sind daher unbekannt. |

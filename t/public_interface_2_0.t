@@ -45,7 +45,7 @@ my @public_readings = qw(
     diag_temperatureCurrentSensor diag_temperatureType2ScrewTerminals diag_temperatureMID
     diag_fbuf_akkuMode diag_fbuf_akkuSOC diag_fbuf_pAkku diag_fbuf_pGrid diag_fbuf_pPv diag_pvopt_averagePGrid diag_pvopt_averagePPv
     diag_pvopt_averagePAkku diag_pvopt_averagePOhmpilot diag_pvopt_deltaP
-    diag_pvopt_deltaA diag_pvopt_specialCase diag_fbuf_pAcTotal
+    diag_pvopt_deltaA diag_pvopt_specialCase diag_pvopt_phaseWishMode diag_fbuf_pAcTotal
     diag_fbuf_ohmpilotState diag_fbuf_ohmpilotTemperature
     configPvBatteryChargeAboveSoC
     configPvBatteryDischargeEnabled configPvBatteryDischargeUntilSoC
@@ -117,6 +117,7 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
     pvopt_deltaP => 5,
     pvopt_deltaA => 6,
     pvopt_specialCase => 7,
+    pwm => 1,
     fbuf_pAcTotal => 8,
     fbuf_ohmpilotState => 9,
     fbuf_ohmpilotTemperature => 10,
@@ -144,7 +145,7 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 88 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 89 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

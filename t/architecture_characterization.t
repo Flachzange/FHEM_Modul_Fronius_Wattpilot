@@ -54,8 +54,8 @@ is_deeply(
         next_trip_time => 'nextTripTime',
     },
     '2.0 public Set command names have one central definition');
-is(scalar(keys %{$interface->{readings}}), 88,
-    'central reading definition contains all 88 public readings');
+is(scalar(keys %{$interface->{readings}}), 89,
+    'central reading definition contains all 89 public readings');
 is_deeply(
     $interface->{readings},
     {
@@ -122,6 +122,7 @@ is_deeply(
         diag_pvopt_delta_p => 'diag_pvopt_deltaP',
         diag_pvopt_delta_a => 'diag_pvopt_deltaA',
         diag_pvopt_special_case => 'diag_pvopt_specialCase',
+        diag_pvopt_phase_wish_mode => 'diag_pvopt_phaseWishMode',
         diag_fbuf_p_ac_total => 'diag_fbuf_pAcTotal',
         diag_fbuf_ohmpilot_state => 'diag_fbuf_ohmpilotState',
         diag_fbuf_ohmpilot_temperature => 'diag_fbuf_ohmpilotTemperature',
@@ -148,7 +149,7 @@ is_deeply(
         last_command_status => 'lastCommandStatus',
         last_command_error => 'lastCommandError',
     },
-    'all 88 public reading names match the 2.x contract');
+    'all 89 public reading names match the 2.x contract');
 is_deeply(
     $interface->{readingCategories},
     {
@@ -215,6 +216,7 @@ is_deeply(
         diag_pvopt_delta_p => 'optional_diagnostic',
         diag_pvopt_delta_a => 'optional_diagnostic',
         diag_pvopt_special_case => 'optional_diagnostic',
+        diag_pvopt_phase_wish_mode => 'optional_diagnostic',
         diag_fbuf_p_ac_total => 'optional_diagnostic',
         diag_fbuf_ohmpilot_state => 'optional_diagnostic',
         diag_fbuf_ohmpilot_temperature => 'optional_diagnostic',

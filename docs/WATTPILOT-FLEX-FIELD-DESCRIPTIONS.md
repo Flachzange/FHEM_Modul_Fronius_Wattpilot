@@ -86,7 +86,7 @@ Version 2.0.3 exposes `alw`, `modelStatus`, `msi`, `err`, `ama`, `amt`, and `mca
 | `pnp` | `numberOfPhases` | Number of active charging phases candidate | R | historical candidate |
 | `psm` | `configPhaseSwitchMode` / Set `phaseSwitch mode` | The module maps `0 auto`, `1 force1`, `2 force3`; unknown numeric values remain explicit. | R/W compatibility implementation; read/write/readback/restore verified on one Flex 43.4 | observed Flex number plus official Fronius Automatic/Only 1-phase/Only 3-phase behavior documentation and pinned API enum/R/W evidence |
 | `psmd` | `forceSinglePhaseDuration` | Force-single-phase duration, candidate unit ms | R/W | historical candidate |
-| `pwm` | `phaseWishMode` | Candidate enum: `Force_3=0`, `Wish_1=1`, `Wish_3=2` | R | historical candidate |
+| `pwm` | `phaseWishMode` / `diag_pvopt_phaseWishMode` | Read-only internal PV-optimization phase-wish candidate. Current compatibility mapping: `Force_3=0`, `Wish_1=1`, `Wish_3=2`; unknown integers remain explicit. It is distinct from configured `psm`. | R | observed Flex numeric field/value plus historical API compilation; timer and actual-switch semantics remain unverified |
 | `su` | `simulateUnplugging` | Simulate vehicle unplugging | R/W | historical candidate |
 | `sua` | `simulateUnpluggingAlways` | Always simulate unplugging candidate | R/W | historical candidate |
 | `sumd` | `simulateUnpluggingDuration` | Simulated-unplugging duration, candidate unit ms | R/W | historical candidate |
