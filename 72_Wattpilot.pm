@@ -491,6 +491,13 @@ my %WATTPILOT_LOAD_BALANCING_PRIORITY = (
     60 => 'low',
 );
 
+my %WATTPILOT_LOAD_BALANCING_PHASE_ASSIGNMENT = (
+    '1,0,0' => [1],
+    '0,1,0' => [2],
+    '0,0,1' => [3],
+    '1,2,3' => [1, 2, 3],
+);
+
 my %WATTPILOT_STATUS_ENUM_MAP = (
     car => \%WATTPILOT_CAR_STATE,
     force => \%WATTPILOT_FORCE_STATE,
@@ -1466,16 +1473,11 @@ sub Wattpilot_NormalizeStatusValue($$) {
     }
 
     if ($kind eq 'phase_assignment') {
-        return undef if ref($value) ne 'ARRAY' || !@$value;
-        my %seen;
-        my @phases;
-        for my $entry (@$value) {
-            return undef if !Wattpilot_IsJsonInteger($entry);
-            my $phase = int($entry);
-            return undef if $phase < 1 || $phase > 3 || $seen{$phase}++;
-            push @phases, $phase;
-        }
-        return \@phases;
+        return undef if ref($value) ne 'ARRAY' || @$value != 3;
+        return undef if grep { !Wattpilot_IsJsonInteger($_) } @$value;
+
+        my $signature = join(',', map { int($_) } @$value);
+        return $WATTPILOT_LOAD_BALANCING_PHASE_ASSIGNMENT{$signature};
     }
 
     if ($kind eq 'nrg') {
@@ -3486,7 +3488,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.13 adds the combined <code>pvBatteryDischarge</code> command with mandatory enable and SoC values. FHEMWEB renders two controls through <code>widgetList</code>. The module confirms the first secured write before sending the second, uses threshold-before-enable and disable-before-threshold ordering, blocks overlapping <code>pdt</code>/<code>pdte</code> writes, and reports the failed step plus any confirmed partial application without optimistic reading updates.</p>
   <p>Version 2.1.14 refines only the FHEMWEB presentation of <code>pvBatteryDischarge</code>: the first widget offers <code>off</code>/<code>on</code>, and the SoC threshold is entered in a compact free-text field with an <code>SoC%</code> placeholder instead of a 101-entry selector. The documented command-line values <code>0</code>/<code>1</code> remain supported; FHEMWEB-generated <code>off</code>/<code>on</code> values are normalized to the same booleans before the unchanged validation and confirmed two-step write sequence.</p>
   <p>Version 2.1.15 adds the optional diagnostic reading <code>diag_pvopt_phaseWishMode</code> from integer status field <code>pwm</code>. It maps <code>0</code>, <code>1</code>, and <code>2</code> to <code>force3</code>, <code>wish1</code>, and <code>wish3</code>; other integers remain explicit as <code>unknown:&lt;value&gt;</code>. The reading reuses the existing diagnostic interval, idle gate, and cleanup. It is distinct from <code>configPhaseSwitchMode</code> and does not establish a timer or actual phase transition.</p>
-  <p>Version 2.1.16 adds the read-only load-balancing core confirmed simultaneously in a Wattpilot Flex 43.4 status and the app: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code>, and selected-source fields <code>cci.label</code>/<code>cci.connected</code>. Priority maps the real-device-confirmed codes <code>40</code>, <code>50</code>, and <code>60</code> to <code>high</code>, <code>medium</code>, and <code>low</code>; other non-negative integers remain visible as <code>unknown:&lt;value&gt;</code>. Source identifiers and private endpoints are deliberately not exposed. Ambiguous <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code>, and <code>lopr</code> fields and all writes remain out of scope until reproducible evidence exists.</p>
+  <p>Version 2.1.16 adds the read-only load-balancing core confirmed simultaneously in a Wattpilot Flex 43.4 status and the app: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code>, and selected-source fields <code>cci.label</code>/<code>cci.connected</code>. Priority maps the real-device-confirmed codes <code>40</code>, <code>50</code>, and <code>60</code> to <code>high</code>, <code>medium</code>, and <code>low</code>; other non-negative integers remain visible as <code>unknown:&lt;value&gt;</code>. The fixed three-slot <code>map</code> vectors <code>[1,0,0]</code>, <code>[0,1,0]</code>, <code>[0,0,1]</code>, and <code>[1,2,3]</code> map to <code>L1</code>, <code>L2</code>, <code>L3</code>, and <code>L1 L2 L3</code>; unconfirmed or two-phase patterns preserve the previous reading. Source identifiers and private endpoints are deliberately not exposed. Ambiguous <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code>, and <code>lopr</code> fields and all writes remain out of scope until reproducible evidence exists.</p>
   <table class="block wide">
     <tr><th>Reading through 2.1.11</th><th>Reading from 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3676,7 +3678,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configLoadBalancingEnabled</code><br>Boolean <code>loe</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configLoadBalancingPriority</code><br>Priority from <code>lop</code>: <code>40=high</code>, <code>50=medium</code>, <code>60=low</code>, or <code>unknown:&lt;raw-value&gt;</code>. The three mappings were confirmed by changing the app setting on a Wattpilot Flex Home 22 C6 running firmware 43.4.</li>
     <li><code>configLoadBalancingFallbackCurrent</code><br>Non-negative integer from <code>lof</code>; observed <code>0</code> matched the app fallback of 0 A.</li>
-    <li><code>configLoadBalancingPhaseAssignment</code><br>Ordered unique values 1 through 3 from <code>map</code>, rendered as phase labels such as <code>L1 L2 L3</code>.</li>
+    <li><code>configLoadBalancingPhaseAssignment</code><br>Confirmed fixed three-slot vectors from <code>map</code>: <code>[1,0,0]</code>, <code>[0,1,0]</code>, <code>[0,0,1]</code>, and <code>[1,2,3]</code> render as <code>L1</code>, <code>L2</code>, <code>L3</code>, and <code>L1 L2 L3</code>. Two-phase, malformed, and otherwise unconfirmed vectors preserve the previous reading.</li>
     <li><code>configLoadBalancingSourceLabel</code>, <code>loadBalancingSourceConnected</code><br>Selected source label and live boolean connection state from <code>cci.label</code> and <code>cci.connected</code>. IDs, common names, and private endpoints are not exposed.</li>
     <li><code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optional raw scalar field-research readings from the three stationary-battery-related protocol fields. Numeric values are rounded to exactly two decimal places without scaling; strings remain unchanged and booleans become <code>0|1</code>. <code>diag_fbuf_pAkku</code> and <code>diag_pvopt_averagePAkku</code> are distinct fields; their exact distinction, aggregation, unit, and sign remain unconfirmed.</li>
     <li><code>deviceRebootCount</code><br>Raw non-negative <code>rbc</code> value on the normal interval without idle gating. Exact semantics remain unverified.</li>
@@ -3785,7 +3787,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.13 ergänzt den kombinierten Befehl <code>pvBatteryDischarge</code> mit verpflichtendem Schalt- und SoC-Wert. FHEMWEB zeigt über <code>widgetList</code> zwei Bedienelemente. Das Modul bestätigt den ersten gesicherten Schreibvorgang, bevor es den zweiten sendet, verwendet die Reihenfolge Grenzwert-vor-Aktivierung beziehungsweise Deaktivierung-vor-Grenzwert, sperrt überlappende <code>pdt</code>/<code>pdte</code>-Schreibzugriffe und meldet den fehlgeschlagenen Schritt samt bereits bestätigter Teilanwendung ohne optimistische Reading-Updates.</p>
   <p>Version 2.1.14 verfeinert ausschließlich die FHEMWEB-Darstellung von <code>pvBatteryDischarge</code>: Das erste Widget bietet <code>off</code>/<code>on</code>, und der SoC-Grenzwert wird in einem kompakten Freitextfeld mit dem Platzhalter <code>SoC%</code> eingegeben statt über eine Auswahl mit 101 Einträgen. Die dokumentierten Kommandozeilenwerte <code>0</code>/<code>1</code> bleiben unterstützt; von FHEMWEB erzeugte Werte <code>off</code>/<code>on</code> werden vor der unveränderten Validierung und bestätigten Zweischritt-Sequenz auf dieselben Boolean-Werte abgebildet.</p>
   <p>Version 2.1.15 ergänzt das optionale Diagnosereading <code>diag_pvopt_phaseWishMode</code> aus dem ganzzahligen Statusfeld <code>pwm</code>. Die Werte <code>0</code>, <code>1</code> und <code>2</code> werden auf <code>force3</code>, <code>wish1</code> und <code>wish3</code> abgebildet; andere Ganzzahlen bleiben als <code>unknown:&lt;Wert&gt;</code> sichtbar. Das Reading verwendet den bestehenden Diagnose-Intervallpfad, die Idle-Sperre und die Attribut-Bereinigung. Es ist von <code>configPhaseSwitchMode</code> getrennt und belegt weder einen Timer noch einen tatsächlichen Phasenwechsel.</p>
-  <p>Version 2.1.16 ergänzt den lesenden Load-Balancing-Kern, der auf einem Wattpilot Flex 43.4 zeitgleich in Status und App bestätigt wurde: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code> sowie <code>cci.label</code>/<code>cci.connected</code> der ausgewählten Quelle. Die Priorität bildet die am Realgerät bestätigten Codes <code>40</code>, <code>50</code> und <code>60</code> auf <code>high</code>, <code>medium</code> und <code>low</code> ab; andere nicht negative Ganzzahlen bleiben als <code>unknown:&lt;Wert&gt;</code> sichtbar. Quell-IDs und private Endpunkte werden bewusst nicht veröffentlicht. Die mehrdeutigen Felder <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code> und <code>lopr</code> sowie alle Schreibzugriffe bleiben bis zu reproduzierbarer Evidenz außerhalb des Umfangs.</p>
+  <p>Version 2.1.16 ergänzt den lesenden Load-Balancing-Kern, der auf einem Wattpilot Flex 43.4 zeitgleich in Status und App bestätigt wurde: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code> sowie <code>cci.label</code>/<code>cci.connected</code> der ausgewählten Quelle. Die Priorität bildet die am Realgerät bestätigten Codes <code>40</code>, <code>50</code> und <code>60</code> auf <code>high</code>, <code>medium</code> und <code>low</code> ab; andere nicht negative Ganzzahlen bleiben als <code>unknown:&lt;Wert&gt;</code> sichtbar. Die festen dreistelligen <code>map</code>-Vektoren <code>[1,0,0]</code>, <code>[0,1,0]</code>, <code>[0,0,1]</code> und <code>[1,2,3]</code> werden als <code>L1</code>, <code>L2</code>, <code>L3</code> und <code>L1 L2 L3</code> dargestellt; nicht bestätigte oder zweiphasige Muster erhalten das vorherige Reading. Quell-IDs und private Endpunkte werden bewusst nicht veröffentlicht. Die mehrdeutigen Felder <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code> und <code>lopr</code> sowie alle Schreibzugriffe bleiben bis zu reproduzierbarer Evidenz außerhalb des Umfangs.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.1.11</th><th>Reading ab 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3975,7 +3977,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configLoadBalancingEnabled</code><br>Boolesches Feld <code>loe</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configLoadBalancingPriority</code><br>Priorität aus <code>lop</code>: <code>40=high</code>, <code>50=medium</code>, <code>60=low</code> oder <code>unknown:&lt;Rohwert&gt;</code>. Die drei Zuordnungen wurden durch Änderung der App-Einstellung auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 bestätigt.</li>
     <li><code>configLoadBalancingFallbackCurrent</code><br>Nicht negativer Ganzzahlwert aus <code>lof</code>; der beobachtete Wert <code>0</code> entsprach dem App-Fallback von 0 A.</li>
-    <li><code>configLoadBalancingPhaseAssignment</code><br>Geordnete eindeutige Werte 1 bis 3 aus <code>map</code>, dargestellt als Phasenbezeichnungen wie <code>L1 L2 L3</code>.</li>
+    <li><code>configLoadBalancingPhaseAssignment</code><br>Bestätigte feste dreistellige Vektoren aus <code>map</code>: <code>[1,0,0]</code>, <code>[0,1,0]</code>, <code>[0,0,1]</code> und <code>[1,2,3]</code> werden als <code>L1</code>, <code>L2</code>, <code>L3</code> und <code>L1 L2 L3</code> dargestellt. Zweiphasige, fehlerhafte oder anderweitig unbestätigte Vektoren erhalten das vorherige Reading.</li>
     <li><code>configLoadBalancingSourceLabel</code>, <code>loadBalancingSourceConnected</code><br>Bezeichnung und aktueller boolescher Verbindungsstatus der ausgewählten Quelle aus <code>cci.label</code> und <code>cci.connected</code>. IDs, Common Names und private Endpunkte werden nicht veröffentlicht.</li>
     <li><code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optionale rohe skalare Felderkundungsreadings aus den drei stationären Speicher-bezogenen Protokollfeldern. Numerische Werte werden ohne Skalierung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und Booleans erscheinen als <code>0|1</code>. <code>diag_fbuf_pAkku</code> und <code>diag_pvopt_averagePAkku</code> sind unterschiedliche Felder; ihre genaue Abgrenzung, Aggregation, Einheit und Vorzeichenkonvention bleiben unbestätigt.</li>
     <li><code>deviceRebootCount</code><br>Roher nicht negativer <code>rbc</code>-Wert im normalen Intervall ohne Idle-Sperre. Die genaue Semantik bleibt unbestätigt.</li>

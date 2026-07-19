@@ -190,7 +190,7 @@ my %valid_for_kind = (
     percentage => 42.5,
     clock_seconds => 3600,
     boolean => JSON::true,
-    phase_assignment => [1, 2, 3],
+    phase_assignment => [1, 0, 0],
     nrg => [1 .. 12],
     string => 'synthetic',
     nonempty_string => 'synthetic',
@@ -204,7 +204,7 @@ my %invalid_for_kind = (
     percentage => 101,
     clock_seconds => 1,
     boolean => 1,
-    phase_assignment => [1, 1],
+    phase_assignment => [1, 2, 0],
     nrg => [1, 2],
     string => [],
     nonempty_string => '',
@@ -294,7 +294,7 @@ for my $reading_key (sort keys %$reading_policy) {
             : (3600, '01:00');
     }
     elsif ($policy->{formatter} eq 'phase_assignment') {
-        ($sample, $expected) = ([1, 3], 'L1 L3');
+        ($sample, $expected) = ([2], 'L2');
     }
     elsif ($policy->{formatter} eq 'decimal2') {
         ($sample, $expected) = (12.5, '12.50');

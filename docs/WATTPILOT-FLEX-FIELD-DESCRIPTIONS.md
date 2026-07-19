@@ -191,7 +191,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `los` | none | JSON-encoded group-status string containing identifiers; tuple semantics not sufficiently established for public readings | none | observed string and issue research only |
 | `lot` | none | Object with observed `amp`, `dyn`, `sta`, and `ts`; exact meanings remain provisional | none | observed object plus issue research only |
 | `loty` | none | Observed integer; historical static/dynamic enum remains unconfirmed | none | observed number plus historical candidate |
-| `map` | `configLoadBalancingPhaseAssignment` | Ordered selected phases, exposed as `L1`..`L3` | R | simultaneous app/status evidence on one Flex 43.4; writes untested |
+| `map` | `configLoadBalancingPhaseAssignment` | Fixed three-slot phase vector; confirmed `[1,0,0]`/`[0,1,0]`/`[0,0,1]`/`[1,2,3]` map to `L1`/`L2`/`L3`/`L1 L2 L3` | R | live app/status evidence on one Flex 43.4; two-phase semantics absent; writes untested |
 | `lopr` | none | Observed boolean; semantics unresolved | none | observed value only |
 
 ## Firmware and device identity fields

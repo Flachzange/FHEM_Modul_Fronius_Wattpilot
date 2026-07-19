@@ -91,7 +91,7 @@ main::Wattpilot_DispatchMessage($hash, {
     status => {
         loe => JSON::false,
         lop => 70,
-        map => [3, 1],
+        map => [1, 0, 0],
         cci => {
             label => 'Replacement source',
             connected => JSON::false,
@@ -104,12 +104,25 @@ is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'an unknown priority code remains explicit');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'an omitted fallback value is preserved');
-is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L1',
-    'a later valid phase array preserves device order');
+is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1',
+    'the confirmed L1-only slot vector maps to L1');
 is(reading_value($hash, 'configLoadBalancingSourceLabel'), 'Replacement source',
     'a later selected source label is published');
 is(reading_value($hash, 'loadBalancingSourceConnected'), 0,
     'a later selected source connection state is published');
+
+for my $case (
+    [[0, 1, 0], 'L2', 'the confirmed L2-only slot vector maps to L2'],
+    [[0, 0, 1], 'L3', 'the confirmed L3-only slot vector maps to L3'],
+    [[1, 2, 3], 'L1 L2 L3', 'the confirmed three-phase vector maps to all phases'],
+) {
+    main::Wattpilot_DispatchMessage($hash, {
+        type => 'deltaStatus',
+        status => { map => $case->[0] },
+    });
+    is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), $case->[1],
+        $case->[2]);
+}
 
 main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
@@ -117,7 +130,7 @@ main::Wattpilot_DispatchMessage($hash, {
         loe => 1,
         lop => -1,
         lof => '0',
-        map => [1, 1],
+        map => [1, 2, 0],
         cci => {
             label => '',
             connected => 0,
@@ -130,12 +143,27 @@ is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'negative priority cannot overwrite the last valid value');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'numeric-string fallback cannot overwrite the last valid value');
-is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L1',
-    'duplicate phases cannot overwrite the last valid assignment');
+is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
+    'a semantically invalid two-phase vector cannot overwrite the last valid assignment');
 is(reading_value($hash, 'configLoadBalancingSourceLabel'), 'Replacement source',
     'empty source label cannot overwrite the last valid label');
 is(reading_value($hash, 'loadBalancingSourceConnected'), 0,
     'non-boolean source state cannot overwrite the last valid state');
+
+for my $invalid_map (
+    [0, 0, 0],
+    [1, 1, 1],
+    [1, 0],
+    [1, 0, 0, 0],
+    [1, 0, '0'],
+) {
+    main::Wattpilot_DispatchMessage($hash, {
+        type => 'deltaStatus',
+        status => { map => $invalid_map },
+    });
+    is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
+        'an unconfirmed or malformed phase vector preserves the last valid assignment');
+}
 
 main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
@@ -151,7 +179,7 @@ is(reading_value($hash, 'configLoadBalancingEnabled'), 0,
     'null load-balancing fields preserve the last valid switch');
 is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'null load-balancing fields preserve the last valid priority');
-is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L1',
+is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
     'null load-balancing fields preserve the last valid phase assignment');
 is(reading_value($hash, 'configLoadBalancingSourceLabel'), 'Replacement source',
     'null cci preserves the selected source label');
