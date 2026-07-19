@@ -39,7 +39,7 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.15';
+my $WATTPILOT_VERSION = '2.1.16';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
@@ -119,6 +119,18 @@ my @WATTPILOT_READING_DEFINITION = (
             status:mcpd immediate none mcpd seconds nonnegative_number none)],
     [qw(minimum_charging_interval configMinimumChargingInterval configuration
             status:mci immediate none mci seconds nonnegative_number none)],
+    [qw(load_balancing_enabled configLoadBalancingEnabled configuration
+            status:loe immediate none loe boolean boolean none)],
+    [qw(load_balancing_priority configLoadBalancingPriority configuration
+            status:lop immediate none lop integer nonnegative_integer none)],
+    [qw(load_balancing_fallback_current configLoadBalancingFallbackCurrent configuration
+            status:lof immediate none lof integer nonnegative_integer none)],
+    [qw(load_balancing_phase_assignment configLoadBalancingPhaseAssignment configuration
+            status:map immediate none map phase_assignment phase_assignment none)],
+    [qw(load_balancing_source_label configLoadBalancingSourceLabel configuration
+            status:cci.label immediate none cci_label text nonempty_string none)],
+    [qw(load_balancing_source_connected loadBalancingSourceConnected status
+            status:cci.connected immediate-on-change none cci_connected boolean boolean none)],
     [qw(error_code errorCode diagnostic status:err immediate-on-change none err integer integer none)],
     [qw(maximum_current_limit configMaximumCurrentLimit configuration
             status:ama immediate none ama integer integer none)],
@@ -1446,6 +1458,19 @@ sub Wattpilot_NormalizeStatusValue($$) {
         return Wattpilot_IsJsonBoolean($value) ? $value : undef;
     }
 
+    if ($kind eq 'phase_assignment') {
+        return undef if ref($value) ne 'ARRAY' || !@$value;
+        my %seen;
+        my @phases;
+        for my $entry (@$value) {
+            return undef if !Wattpilot_IsJsonInteger($entry);
+            my $phase = int($entry);
+            return undef if $phase < 1 || $phase > 3 || $seen{$phase}++;
+            push @phases, $phase;
+        }
+        return \@phases;
+    }
+
     if ($kind eq 'nrg') {
         return undef if ref($value) ne 'ARRAY' || @$value < 12;
         for my $entry (@$value[0 .. 11]) {
@@ -1760,6 +1785,8 @@ sub Wattpilot_FormatReadingValue($$) {
         my $normalized = int($value);
         return $map->{$normalized} // 'unknown:' . $normalized;
     }
+    return join(' ', map { 'L' . int($_) } @$value)
+        if $formatter eq 'phase_assignment';
     return Wattpilot_FormatDecimal($value, 2) if $formatter eq 'decimal2';
     if ($formatter eq 'diagnostic2') {
         return $value ? 1 : 0 if Wattpilot_IsJsonBoolean($value);
@@ -3452,6 +3479,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.13 adds the combined <code>pvBatteryDischarge</code> command with mandatory enable and SoC values. FHEMWEB renders two controls through <code>widgetList</code>. The module confirms the first secured write before sending the second, uses threshold-before-enable and disable-before-threshold ordering, blocks overlapping <code>pdt</code>/<code>pdte</code> writes, and reports the failed step plus any confirmed partial application without optimistic reading updates.</p>
   <p>Version 2.1.14 refines only the FHEMWEB presentation of <code>pvBatteryDischarge</code>: the first widget offers <code>off</code>/<code>on</code>, and the SoC threshold is entered in a compact free-text field with an <code>SoC%</code> placeholder instead of a 101-entry selector. The documented command-line values <code>0</code>/<code>1</code> remain supported; FHEMWEB-generated <code>off</code>/<code>on</code> values are normalized to the same booleans before the unchanged validation and confirmed two-step write sequence.</p>
   <p>Version 2.1.15 adds the optional diagnostic reading <code>diag_pvopt_phaseWishMode</code> from integer status field <code>pwm</code>. It maps <code>0</code>, <code>1</code>, and <code>2</code> to <code>force3</code>, <code>wish1</code>, and <code>wish3</code>; other integers remain explicit as <code>unknown:&lt;value&gt;</code>. The reading reuses the existing diagnostic interval, idle gate, and cleanup. It is distinct from <code>configPhaseSwitchMode</code> and does not establish a timer or actual phase transition.</p>
+  <p>Version 2.1.16 adds the read-only load-balancing core confirmed simultaneously in a Wattpilot Flex 43.4 status and the app: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code>, and selected-source fields <code>cci.label</code>/<code>cci.connected</code>. Priority remains a raw integer because the complete enum is unknown. Source identifiers and private endpoints are deliberately not exposed. Ambiguous <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code>, and <code>lopr</code> fields and all writes remain out of scope until reproducible evidence exists.</p>
   <table class="block wide">
     <tr><th>Reading through 2.1.11</th><th>Reading from 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3638,6 +3666,11 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPhaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code>, or <code>unknown:&lt;raw-value&gt;</code> from <code>psm</code>.</li>
     <li><code>configThreePhaseSwitchPower</code><br>Non-negative finite numeric value from <code>spl3</code>, exposed in watts with exactly two decimal places.</li>
     <li><code>configPhaseSwitchDelay</code>, <code>configMinimumPhaseSwitchInterval</code>, <code>configMinimumChargeTime</code>, <code>configMinimumChargingPauseDuration</code>, <code>configMinimumChargingInterval</code><br>Non-negative finite values from <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code>, and <code>mci</code>, converted from protocol milliseconds to public seconds.</li>
+    <li><code>configLoadBalancingEnabled</code><br>Boolean <code>loe</code>, exposed as <code>0</code> or <code>1</code>.</li>
+    <li><code>configLoadBalancingPriority</code><br>Non-negative raw integer from <code>lop</code>. Observed <code>50</code> matched app label <code>Medium</code>; no complete enum is claimed.</li>
+    <li><code>configLoadBalancingFallbackCurrent</code><br>Non-negative integer from <code>lof</code>; observed <code>0</code> matched the app fallback of 0 A.</li>
+    <li><code>configLoadBalancingPhaseAssignment</code><br>Ordered unique values 1 through 3 from <code>map</code>, rendered as phase labels such as <code>L1 L2 L3</code>.</li>
+    <li><code>configLoadBalancingSourceLabel</code>, <code>loadBalancingSourceConnected</code><br>Selected source label and live boolean connection state from <code>cci.label</code> and <code>cci.connected</code>. IDs, common names, and private endpoints are not exposed.</li>
     <li><code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optional raw scalar field-research readings from the three stationary-battery-related protocol fields. Numeric values are rounded to exactly two decimal places without scaling; strings remain unchanged and booleans become <code>0|1</code>. <code>diag_fbuf_pAkku</code> and <code>diag_pvopt_averagePAkku</code> are distinct fields; their exact distinction, aggregation, unit, and sign remain unconfirmed.</li>
     <li><code>deviceRebootCount</code><br>Raw non-negative <code>rbc</code> value on the normal interval without idle gating. Exact semantics remain unverified.</li>
     <li><code>uptime</code><br>Non-negative raw <code>rbt</code> value whose progression on the tested Flex was consistent with milliseconds. It is divided by 1,000 and rendered as cumulative hours and minutes in <code>H:MM</code>; remaining seconds and milliseconds are discarded. The exact device process or lifecycle represented by the counter is unconfirmed. Publication uses the normal interval while charging or with <code>update_while_idle=1</code>.</li>
@@ -3651,7 +3684,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App setting <code>State of charge SoC</code> from <code>pdt</code>, accepted as a finite percentage from <code>0</code> through <code>100</code>. The grouped and combined setters accept whole percentages only.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App switch <code>Limit discharging time</code> from <code>pdle</code>, exposed as <code>0</code> or <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App start/stop times from <code>pdls</code> and <code>pdlo</code>, converted from whole seconds after midnight to <code>HH:MM</code>. The six configuration mappings were matched to simultaneous Solar.wattpilot app values on one Flex Home 22 C6 running firmware 43.4. All six grouped setters were subsequently accepted on the same model/firmware, reflected in device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and broader firmware/model scope remain unverified.</li>
-    <li>All 24 configuration readings update immediately after valid device confirmation. Identity readings and the device-supplied discrete readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code>, and <code>errorCode</code> publish immediately only when their public value changes. <code>authHashMode</code> updates when an authentication method is selected; <code>connectionLastReconnectReason</code> and <code>connectionAutomaticReconnectCount</code> record reconnect lifecycle events; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, and <code>lastCommandError</code> update with command lifecycle events. Energy, electrical <code>nrg</code>, device-health values, <code>uptime</code>, and enabled optional diagnostics keep separate caches and dirty fields but share one <code>interval</code> clock; one group never republishes stale values from another. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
+    <li>All 29 configuration readings update immediately after valid device confirmation. Identity readings and the device-supplied discrete readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code>, <code>loadBalancingSourceConnected</code>, and <code>errorCode</code> publish immediately only when their public value changes. <code>authHashMode</code> updates when an authentication method is selected; <code>connectionLastReconnectReason</code> and <code>connectionAutomaticReconnectCount</code> record reconnect lifecycle events; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code>, and <code>lastCommandError</code> update with command lifecycle events. Energy, electrical <code>nrg</code>, device-health values, <code>uptime</code>, and enabled optional diagnostics keep separate caches and dirty fields but share one <code>interval</code> clock; one group never republishes stale values from another. Missing, <code>null</code>, type-invalid, or incomplete fields preserve readings and histories.</li>
   </ul>
   <p><b>Note on aWATTar:</b> aWATTar is a provider or tariff name associated with dynamic electricity prices, not a technical abbreviation introduced by this module. Names containing <code>Awattar</code> in the imported go-e enum refer to price-controlled charging decisions. <code>Fallback</code> denotes the default outcome of a decision branch when no more specific charging reason applies; it does not automatically indicate a technical fault. The exact trigger and full semantics of these codes are not confirmed for Wattpilot Flex. In particular, <code>notChargingBecauseFallbackAwattar</code> alone does not prove that an aWATTar tariff is enabled.</p>
   <p><b>Charging-decision compatibility mapping</b></p>
@@ -3745,6 +3778,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.13 ergänzt den kombinierten Befehl <code>pvBatteryDischarge</code> mit verpflichtendem Schalt- und SoC-Wert. FHEMWEB zeigt über <code>widgetList</code> zwei Bedienelemente. Das Modul bestätigt den ersten gesicherten Schreibvorgang, bevor es den zweiten sendet, verwendet die Reihenfolge Grenzwert-vor-Aktivierung beziehungsweise Deaktivierung-vor-Grenzwert, sperrt überlappende <code>pdt</code>/<code>pdte</code>-Schreibzugriffe und meldet den fehlgeschlagenen Schritt samt bereits bestätigter Teilanwendung ohne optimistische Reading-Updates.</p>
   <p>Version 2.1.14 verfeinert ausschließlich die FHEMWEB-Darstellung von <code>pvBatteryDischarge</code>: Das erste Widget bietet <code>off</code>/<code>on</code>, und der SoC-Grenzwert wird in einem kompakten Freitextfeld mit dem Platzhalter <code>SoC%</code> eingegeben statt über eine Auswahl mit 101 Einträgen. Die dokumentierten Kommandozeilenwerte <code>0</code>/<code>1</code> bleiben unterstützt; von FHEMWEB erzeugte Werte <code>off</code>/<code>on</code> werden vor der unveränderten Validierung und bestätigten Zweischritt-Sequenz auf dieselben Boolean-Werte abgebildet.</p>
   <p>Version 2.1.15 ergänzt das optionale Diagnosereading <code>diag_pvopt_phaseWishMode</code> aus dem ganzzahligen Statusfeld <code>pwm</code>. Die Werte <code>0</code>, <code>1</code> und <code>2</code> werden auf <code>force3</code>, <code>wish1</code> und <code>wish3</code> abgebildet; andere Ganzzahlen bleiben als <code>unknown:&lt;Wert&gt;</code> sichtbar. Das Reading verwendet den bestehenden Diagnose-Intervallpfad, die Idle-Sperre und die Attribut-Bereinigung. Es ist von <code>configPhaseSwitchMode</code> getrennt und belegt weder einen Timer noch einen tatsächlichen Phasenwechsel.</p>
+  <p>Version 2.1.16 ergänzt den lesenden Load-Balancing-Kern, der auf einem Wattpilot Flex 43.4 zeitgleich in Status und App bestätigt wurde: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code> sowie <code>cci.label</code>/<code>cci.connected</code> der ausgewählten Quelle. Die Priorität bleibt ein Rohcode, weil die vollständige Enum unbekannt ist. Quell-IDs und private Endpunkte werden bewusst nicht veröffentlicht. Die mehrdeutigen Felder <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code> und <code>lopr</code> sowie alle Schreibzugriffe bleiben bis zu reproduzierbarer Evidenz außerhalb des Umfangs.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.1.11</th><th>Reading ab 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3931,6 +3965,11 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPhaseSwitchMode</code><br><code>auto</code>, <code>force1</code>, <code>force3</code> oder <code>unknown:&lt;Rohwert&gt;</code> aus <code>psm</code>.</li>
     <li><code>configThreePhaseSwitchPower</code><br>Nicht negativer, endlicher Zahlenwert aus <code>spl3</code>, ausgegeben in Watt mit genau zwei Nachkommastellen.</li>
     <li><code>configPhaseSwitchDelay</code>, <code>configMinimumPhaseSwitchInterval</code>, <code>configMinimumChargeTime</code>, <code>configMinimumChargingPauseDuration</code>, <code>configMinimumChargingInterval</code><br>Nicht negative, endliche Werte aus <code>mpwst</code>, <code>mptwt</code>, <code>fmt</code>, <code>mcpd</code> und <code>mci</code>, von Protokoll-Millisekunden in öffentliche Sekunden umgerechnet.</li>
+    <li><code>configLoadBalancingEnabled</code><br>Boolesches Feld <code>loe</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
+    <li><code>configLoadBalancingPriority</code><br>Nicht negativer ganzzahliger Rohcode aus <code>lop</code>. Der beobachtete Wert <code>50</code> entsprach dem App-Text <code>Medium</code>; eine vollständige Enum wird nicht behauptet.</li>
+    <li><code>configLoadBalancingFallbackCurrent</code><br>Nicht negativer Ganzzahlwert aus <code>lof</code>; der beobachtete Wert <code>0</code> entsprach dem App-Fallback von 0 A.</li>
+    <li><code>configLoadBalancingPhaseAssignment</code><br>Geordnete eindeutige Werte 1 bis 3 aus <code>map</code>, dargestellt als Phasenbezeichnungen wie <code>L1 L2 L3</code>.</li>
+    <li><code>configLoadBalancingSourceLabel</code>, <code>loadBalancingSourceConnected</code><br>Bezeichnung und aktueller boolescher Verbindungsstatus der ausgewählten Quelle aus <code>cci.label</code> und <code>cci.connected</code>. IDs, Common Names und private Endpunkte werden nicht veröffentlicht.</li>
     <li><code>diag_fbuf_akkuMode</code>, <code>diag_fbuf_akkuSOC</code>, <code>diag_fbuf_pAkku</code><br>Optionale rohe skalare Felderkundungsreadings aus den drei stationären Speicher-bezogenen Protokollfeldern. Numerische Werte werden ohne Skalierung auf genau zwei Nachkommastellen gerundet; Strings bleiben unverändert und Booleans erscheinen als <code>0|1</code>. <code>diag_fbuf_pAkku</code> und <code>diag_pvopt_averagePAkku</code> sind unterschiedliche Felder; ihre genaue Abgrenzung, Aggregation, Einheit und Vorzeichenkonvention bleiben unbestätigt.</li>
     <li><code>deviceRebootCount</code><br>Roher nicht negativer <code>rbc</code>-Wert im normalen Intervall ohne Idle-Sperre. Die genaue Semantik bleibt unbestätigt.</li>
     <li><code>uptime</code><br>Nicht negativer Rohwert aus <code>rbt</code>, dessen Fortschritt beim getesteten Flex mit Millisekunden konsistent war. Er wird durch 1.000 geteilt und als kumulative Stunden und Minuten in <code>H:MM</code> ausgegeben; verbleibende Sekunden und Millisekunden werden verworfen. Welchen Geräteprozess oder Lifecycle der Zähler genau abbildet, ist nicht bestätigt. Aktualisierung im normalen Intervall beim Laden oder mit <code>update_while_idle=1</code>.</li>
@@ -3944,7 +3983,7 @@ sub Wattpilot_WriteJson($$) {
     <li><code>configPvBatteryDischargeUntilSoC</code><br>App-Einstellung <code>State of charge SoC</code> aus <code>pdt</code>, akzeptiert als endlicher Prozentwert von <code>0</code> bis <code>100</code>. Gruppierter und kombinierter Setter akzeptieren nur ganze Prozentwerte.</li>
     <li><code>configPvBatteryDischargeTimeLimitEnabled</code><br>App-Schalter <code>Limit discharging time</code> aus <code>pdle</code>, ausgegeben als <code>0</code> oder <code>1</code>.</li>
     <li><code>configPvBatteryDischargeStartTime</code>, <code>configPvBatteryDischargeStopTime</code><br>App-Start-/Stoppzeiten aus <code>pdls</code> und <code>pdlo</code>, von ganzen Sekunden seit Mitternacht nach <code>HH:MM</code> umgerechnet. Die sechs Konfigurationszuordnungen wurden auf einem Flex Home 22 C6 mit Firmware 43.4 anhand zeitgleich übereinstimmender Solar.wattpilot-App-Werte belegt. Alle sechs gruppierten Setter wurden anschließend auf demselben Modell/Firmwarestand vom Gerät angenommen, im geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände bleiben unbestätigt.</li>
-    <li>Alle 24 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Identitätsreadings und die vom Gerät gelieferten diskreten Readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code> und <code>errorCode</code> werden sofort, aber nur bei einer tatsächlichen Änderung ihres öffentlichen Werts veröffentlicht. <code>authHashMode</code> wird bei der Auswahl eines Authentifizierungsverfahrens aktualisiert; <code>connectionLastReconnectReason</code> und <code>connectionAutomaticReconnectCount</code> dokumentieren Reconnect-Ereignisse; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code> und <code>lastCommandError</code> folgen den Ereignissen im Befehls-Lifecycle. Energie-, elektrische <code>nrg</code>-Telemetrie, Gerätegesundheitswerte, <code>uptime</code> und aktivierte optionale Diagnosen behalten getrennte Caches und Dirty-Felder, teilen aber einen <code>interval</code>-Takt; eine Gruppe veröffentlicht nie alte Werte einer anderen. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
+    <li>Alle 29 Konfigurationsreadings werden nach gültiger Gerätebestätigung sofort aktualisiert. Identitätsreadings und die vom Gerät gelieferten diskreten Readings <code>carState</code>, <code>chargingAllowed</code>, <code>temperatureCurrentLimit</code>, <code>chargingDecisionCode</code>, <code>chargingDecision</code>, <code>chargingDecisionInternalCode</code>, <code>chargingDecisionInternal</code>, <code>loadBalancingSourceConnected</code> und <code>errorCode</code> werden sofort, aber nur bei einer tatsächlichen Änderung ihres öffentlichen Werts veröffentlicht. <code>authHashMode</code> wird bei der Auswahl eines Authentifizierungsverfahrens aktualisiert; <code>connectionLastReconnectReason</code> und <code>connectionAutomaticReconnectCount</code> dokumentieren Reconnect-Ereignisse; <code>lastCommandRequestId</code>, <code>lastCommandStatus</code> und <code>lastCommandError</code> folgen den Ereignissen im Befehls-Lifecycle. Energie-, elektrische <code>nrg</code>-Telemetrie, Gerätegesundheitswerte, <code>uptime</code> und aktivierte optionale Diagnosen behalten getrennte Caches und Dirty-Felder, teilen aber einen <code>interval</code>-Takt; eine Gruppe veröffentlicht nie alte Werte einer anderen. Fehlende, <code>null</code>-, typfalsche oder unvollständige Felder erhalten Readings und Historien.</li>
   </ul>
   <p><b>Hinweis zu aWATTar:</b> aWATTar ist ein Anbieter- beziehungsweise Tarifname für dynamische Strompreise und kein technisches Kürzel des Moduls. Die aus der go-e-Enum übernommenen Namen mit <code>Awattar</code> bezeichnen preisabhängige Ladeentscheidungen. <code>Fallback</code> bezeichnet dabei den Standardausgang eines Entscheidungszweigs, wenn kein speziellerer Ladegrund greift, und nicht automatisch einen technischen Fehler. Für den Wattpilot Flex sind der genaue Auslöser dieser Codes und ihre vollständige Semantik nicht bestätigt; insbesondere beweist <code>notChargingBecauseFallbackAwattar</code> allein nicht, dass ein aWATTar-Tarif aktiviert ist.</p>
   <p><b>Kompatibilitäts-Zuordnung der Ladeentscheidung</b></p>
@@ -4010,7 +4049,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.15",
+  "version": "v2.1.16",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

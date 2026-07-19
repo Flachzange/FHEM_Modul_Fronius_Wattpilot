@@ -36,7 +36,9 @@ my @public_readings = qw(
     configPvSurplusEnabled configZeroFeedInEnabled configPvControlPreference configPhaseSwitchMode
     configThreePhaseSwitchPower configPhaseSwitchDelay configMinimumPhaseSwitchInterval
     configMinimumChargeTime configChargingPauseAllowed configMinimumChargingPauseDuration
-    configMinimumChargingInterval deviceRebootCount uptime
+    configMinimumChargingInterval configLoadBalancingEnabled configLoadBalancingPriority
+    configLoadBalancingFallbackCurrent configLoadBalancingPhaseAssignment
+    configLoadBalancingSourceLabel loadBalancingSourceConnected deviceRebootCount uptime
     deviceControllerFirmwareVersion deviceControllerFirmwareCRC
     deviceControllerFirmwareIntegrity deviceControllerStackSize
     deviceControllerResetReason deviceControllerMidFirmwareVersion
@@ -103,6 +105,14 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
     fap => JSON::true(),
     mcpd => 120000,
     mci => 0,
+    loe => JSON::true(),
+    lop => 50,
+    lof => 0,
+    map => [1, 2, 3],
+    cci => {
+        label => 'Synthetic PV source',
+        connected => JSON::true(),
+    },
     fbuf_akkuSOC => 60,
     fbuf_pAkku => -1525,
     fbuf_akkuMode => 1,
@@ -145,7 +155,7 @@ main::Wattpilot_UpdateReadings($hash, main::Wattpilot_NormalizeStatus($hash, {
 main::Wattpilot_SetCommandReadings($hash, 17, 'success', 'none');
 
 is_deeply([sort keys %{$hash->{READINGS}}], [sort @public_readings],
-    'one complete runtime scenario exposes exactly the 89 public 2.x readings');
+    'one complete runtime scenario exposes exactly the 95 public 2.x readings');
 for my $old (@old_readings) {
     ok(!exists $hash->{READINGS}{$old}, "old reading $old is not emitted");
 }

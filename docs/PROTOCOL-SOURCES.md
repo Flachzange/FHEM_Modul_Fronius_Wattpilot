@@ -147,6 +147,16 @@ Version 2.1.0 distinguishes observed JSON kinds from Perl scalar text. Known num
 - The reading reuses the existing `diagnosticReadings` owner, shared `interval`, `update_while_idle` gate, and immediate attribute-driven cleanup. These are FHEM publication rules, not device emission-frequency claims.
 - The mapping does not prove the exact timer behavior mentioned by the historical compilation, does not describe the configured `configPhaseSwitchMode`/`psm`, and does not establish that a requested or actual one-/three-phase transition occurred. The field remains read-only.
 
+
+## Load-balancing read mapping introduced in version 2.1.16
+
+- On one Wattpilot Flex Home 22 C6 running firmware 43.4, the maintainer compared the Dynamic Load Balancing app pages with a simultaneous `fullStatus`. The app showed enabled load balancing, priority Medium, fallback 0 A, phase assignment L1/L2/L3, and selected source label `PV Evers Velbert`; the status contained `loe=true`, `lop=50`, `lof=0`, `map=[1,2,3]`, and a matching selected-source object in `cci`.
+- Startup observations showed `clearInverters` followed by `updateInverter` candidate objects. The object with `paired=true` matched `fullStatus.cci` exactly, supporting `cci` as the currently selected inverter/DataManager source. These messages establish candidate-list behavior only; the module continues to ignore them and consumes only selected-source fields from normal status.
+- Version 2.1.16 exposes `loe`, `lop`, `lof`, `map`, `cci.label`, and `cci.connected` read-only. `lop` remains numeric because only the observed `50 = Medium` point is confirmed. `map` accepts only a non-empty ordered list of unique integer phases 1 through 3 and renders it as `L1` through `L3`; this is a defensive FHEM validation rule.
+- `cci.id`, `cci.commonName`, and `cci.ip` are deliberately not public because they contain device identifiers or private endpoint data. Missing, `null`, wrong-type, malformed, negative, or duplicate-phase values preserve prior readings.
+- `loa`, `lom`, `los`, `lot`, `loty`, and `lopr` remain unresolved or only provisionally interpreted. `clearSmips` remains an observed reset marker without a sufficiently established payload meaning. No read semantics or setters are implemented for these fields.
+- No load-balancing write was performed for this change. Writability, accepted values, ranges, dependencies, persistence, and interactions must be reproducibly tested before a grouped `loadBalancing` Set command can be added. Issue #101 therefore remains open after this read-only increment.
+
 ## Device reboot command in version 2.1.9
 
 - The pinned third-party registry at commit `4712ba3b8409fda55303870c047038b1b221d7ff` lists key `rst`, alias `rebootCharger`, JSON type `any`, and write-only access. This is compatibility evidence, not an official Fronius local-WebSocket specification.

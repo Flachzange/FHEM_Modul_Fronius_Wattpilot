@@ -1,6 +1,6 @@
 # Public reading policy
 
-Version 2.1.15 retains the authoritative publication policy for every public
+Version 2.1.16 retains the authoritative publication policy for every public
 reading. The runtime source is `%WATTPILOT_READING_POLICY` in
 [`72_Wattpilot.pm`](../72_Wattpilot.pm); `Wattpilot_InterfaceSnapshot` exposes
 the same inventory for automated completeness checks. Reading categories,
@@ -83,6 +83,12 @@ queries must be adapted explicitly.
 | `charging_pause_allowed` | `configChargingPauseAllowed` | `configuration` | `status:fap` | `immediate` | `none` | `fap` | `boolean` | `preserve` | Charging-pause setting; Set command remains `chargingPauseAllowed`. |
 | `minimum_charging_pause_duration` | `configMinimumChargingPauseDuration` | `configuration` | `status:mcpd` | `immediate` | `none` | `mcpd` | `seconds` | `preserve` | Minimum charging-pause duration; writable through `minimumCharging pauseDuration`. |
 | `minimum_charging_interval` | `configMinimumChargingInterval` | `configuration` | `status:mci` | `immediate` | `none` | `mci` | `seconds` | `preserve` | Forced/minimum charging interval; writable through `minimumCharging interval`. |
+| `load_balancing_enabled` | `configLoadBalancingEnabled` | `configuration` | `status:loe` | `immediate` | `none` | `loe` | `boolean` | `preserve` | App-confirmed Dynamic Load Balancing switch; read-only until writes are verified. |
+| `load_balancing_priority` | `configLoadBalancingPriority` | `configuration` | `status:lop` | `immediate` | `none` | `lop` | `integer` | `preserve` | Non-negative raw priority code; observed `50` matched app label Medium, but no complete enum is claimed. |
+| `load_balancing_fallback_current` | `configLoadBalancingFallbackCurrent` | `configuration` | `status:lof` | `immediate` | `none` | `lof` | `integer` | `preserve` | Non-negative configured fallback-current value; observed `0` matched app fallback 0 A. |
+| `load_balancing_phase_assignment` | `configLoadBalancingPhaseAssignment` | `configuration` | `status:map` | `immediate` | `none` | `map` | `phase_assignment` | `preserve` | Ordered unique phase numbers 1..3, rendered as `L1`..`L3`; invalid arrays preserve the previous reading. |
+| `load_balancing_source_label` | `configLoadBalancingSourceLabel` | `configuration` | `status:cci.label` | `immediate` | `none` | `cci_label` | `text` | `preserve` | Label of the currently selected inverter/DataManager source; source identifiers and private endpoints are not exposed. |
+| `load_balancing_source_connected` | `loadBalancingSourceConnected` | `status` | `status:cci.connected` | `immediate-on-change` | `none` | `cci_connected` | `boolean` | `preserve` | Live connection state of the selected source. |
 | `diag_fbuf_akku_mode` | `diag_fbuf_akkuMode` | `optional_diagnostic` | `status:fbuf_akkuMode` | `interval` | `diagnostic` | `diagnostic` | `diagnostic2` | `preserve` | Optional raw stationary-battery mode field. |
 | `device_reboot_count` | `deviceRebootCount` | `device_health` | `status:rbc` | `interval` | `none` | `device_health` | `integer` | `preserve` | Raw non-negative `rbc` value on the shared interval; exact protocol semantics remain unverified. |
 | `device_uptime` | `uptime` | `device_health` | `status:rbt` | `interval` | `device` | `device_uptime` | `hours_minutes_ms` | `preserve` | Non-negative `rbt` interpreted as milliseconds from the maintainer live observation, divided by 1,000, and rendered as cumulative `H:MM`; remaining seconds and milliseconds are discarded. |

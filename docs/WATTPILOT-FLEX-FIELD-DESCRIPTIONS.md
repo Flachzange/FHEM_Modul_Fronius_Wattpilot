@@ -180,16 +180,19 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 
 | Key | Alias / readable name | Meaning or enum candidate | R/W candidate | Evidence |
 |---|---|---|---|---|
-| `loa` | `loadBalancingAmpere` | Current assigned by load balancing | R | historical candidate |
-| `loe` | `loadBalancingEnabled` | Load balancing enabled | R/W | historical candidate |
-| `lof` | `loadFallback` | Load-balancing fallback mode candidate | R/W | historical candidate |
-| `log` | `loadGroupId` | Load-balancing group identifier | R/W | historical candidate |
-| `lom` | `loadBalancingMembers` | Load-balancing member list candidate | R | historical candidate |
-| `lop` | `loadPriority` | Load-balancing priority candidate | R/W | historical candidate |
-| `los` | `loadBalancingStatus` | Load-balancing status candidate | R | historical candidate |
-| `lot` | `loadBalancingTotalAmpere` | Total current available to load balancing, candidate unit A | R/W | historical candidate |
-| `loty` | `loadBalancingType` | Candidate enum: `Static=0`, `Dynamic=1` | R/W | historical candidate |
-| `map` | `loadMapping` | Three-value load/phase mapping candidate | R/W | historical candidate |
+| `cci.label` | `configLoadBalancingSourceLabel` | Label of the currently selected inverter/DataManager source | R | simultaneous app/status and startup candidate-list observation on one Flex 43.4 |
+| `cci.connected` | `loadBalancingSourceConnected` | Boolean live connection state of the selected source | R | observed selected-source object on one Flex 43.4 |
+| `loa` | none | Unresolved load-balancing numeric field; do not promote the historical assigned-current candidate | none | observed number plus unconfirmed historical candidate |
+| `loe` | `configLoadBalancingEnabled` | Dynamic Load Balancing enabled, exposed as boolean `0|1` | R | simultaneous app/status evidence on one Flex 43.4; writes untested |
+| `lof` | `configLoadBalancingFallbackCurrent` | Configured fallback-current value; observed `0` matched app 0 A | R | simultaneous app/status evidence on one Flex 43.4; full range and writes untested |
+| `log` | none | Empty string observed; exact group-identifier semantics unresolved | none | observed value plus historical candidate |
+| `lom` | none | `null` observed; exact member-list semantics unresolved | none | observed value plus historical candidate |
+| `lop` | `configLoadBalancingPriority` | Raw non-negative priority code; observed `50` matched app Medium | R | simultaneous app/status evidence on one Flex 43.4; complete enum and writes untested |
+| `los` | none | JSON-encoded group-status string containing identifiers; tuple semantics not sufficiently established for public readings | none | observed string and issue research only |
+| `lot` | none | Object with observed `amp`, `dyn`, `sta`, and `ts`; exact meanings remain provisional | none | observed object plus issue research only |
+| `loty` | none | Observed integer; historical static/dynamic enum remains unconfirmed | none | observed number plus historical candidate |
+| `map` | `configLoadBalancingPhaseAssignment` | Ordered selected phases, exposed as `L1`..`L3` | R | simultaneous app/status evidence on one Flex 43.4; writes untested |
+| `lopr` | none | Observed boolean; semantics unresolved | none | observed value only |
 
 ## Firmware and device identity fields
 

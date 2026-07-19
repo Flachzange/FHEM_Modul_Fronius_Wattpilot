@@ -260,3 +260,7 @@ Optional diagnostic architecture: `diagnosticReadings=0` is the effective defaul
 ## Authoritative runtime lifecycle
 
 `helper.lifecycleState` is transient current-device-hash state and is the sole lifecycle input for authentication, initialization, command admission, watchdogs, reconnects, timers, socket ownership, and cleanup. The public `state` reading is a projection, and Internal `STATE` is presentation output that FHEM may rewrite through `stateFormat`. A transition updates `helper.lifecycleState` before publishing the reading so reentrant event handlers see the new runtime state. A fresh process never reconstructs connectivity from restored readings. Module reload invalidates unverifiable session ownership, advances lifecycle generation, cancels old timers and requests, closes the old transport, and establishes at most one new connection cycle.
+
+The same inventory is exposed through `Wattpilot_InterfaceSnapshot()` for tests.
+
+Version 2.1.16 extends this path with one validated array kind, `phase_assignment`, for the load-balancing `map` field and with one-level selected-source members `cci.label` and `cci.connected`. The array validator accepts only a non-empty ordered list of unique integer phases 1 through 3; formatting produces `L1`..`L3`. No separate load-balancing update path, discovery cache, or command path is introduced.

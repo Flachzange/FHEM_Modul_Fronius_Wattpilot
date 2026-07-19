@@ -705,7 +705,7 @@ subtest '2.1.0 hot-reload state invalidates old ownership and activates the new 
         'synthetic-reload-password';
     my $module_hash = {};
     main::Wattpilot_Initialize($module_hash);
-    is($hash->{VERSION}, '2.1.15',
+    is($hash->{VERSION}, '2.1.16',
 
         'reload-style Initialize refreshes the module version');
     ok(!exists $hash->{FD},
@@ -774,8 +774,8 @@ subtest 'authoritative reading policy inventory is complete' => sub {
     my @configuration = grep {
         $policy->{$_}{category} eq 'configuration'
     } keys %$policy;
-    is(scalar @configuration, 24,
-        'all 24 configuration readings are inventoried');
+    is(scalar @configuration, 29,
+        'all 29 configuration readings are inventoried');
     for my $key (sort @configuration) {
         is($policy->{$key}{publication}, 'immediate',
             "$key remains immediate after device confirmation");
@@ -791,7 +791,7 @@ subtest 'authoritative reading policy inventory is complete' => sub {
         hello_protocol status_protocol car_state charging_allowed
         temperature_current_limit charging_decision_code
         charging_decision charging_decision_internal_code
-        charging_decision_internal error_code
+        charging_decision_internal load_balancing_source_connected error_code
     )], 'identity and discrete status readings are exactly immediate-on-change');
 
     for my $key (qw(

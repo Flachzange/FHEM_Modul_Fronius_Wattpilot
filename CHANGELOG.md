@@ -1,5 +1,16 @@
 # Changelog
 
+## [v2.1.16] - 2026-07-19
+
+### Confirmed read-only load-balancing core
+
+- Adds `configLoadBalancingEnabled`, `configLoadBalancingPriority`, `configLoadBalancingFallbackCurrent`, `configLoadBalancingPhaseAssignment`, `configLoadBalancingSourceLabel`, and `loadBalancingSourceConnected` through the existing declarative status inventory.
+- Grounds the mapping in a simultaneous Wattpilot Flex Home 22 C6 / firmware 43.4 app and `fullStatus` observation. Priority remains a raw integer because only the observed `50 = Medium` point is confirmed; phase assignment accepts an ordered unique list of phases 1 through 3 and renders it as `L1` through `L3`.
+- Uses `cci` only for the selected source label and live connection state. Source identifiers, common names, and private IP addresses are deliberately not exposed.
+- Preserves existing readings for missing, `null`, malformed, wrong-type, negative, empty, or duplicate-phase values. No separate load-balancing update function is introduced.
+- Leaves `loa`, `lom`, `los`, `lot`, `loty`, `lopr`, `clearSmips`, and all load-balancing writes unresolved. No `loadBalancing` Set command is added until writability, values, ranges, and dependencies are reproducibly verified; issue #101 therefore remains open.
+- Updates command references, README files, protocol provenance, field documentation, the authoritative reading inventory, and focused regression coverage. No post-change physical-device or real-FHEM test was performed in the implementation environment.
+
 ## [v2.1.15] - 2026-07-19
 
 ### Optional PV phase-wish diagnostic
