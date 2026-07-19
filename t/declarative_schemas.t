@@ -267,6 +267,7 @@ my %enum_sample = (
     pv_control => [1, 'default'],
     phase_switch => [1, 'force1'],
     phase_wish => [1, 'wish1'],
+    load_balancing_priority => [50, 'medium'],
 );
 my (%actual_formatter, %expected_formatter);
 for my $reading_key (sort keys %$reading_policy) {

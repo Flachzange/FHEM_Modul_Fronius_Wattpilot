@@ -47,8 +47,8 @@ ok(main::Wattpilot_DispatchMessage($hash, $fixture),
     'observed Flex fullStatus is dispatched');
 is(reading_value($hash, 'configLoadBalancingEnabled'), 1,
     'loe publishes the configured load-balancing switch');
-is(reading_value($hash, 'configLoadBalancingPriority'), 50,
-    'lop publishes the observed raw priority code');
+is(reading_value($hash, 'configLoadBalancingPriority'), 'medium',
+    'lop maps the observed medium priority code');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'lof preserves the configured zero-amp fallback value');
 is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L1 L2 L3',
@@ -71,6 +71,21 @@ like(main::Wattpilot_Set($hash, $hash->{NAME}, 'loadBalancing', 'enabled', '1'),
 is(scalar @DevIo::WRITES, 0,
     'an unverified load-balancing write sends no frame');
 
+
+main::Wattpilot_DispatchMessage($hash, {
+    type => 'deltaStatus',
+    status => { lop => 40 },
+});
+is(reading_value($hash, 'configLoadBalancingPriority'), 'high',
+    'lop maps the real-device-confirmed high priority code');
+
+main::Wattpilot_DispatchMessage($hash, {
+    type => 'deltaStatus',
+    status => { lop => 60 },
+});
+is(reading_value($hash, 'configLoadBalancingPriority'), 'low',
+    'lop maps the real-device-confirmed low priority code');
+
 main::Wattpilot_DispatchMessage($hash, {
     type => 'deltaStatus',
     status => {
@@ -85,8 +100,8 @@ main::Wattpilot_DispatchMessage($hash, {
 });
 is(reading_value($hash, 'configLoadBalancingEnabled'), 0,
     'a later boolean updates the configured switch');
-is(reading_value($hash, 'configLoadBalancingPriority'), 70,
-    'an unknown priority code remains visible as a raw integer');
+is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
+    'an unknown priority code remains explicit');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'an omitted fallback value is preserved');
 is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L1',
@@ -111,7 +126,7 @@ main::Wattpilot_DispatchMessage($hash, {
 });
 is(reading_value($hash, 'configLoadBalancingEnabled'), 0,
     'non-boolean loe cannot overwrite the last valid value');
-is(reading_value($hash, 'configLoadBalancingPriority'), 70,
+is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'negative priority cannot overwrite the last valid value');
 is(reading_value($hash, 'configLoadBalancingFallbackCurrent'), 0,
     'numeric-string fallback cannot overwrite the last valid value');
@@ -134,7 +149,7 @@ main::Wattpilot_DispatchMessage($hash, {
 });
 is(reading_value($hash, 'configLoadBalancingEnabled'), 0,
     'null load-balancing fields preserve the last valid switch');
-is(reading_value($hash, 'configLoadBalancingPriority'), 70,
+is(reading_value($hash, 'configLoadBalancingPriority'), 'unknown:70',
     'null load-balancing fields preserve the last valid priority');
 is(reading_value($hash, 'configLoadBalancingPhaseAssignment'), 'L3 L1',
     'null load-balancing fields preserve the last valid phase assignment');

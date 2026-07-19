@@ -5,7 +5,7 @@
 ### Confirmed read-only load-balancing core
 
 - Adds `configLoadBalancingEnabled`, `configLoadBalancingPriority`, `configLoadBalancingFallbackCurrent`, `configLoadBalancingPhaseAssignment`, `configLoadBalancingSourceLabel`, and `loadBalancingSourceConnected` through the existing declarative status inventory.
-- Grounds the mapping in a simultaneous Wattpilot Flex Home 22 C6 / firmware 43.4 app and `fullStatus` observation. Priority remains a raw integer because only the observed `50 = Medium` point is confirmed; phase assignment accepts an ordered unique list of phases 1 through 3 and renders it as `L1` through `L3`.
+- Grounds the mapping in a simultaneous Wattpilot Flex Home 22 C6 / firmware 43.4 app and `fullStatus` observation. Priority maps the real-device-confirmed codes `40 = high`, `50 = medium`, and `60 = low`; unknown non-negative integers remain explicit as `unknown:<value>`; phase assignment accepts an ordered unique list of phases 1 through 3 and renders it as `L1` through `L3`.
 - Uses `cci` only for the selected source label and live connection state. Source identifiers, common names, and private IP addresses are deliberately not exposed.
 - Preserves existing readings for missing, `null`, malformed, wrong-type, negative, empty, or duplicate-phase values. No separate load-balancing update function is introduced.
 - Leaves `loa`, `lom`, `los`, `lot`, `loty`, `lopr`, `clearSmips`, and all load-balancing writes unresolved. No `loadBalancing` Set command is added until writability, values, ranges, and dependencies are reproducibly verified; issue #101 therefore remains open.

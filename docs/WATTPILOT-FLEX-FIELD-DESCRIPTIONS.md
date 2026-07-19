@@ -187,7 +187,7 @@ Current FHEM uses indices 0–2, 4–6, 7–9, and 11. The documented capture do
 | `lof` | `configLoadBalancingFallbackCurrent` | Configured fallback-current value; observed `0` matched app 0 A | R | simultaneous app/status evidence on one Flex 43.4; full range and writes untested |
 | `log` | none | Empty string observed; exact group-identifier semantics unresolved | none | observed value plus historical candidate |
 | `lom` | none | `null` observed; exact member-list semantics unresolved | none | observed value plus historical candidate |
-| `lop` | `configLoadBalancingPriority` | Raw non-negative priority code; observed `50` matched app Medium | R | simultaneous app/status evidence on one Flex 43.4; complete enum and writes untested |
+| `lop` | `configLoadBalancingPriority` | Priority: `40=high`, `50=medium`, `60=low`, otherwise `unknown:<value>` | R | all three mappings confirmed through app changes on one Flex 43.4; writes remain untested |
 | `los` | none | JSON-encoded group-status string containing identifiers; tuple semantics not sufficiently established for public readings | none | observed string and issue research only |
 | `lot` | none | Object with observed `amp`, `dyn`, `sta`, and `ts`; exact meanings remain provisional | none | observed object plus issue research only |
 | `loty` | none | Observed integer; historical static/dynamic enum remains unconfirmed | none | observed number plus historical candidate |

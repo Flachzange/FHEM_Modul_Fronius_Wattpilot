@@ -393,7 +393,7 @@ Das Modul stellt exakt folgende 95 öffentlichen Readings bereit:
 | `configMinimumChargingPauseDuration` | `mcpd` von Millisekunden in Sekunden umgerechnet. |
 | `configMinimumChargingInterval` | `mci` von Millisekunden in Sekunden umgerechnet. Der Name folgt dem API-Alias; die Fronius-Flex-Anleitung bezeichnet das Verhalten als Zwangsladeintervall. |
 | `configLoadBalancingEnabled` | Boolesches Feld `loe`, ausgegeben als `0` oder `1`; die Zuordnung zum App-Schalter „Dynamic Load Balancing“ wurde am Flex 43.4 zeitgleich bestätigt. Nur lesbar, da Schreibwerte noch nicht reproduzierbar geprüft sind. |
-| `configLoadBalancingPriority` | Nicht negativer ganzzahliger Rohcode aus `lop`. Der beobachtete Wert `50` entsprach in der App „Medium“; mangels vollständiger Enum bleiben alle Werte numerisch. |
+| `configLoadBalancingPriority` | Priorität aus `lop`: `40 = high`, `50 = medium`, `60 = low`; unbekannte nicht negative Ganzzahlen erscheinen als `unknown:<Wert>`. Die drei Zuordnungen wurden am Wattpilot Flex Home 22 C6 mit Firmware 43.4 durch Änderung der App-Einstellung bestätigt. |
 | `configLoadBalancingFallbackCurrent` | Nicht negativer ganzzahliger Wert aus `lof`; der beobachtete Wert `0` entsprach dem App-Fallback von 0 A. Nur lesbar, da Bereich und Schreibverhalten nicht vollständig bestätigt sind. |
 | `configLoadBalancingPhaseAssignment` | Geordnete, eindeutige Phasenliste aus `map`, dargestellt beispielsweise als `L1 L2 L3`. Nur Werte 1 bis 3 werden akzeptiert; fehlende oder ungültige Arrays erhalten das bestehende Reading. |
 | `configLoadBalancingSourceLabel` | Bezeichnung der aktuell ausgewählten Inverter-/Smart-Meter-Quelle aus `cci.label`. Geräte-ID, Common Name und private IP aus `cci` werden nicht veröffentlicht. |
