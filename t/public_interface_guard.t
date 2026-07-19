@@ -125,7 +125,7 @@ my @public_commands = qw(
     password chargingCurrent forceState chargingMode pvSurplusStartPower
     pvSurplusEnabled zeroFeedInEnabled pvControlPreference phaseSwitch
     minimumCharging chargingPauseAllowed reconnect reboot pvBattery
-    nextTripTime
+    pvBatteryDischarge nextTripTime
 );
 
 my @migration_pairs = (

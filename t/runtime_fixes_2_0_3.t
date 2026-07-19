@@ -42,7 +42,7 @@ $defs{$other->{NAME}} = $other;
 my $state_before = $hash->{STATE};
 my %registration;
 main::Wattpilot_Initialize(\%registration);
-is($hash->{VERSION}, '2.1.12',
+is($hash->{VERSION}, '2.1.13',
 
     'reload-style Initialize refreshes VERSION to the module version');
 is($other->{VERSION}, 'unchanged',
@@ -65,7 +65,7 @@ delete $hash->{VERSION};
 is(main::Wattpilot_Define(
         $hash, 'runtimeFixWallbox Wattpilot 192.0.2.203 20000003'), undef,
     'fresh definition succeeds');
-is($hash->{VERSION}, '2.1.12',
+is($hash->{VERSION}, '2.1.13',
 
     'fresh definition exposes the module version in VERSION');
 
@@ -75,7 +75,7 @@ main::Wattpilot_DispatchMessage($hash, {
     devicetype => 'wattpilot_flex',
     protocol => 2,
 });
-is($hash->{VERSION}, '2.1.12',
+is($hash->{VERSION}, '2.1.13',
 
     'device hello firmware does not overwrite module VERSION');
 is($hash->{READINGS}{deviceFirmwareVersion}{VAL}, '43.4',

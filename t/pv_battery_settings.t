@@ -262,9 +262,351 @@ is(reading_value($hash, 'lastCommandStatus'), 'failed',
     'failed grouped battery command is terminal');
 
 $hash = fresh_set_device();
+main::Wattpilot_UpdateReadings($hash, {
+    pdte => JSON::false,
+    pdt => 57,
+});
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20),
+    undef, 'combined PV-battery setter accepts whitespace-separated values');
+is(scalar @DevIo::WRITES, 1,
+    'enabling initially sends exactly one secured command');
+my ($enable_first_outer, $enable_first_inner) = inner_payload($DevIo::WRITES[0]);
+is($enable_first_inner->{key}, 'pdt',
+    'enabling writes the discharge-until threshold first');
+is($enable_first_inner->{value}, 20,
+    'enabling writes the requested threshold');
+is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 57,
+    'combined command does not update the threshold optimistically');
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 0,
+    'combined command does not enable discharge optimistically');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $enable_first_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+is(scalar @DevIo::WRITES, 2,
+    'confirmed threshold write triggers the enable write');
+my ($enable_second_outer, $enable_second_inner) = inner_payload($DevIo::WRITES[1]);
+is($enable_second_inner->{key}, 'pdte',
+    'enabling writes dischargeEnabled second');
+ok(JSON::is_bool($enable_second_inner->{value})
+        && $enable_second_inner->{value},
+    'enabling sends a true JSON boolean');
+is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 20,
+    'first confirmed response updates the threshold reading');
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 0,
+    'discharge remains disabled until the second response');
+is(reading_value($hash, 'lastCommandStatus'), 'pending',
+    'combined command remains pending during the second write');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $enable_second_outer->{requestId},
+    success => JSON::true, status => { pdte => JSON::true },
+}));
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 1,
+    'second confirmed response enables discharge');
+is(reading_value($hash, 'lastCommandStatus'), 'success',
+    'combined enabling sequence completes successfully');
+is(reading_value($hash, 'lastCommandError'), 'none',
+    'successful combined sequence clears the command error');
+
+$hash = fresh_set_device();
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', '1,35'),
+    undef, 'combined PV-battery setter accepts FHEMWEB comma syntax');
+my (undef, $comma_inner) = inner_payload($DevIo::WRITES[0]);
+is($comma_inner->{key}, 'pdt',
+    'FHEMWEB comma syntax follows the same safe enabling order');
+is($comma_inner->{value}, 35,
+    'FHEMWEB comma syntax preserves the threshold');
+
+$hash = fresh_set_device();
+main::Wattpilot_UpdateReadings($hash, {
+    pdte => JSON::true,
+    pdt => 20,
+});
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 0, 40),
+    undef, 'combined PV-battery setter accepts disabling');
+my ($disable_first_outer, $disable_first_inner) = inner_payload($DevIo::WRITES[0]);
+is($disable_first_inner->{key}, 'pdte',
+    'disabling writes dischargeEnabled first');
+ok(JSON::is_bool($disable_first_inner->{value})
+        && !$disable_first_inner->{value},
+    'disabling sends a false JSON boolean');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $disable_first_outer->{requestId},
+    success => JSON::true, status => { pdte => JSON::false },
+}));
+my ($disable_second_outer, $disable_second_inner) = inner_payload($DevIo::WRITES[1]);
+is($disable_second_inner->{key}, 'pdt',
+    'disabling writes the threshold second');
+is($disable_second_inner->{value}, 40,
+    'disabling still stores the explicitly supplied threshold');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $disable_second_outer->{requestId},
+    success => JSON::true, status => { pdt => 40 },
+}));
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 0,
+    'disabling sequence leaves discharge disabled');
+is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 40,
+    'disabling sequence confirms the new threshold');
+
+for my $case (
+    [],
+    [1],
+    [1, 20, 'extra'],
+    ['1,20,30'],
+    [''],
+    ['true', 20],
+    [2, 20],
+    [-1, 20],
+    [1, -1],
+    [1, 101],
+    [1, '20.0'],
+    [1, '020'],
+    ['1,101'],
+) {
+    $hash = fresh_set_device();
+    like(main::Wattpilot_Set(
+            $hash, $hash->{NAME}, 'pvBatteryDischarge', @$case),
+        qr/^Usage:/,
+        'invalid combined PV-battery syntax is rejected');
+    is(scalar @DevIo::WRITES, 0,
+        'invalid combined PV-battery syntax sends no frame');
+}
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+like(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBattery', 'dischargeEnabled', 0),
+    qr/already pending/,
+    'grouped dischargeEnabled write cannot overlap a combined sequence');
+like(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 0, 30),
+    qr/already pending/,
+    'a second combined sequence cannot overlap the first');
+is(scalar @DevIo::WRITES, 1,
+    'overlap rejection sends no additional frame');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBattery', 'dischargeUntilSoC', 20);
+like(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20),
+    qr/already pending/,
+    'combined sequence cannot overlap a grouped threshold write');
+like(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBattery', 'dischargeEnabled', 1),
+    qr/already pending/,
+    'related grouped writes cannot overlap each other');
+is(scalar @DevIo::WRITES, 1,
+    'grouped overlap rejection sends no additional frame');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($reject_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $reject_first_outer->{requestId},
+    success => JSON::false,
+}));
+is(scalar @DevIo::WRITES, 1,
+    'a rejected first step does not send the second step');
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'a rejected first step is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge dischargeUntilSoC failed: device rejected pdt',
+    'first-step rejection identifies the failed setting');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($partial_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $partial_first_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+my ($partial_second_outer) = inner_payload($DevIo::WRITES[1]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $partial_second_outer->{requestId},
+    success => JSON::false,
+}));
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'a rejected second step is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge partial failure after dischargeUntilSoC; dischargeEnabled failed: device rejected pdte',
+    'second-step rejection reports the applied and failed settings');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 0, 40);
+my ($disable_reject_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $disable_reject_first_outer->{requestId},
+    success => JSON::false,
+}));
+is(scalar @DevIo::WRITES, 1,
+    'a rejected disable step does not send the threshold update');
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'a rejected disable step is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge dischargeEnabled failed: device rejected pdte',
+    'disable-first rejection identifies dischargeEnabled');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 0, 40);
+my ($disable_partial_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $disable_partial_first_outer->{requestId},
+    success => JSON::true, status => { pdte => JSON::false },
+}));
+my ($disable_partial_second_outer) = inner_payload($DevIo::WRITES[1]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $disable_partial_second_outer->{requestId},
+    success => JSON::false,
+}));
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 0,
+    'confirmed disable remains visible when the threshold update fails');
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'a rejected threshold after disable is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge partial failure after dischargeEnabled; dischargeUntilSoC failed: device rejected pdt',
+    'disable-second rejection reports the applied and failed settings');
+
+$hash = fresh_set_device();
+$DevIo::NOW = 100;
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+DevIo::run_due_timers(131);
+is(reading_value($hash, 'lastCommandStatus'), 'timeout',
+    'first-step response timeout is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge dischargeUntilSoC failed: response timeout',
+    'first-step timeout identifies the failed setting');
+is(scalar @DevIo::WRITES, 1,
+    'first-step timeout never sends the second step');
+
+$hash = fresh_set_device();
+$DevIo::NOW = 100;
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($timeout_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $timeout_first_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+DevIo::run_due_timers(131);
+is(reading_value($hash, 'lastCommandStatus'), 'timeout',
+    'second-step response timeout is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge partial failure after dischargeUntilSoC; dischargeEnabled failed: response timeout',
+    'second-step timeout reports the partial application');
+
+$hash = fresh_set_device();
+my $reentrant_abort = 0;
+$DevIo::READING_EVENT_HOOK = sub {
+    my ($event_hash, $events) = @_;
+    return if $reentrant_abort;
+    return if !grep { $_ eq 'lastCommandStatus: pending' } @$events;
+    my $pending = $event_hash->{helper}{pendingRequests} // {};
+    my ($request) = values %$pending;
+    return if ref($request) ne 'HASH'
+        || ref($request->{context}) ne 'HASH'
+        || ($request->{context}{step} // '') ne 'dischargeEnabled';
+    $reentrant_abort = 1;
+    main::Wattpilot_AbortPendingRequests(
+        $event_hash, 'connection lost', 1);
+};
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($reentrant_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $reentrant_first_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+ok($reentrant_abort,
+    'second-step sequence context is attached before pending events fire');
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'reentrant connection loss during pending publication remains terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge partial failure after dischargeUntilSoC; dischargeEnabled failed: connection lost',
+    'reentrant abort sees complete partial-failure context');
+$DevIo::READING_EVENT_HOOK = undef;
+
+$hash = fresh_set_device();
+my ($reentrant_undef, $events_at_undef) = (0, 0);
+$DevIo::READING_EVENT_HOOK = sub {
+    my ($event_hash, $events) = @_;
+    return if $reentrant_undef;
+    return if !grep { $_ eq 'lastCommandStatus: pending' } @$events;
+    my $pending = $event_hash->{helper}{pendingRequests} // {};
+    my ($request) = values %$pending;
+    return if ref($request) ne 'HASH'
+        || ref($request->{context}) ne 'HASH'
+        || ($request->{context}{step} // '') ne 'dischargeEnabled';
+    $reentrant_undef = 1;
+    $events_at_undef = scalar @DevIo::READING_EVENTS;
+    main::Wattpilot_Undefine($event_hash, $event_hash->{NAME});
+};
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($undef_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $undef_first_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+ok($reentrant_undef,
+    'reentrant undefine is exercised during second-step pending publication');
+ok($hash->{helper}{undefined},
+    'reentrant undefine keeps the device runtime invalidated');
+ok(!exists $hash->{READINGS}{configPvBatteryDischargeUntilSoC},
+    'obsolete first-step status is not published after reentrant undefine');
+is(scalar @DevIo::READING_EVENTS, $events_at_undef,
+    'reentrant undefine is followed by no additional reading events');
+$DevIo::READING_EVENT_HOOK = undef;
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($send_failure_outer) = inner_payload($DevIo::WRITES[0]);
+$hash->{TEST_OPEN} = 0;
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $send_failure_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+is(scalar @DevIo::WRITES, 1,
+    'local second-step send failure adds no frame');
+is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 20,
+    'confirmed first response is still applied when second send fails');
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'local second-step send failure is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge partial failure after dischargeUntilSoC; dischargeEnabled failed: not sent: Wattpilot is disconnected',
+    'local second-step send failure reports the partial application');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 1, 20);
+my ($abort_first_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $abort_first_outer->{requestId},
+    success => JSON::true, status => { pdt => 20 },
+}));
+main::Wattpilot_AbortPendingRequests($hash, 'connection lost', 1);
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'connection loss during the second step is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge partial failure after dischargeUntilSoC; dischargeEnabled failed: connection lost',
+    'connection loss reports the partial application');
+
+$hash = fresh_set_device();
 my $help = main::Wattpilot_Set($hash, $hash->{NAME}, '?');
 like($help, qr/\bpvBattery\b/,
     'Set help exposes one grouped pvBattery command');
+like($help, qr/\bpvBatteryDischarge:widgetList,3,select,0,1,6,selectnumbers,0,1,100,0,lin\b/,
+    'Set help exposes the combined command with two FHEMWEB controls');
 for my $subcommand (qw(
     chargeAboveSoC dischargeEnabled dischargeUntilSoC
     dischargeTimeLimitEnabled dischargeStartTime dischargeStopTime
