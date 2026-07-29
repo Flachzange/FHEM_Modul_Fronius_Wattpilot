@@ -12,6 +12,8 @@
 - Forces `gettimeofday()` into scalar context when storing secured-request timestamps, preventing the Perl `Odd number of elements in anonymous hash` warning and corruption of `pendingRequests` metadata while retaining fractional-second precision.
 - Audits every other `gettimeofday()` call site; they already receive scalar context through assignment, arithmetic, comparison, or a scalar function prototype and require no runtime change.
 - Adds a regression double that reproduces the real `Time::HiRes::gettimeofday()` scalar/list behavior and proves the pre-fix warning plus malformed hash metadata cannot recur. Post-fix physical-device verification of issue #113 remains pending.
+- Defers an `authRequired` challenge for one bounded two-second wait when a password exists but the runtime serial has not yet arrived. A subsequent valid `hello.serial` resumes the unchanged authentication path immediately; duplicate challenges reuse the same wait, normal `hello`-before-`authRequired` order stays unchanged, and an explicit definition serial keeps precedence.
+- Reports `passwordMissing` immediately when the password is absent, while `authConfigMissing` is reserved for the case where no valid serial appears before the bounded wait expires. Session cleanup removes the retained challenge, recovery marker, and timer.
 
 ## [v2.1.16] - 2026-07-19
 

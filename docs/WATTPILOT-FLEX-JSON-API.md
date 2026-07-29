@@ -51,7 +51,7 @@ Examples in this section are minimal synthetic documentation values unless expli
 ### `authRequired`
 
 - Direction: device → client in the current implementation.
-- Observed/required fields: current code consumes `token1`, `token2`, and optionally `hash`; automatic selection uses bcrypt only when `hash` equals `bcrypt`, otherwise PBKDF2.
+- Observed/required fields: current code consumes `token1`, `token2`, and optionally `hash`; automatic selection accepts announced bcrypt or PBKDF2 under the documented compatibility rules. If the challenge arrives before a valid runtime serial, version 2.1.17 retains those challenge fields for one bounded two-second wait so a following `hello.serial` can resume the ordinary authentication path.
 - Example: `{"type":"authRequired","token1":"<TOKEN1>","token2":"<TOKEN2>","hash":"bcrypt"}`
 - Evidence: current implementation behavior; the status capture independently contains `authhash:"bcrypt"`, but does not prove the challenge field.
 - Open questions: exact Flex challenge shape, token format/length, whether `hash` is always present, and whether `authhash` and challenge `hash` are equivalent.
