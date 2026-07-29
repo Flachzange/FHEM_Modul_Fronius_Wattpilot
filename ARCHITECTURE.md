@@ -209,6 +209,8 @@ hidden behind a generic command engine.
 
 Enum parsers whose values originate from reverse Perl hashes explicitly apply `int(...)` before transport. Perl hash keys are string scalars, and semantic equality after JSON decoding does not prove the wire type; without coercion, `lmo`, `frm`, and `psm` become quoted numeric strings. Regression tests therefore inspect the raw inner JSON stored in `securedMsg.data` in addition to checking decoded values.
 
+Secured-request metadata stores `sentAt` from `gettimeofday()` only in explicit scalar context. `Time::HiRes::gettimeofday()` returns seconds and microseconds in list context, which would otherwise create an odd anonymous-hash element count and corrupt the pending-request record. The regression double preserves this scalar/list distinction instead of using a scalar-only clock stub.
+
 `chargingCurrent` has one deliberate device-dependent refinement. After the
 current device hash has received `ama`, a usable integer
 `configMaximumCurrentLimit` from 6 through 32 becomes the upper bound for both
