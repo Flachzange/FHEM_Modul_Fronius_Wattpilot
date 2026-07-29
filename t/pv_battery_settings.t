@@ -335,6 +335,85 @@ main::Wattpilot_UpdateReadings($hash, {
     pdt => 20,
 });
 is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 'off'),
+    undef, 'one-value off disables discharge without requiring a SoC');
+is(scalar @DevIo::WRITES, 1,
+    'one-value off sends exactly one secured command');
+my ($off_only_outer, $off_only_inner) = inner_payload($DevIo::WRITES[0]);
+is($off_only_inner->{key}, 'pdte',
+    'one-value off writes only dischargeEnabled');
+ok(JSON::is_bool($off_only_inner->{value}) && !$off_only_inner->{value},
+    'one-value off sends a false JSON boolean');
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 1,
+    'one-value off does not update dischargeEnabled optimistically');
+is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 20,
+    'one-value off leaves the confirmed SoC threshold untouched');
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $off_only_outer->{requestId},
+    success => JSON::true, status => { pdte => JSON::false },
+}));
+is(scalar @DevIo::WRITES, 1,
+    'confirmed one-value off does not dispatch a threshold write');
+is(reading_value($hash, 'configPvBatteryDischargeEnabled'), 0,
+    'device confirmation completes one-value off');
+is(reading_value($hash, 'configPvBatteryDischargeUntilSoC'), 20,
+    'one-value off preserves the SoC threshold after confirmation');
+is(reading_value($hash, 'lastCommandStatus'), 'success',
+    'one-value off completes as a normal successful command');
+
+$hash = fresh_set_device();
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 0),
+    undef, 'numeric one-value zero remains equivalent to off');
+my (undef, $zero_only_inner) = inner_payload($DevIo::WRITES[0]);
+is($zero_only_inner->{key}, 'pdte',
+    'numeric one-value zero writes dischargeEnabled');
+ok(JSON::is_bool($zero_only_inner->{value}) && !$zero_only_inner->{value},
+    'numeric one-value zero sends a false JSON boolean');
+
+$hash = fresh_set_device();
+is(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 'off,'),
+    undef, 'FHEMWEB off with an empty SoC field disables directly');
+my (undef, $empty_soc_off_inner) = inner_payload($DevIo::WRITES[0]);
+is($empty_soc_off_inner->{key}, 'pdte',
+    'FHEMWEB off with an empty SoC field writes only dischargeEnabled');
+ok(JSON::is_bool($empty_soc_off_inner->{value})
+        && !$empty_soc_off_inner->{value},
+    'FHEMWEB off with an empty SoC field sends false');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBattery', 'dischargeUntilSoC', 20);
+like(main::Wattpilot_Set(
+        $hash, $hash->{NAME}, 'pvBatteryDischarge', 'off'),
+    qr/already pending/,
+    'one-value off respects pending pdt/pdte overlap protection');
+is(scalar @DevIo::WRITES, 1,
+    'overlap rejection for one-value off sends no additional frame');
+
+$hash = fresh_set_device();
+main::Wattpilot_Set(
+    $hash, $hash->{NAME}, 'pvBatteryDischarge', 'off');
+my ($off_only_reject_outer) = inner_payload($DevIo::WRITES[0]);
+main::Wattpilot_Parse($hash, encode_json({
+    type => 'response', requestId => $off_only_reject_outer->{requestId},
+    success => JSON::false,
+}));
+is(reading_value($hash, 'lastCommandStatus'), 'failed',
+    'rejected one-value off is terminal');
+is(reading_value($hash, 'lastCommandError'),
+    'pvBatteryDischarge dischargeEnabled failed: device rejected pdte',
+    'rejected one-value off retains command-specific diagnostics');
+is(scalar @DevIo::WRITES, 1,
+    'rejected one-value off never sends a threshold write');
+
+$hash = fresh_set_device();
+main::Wattpilot_UpdateReadings($hash, {
+    pdte => JSON::true,
+    pdt => 20,
+});
+is(main::Wattpilot_Set(
         $hash, $hash->{NAME}, 'pvBatteryDischarge', 0, 40),
     undef, 'combined PV-battery setter accepts disabling');
 my ($disable_first_outer, $disable_first_inner) = inner_payload($DevIo::WRITES[0]);
@@ -374,6 +453,7 @@ ok(JSON::is_bool($off_inner->{value}) && !$off_inner->{value},
 for my $case (
     [],
     [1],
+    ['on'],
     [1, 20, 'extra'],
     ['1,20,30'],
     [''],
