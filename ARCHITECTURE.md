@@ -207,6 +207,8 @@ step and any already confirmed partial application. Authentication, request
 correlation, lifecycle changes, telemetry caches, and car transitions are not
 hidden behind a generic command engine.
 
+Enum parsers whose values originate from reverse Perl hashes explicitly apply `int(...)` before transport. Perl hash keys are string scalars, and semantic equality after JSON decoding does not prove the wire type; without coercion, `lmo`, `frm`, and `psm` become quoted numeric strings. Regression tests therefore inspect the raw inner JSON stored in `securedMsg.data` in addition to checking decoded values.
+
 `chargingCurrent` has one deliberate device-dependent refinement. After the
 current device hash has received `ama`, a usable integer
 `configMaximumCurrentLimit` from 6 through 32 becomes the upper bound for both

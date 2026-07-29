@@ -25,14 +25,14 @@ The original 2026-06-21 fullStatus documentation did not perform an additional p
 | Class | Meaning in this document |
 | --- | --- |
 | Empirical structure/value | Present in the sanitized 2026-06-21 capture. Confirms location and JSON type for this one observation only. |
-| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.16 runtime, not what the device specification promises. |
+| Current implementation behavior | Directly visible in root `72_Wattpilot.pm`; describes the version 2.1.17 runtime, not what the device specification promises. |
 | Pinned Wattpilot-specific third-party evidence | Reproducible statements from an identified external Wattpilot implementation at a pinned commit. This is neither an official Fronius specification nor proof for Flex 43.4. |
 | Historical compilation | Present in `API.md`; retained for research but not accepted as current protocol fact. |
-| Public FHEM interface contract | Names and values implemented by version 2.1.16; this still does not prove device semantics. |
+| Public FHEM interface contract | Names and values implemented by version 2.1.17; this still does not prove device semantics. |
 | Inferred | Plausible interpretation without sufficient Wattpilot-specific confirmation. |
 | Unknown | Not established by the accepted evidence. |
 
-Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.16 uses the exact `config` prefix for every configuration reading. The grouped Set commands keep their established protocol mappings, and `chargingCurrent` additionally uses a usable device-confirmed `configMaximumCurrentLimit` only as a local FHEM upper bound. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
+Public-reading names are a FHEM interface policy rather than protocol evidence. Version 2.1.17 uses the exact `config` prefix for every configuration reading. The grouped Set commands keep their established protocol mappings, and `chargingCurrent` additionally uses a usable device-confirmed `configMaximumCurrentLimit` only as a local FHEM upper bound. See [`READING-CATEGORIES.md`](READING-CATEGORIES.md) for the exhaustive audit.
 
 No field in this document is classified as officially documented by Fronius. See [protocol sources](PROTOCOL-SOURCES.md).
 
@@ -227,7 +227,7 @@ Version 2.1.15 adds `diag_pvopt_phaseWishMode` from observed numeric status fiel
 
 Version 2.1.16 consumes the app-confirmed load-balancing core `loe`, `lop`, `lof`, `lot.amp`, `lot.sta`, `map`, `cci.label`, and `cci.connected` through the same declarative status path. The module exposes configuration values with the `config` prefix and the live source connection state without it. Priority maps `40/50/60` to `high/medium/low` with `unknown:<value>` fallback. Phase assignment recognizes the three live-confirmed one-phase slot vectors and every permutation of `1,2,3`, preserving the configured order; the live-observed `[2,3,1]` becomes `L2 L3 L1`. Two-phase and malformed vectors preserve the previous reading. Independent app changes to 5 A and 25 A confirmed `lot.amp` and `lot.sta`; `lot.dyn` is not exposed. Sensitive `cci` members are omitted. `loa`, `lom`, `los`, `lot.dyn`, `lot.ts`, `loty`, `lopr`, discovery candidate lists, and write operations remain outside the public implementation.
 
-The names below describe the current version-2.1.16 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
+The names below describe the current version-2.1.17 implementation. They describe FHEM behavior only and do not upgrade inferred protocol meanings into device facts.
 
 | Protocol key/path | Current FHEM name | Conversion, enum, or command behavior | Confidence |
 | --- | --- | --- | --- |
