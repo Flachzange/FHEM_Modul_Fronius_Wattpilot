@@ -201,12 +201,13 @@ inventory. The grouped `phaseSwitch` and `minimumCharging` commands use one
 small ordered subcommand inventory and the same proven value parsers, including the `phaseSwitch threePhasePower` watt threshold; grouped
 `pvBattery`, the coupled `pvBatteryDischarge` sequence, local `password` storage,
 and lifecycle-only `reconnect` remain explicit handlers. The combined discharge
-command requires both `pdte` and `pdt` values, exposes two FHEMWEB widgets, and
-stores only minimal per-request sequence context. It sends the second secured
-write only after the first response succeeds, uses threshold-before-enable and
-disable-before-threshold ordering, blocks overlapping writes to those two keys,
-and formats timeout, abort, rejection, and local send failures with the failed
-step and any already confirmed partial application. Authentication, request
+command conditionally accepts one or two values, exposes two FHEMWEB widgets,
+and stores only minimal per-request sequence context. Enabling requires `pdt`
+and sends it before `pdte=true`. Disabling without a threshold sends only
+`pdte=false`; disabling with an explicit threshold retains the confirmed
+`pdte=false`-before-`pdt` sequence. All forms block overlapping writes to those
+two keys and format timeout, abort, rejection, and local send failures with the
+failed step and any already confirmed partial application. Authentication, request
 correlation, lifecycle changes, telemetry caches, and car transitions are not
 hidden behind a generic command engine.
 

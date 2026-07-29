@@ -264,7 +264,7 @@ is($FHEMCorePinned::DEVIO_BLOB_SHA,
         'pinned CommandReload executes the real module reload path');
     is($defs{wallbox}, $original_hash,
         'real reload preserves the existing device hash identity');
-    is($hash->{VERSION}, '2.1.17',
+    is($hash->{VERSION}, '2.1.18',
 
         'real reload refreshes the module version internal');
     is($hash->{DeviceName}, $original_device_name,

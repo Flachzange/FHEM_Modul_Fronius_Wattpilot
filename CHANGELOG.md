@@ -1,5 +1,16 @@
 # Changelog
 
+## [v2.1.18] - 2026-07-29
+
+### Allow disabling PV-battery discharge without changing the SoC threshold
+
+- Accepts `set <name> pvBatteryDischarge off` and numeric `0` without a second argument.
+- Sends exactly one secured `pdte=false` JSON-boolean write for that form and leaves the existing `pdt` / `configPvBatteryDischargeUntilSoC` value unchanged.
+- Keeps a valid whole SoC from `0` through `100` mandatory for `on` and `1`.
+- Preserves existing two-value disable forms, safe `pdte=false`-before-`pdt` ordering when a new threshold is supplied, FHEMWEB comma input, overlap protection, command-specific failures, and device-confirmed readings.
+- Accepts FHEMWEB-style `off,` with an empty SoC field while continuing to reject `on,`.
+- Updates bilingual command references, README/API/architecture/testing notes, permanent development rules, and focused regression coverage for issue #116.
+
 ## [v2.1.17] - 2026-07-29
 
 ### Correct secured-command scalar wire and timestamp types

@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.17**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.18**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -225,14 +225,15 @@ set wallbox pvBattery dischargeStartTime 07:00
 set wallbox pvBattery dischargeStopTime 20:00
 ```
 
-A combined command is additionally available for the two related discharge settings and always requires both values:
+A combined command is additionally available for the two related discharge settings. Enabling requires the SoC threshold; disabling may omit it:
 
 ```text
-set wallbox pvBatteryDischarge 1 20
-set wallbox pvBatteryDischarge 0 20
+set wallbox pvBatteryDischarge on 20
+set wallbox pvBatteryDischarge off
+set wallbox pvBatteryDischarge off 40
 ```
 
-FHEMWEB renders two controls for this command: a dropdown containing only `off` and `on`, plus a compact free-text field with the placeholder `SoC%`. When enabling, the module writes `dischargeUntilSoC` (`pdt`) first and enables `dischargeEnabled` (`pdte`) only after the device confirms that first write. When disabling, the safe order is reversed. If the second step fails, the confirmed first step remains in effect and `lastCommandError` explicitly reports a partial failure. Further writes to `pdt` or `pdte` are blocked while such a sequence is pending.
+`off` or `0` without a SoC writes only `dischargeEnabled` (`pdte=false`) and leaves the existing threshold unchanged. When a SoC is supplied while disabling, the safe two-step order remains: `pdte=false` first, then the new `pdt` value. Enabling writes `dischargeUntilSoC` (`pdt`) first and sends `pdte=true` only after device confirmation. FHEMWEB keeps the `off|on` dropdown and compact `SoC%` field; an empty field is valid only for `off`. Further writes to `pdt` or `pdte` are blocked while a related request is pending.
 
 `chargeAboveSoC` and `dischargeUntilSoC` accept whole values from `0` through `100`. The switches accept `0` or `1` and are sent as JSON booleans. `dischargeStartTime` accepts `00:00` through `23:59`; `dischargeStopTime` additionally accepts `24:00`. The times are sent through `pdls` and `pdlo` as seconds after midnight. No reading is updated optimistically; only a device response or later status confirms the value. All six setters were changed individually on a Wattpilot Flex Home 22 C6 running firmware 43.4, confirmed through device-supplied status/readback, and restored to their original values. Deliberate device rejection, persistence across reboot, and other firmware/model variants remain unverified.
 
@@ -426,8 +427,8 @@ The module exposes exactly these 97 public readings:
 | `diag_fbuf_ohmpilotState` | Optional raw scalar from `fbuf_ohmpilotState`; the retained capture contains `null`, so type and semantics remain unknown. |
 | `diag_fbuf_ohmpilotTemperature` | Optional raw scalar from `fbuf_ohmpilotTemperature`; the retained capture contains `null`, so type, unit, and semantics remain unknown. |
 | `configPvBatteryChargeAboveSoC` | App setting “Charge above” from `fam`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery chargeAboveSoC <0-100>`. |
-| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeEnabled` with `0` or `1`, or together with the SoC threshold through `set <name> pvBatteryDischarge <0\|1> <0-100>`. |
-| `configPvBatteryDischargeUntilSoC` | Associated app setting “State of charge SoC” from `pdt`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery dischargeUntilSoC <0-100>`, or together with the switch through `set <name> pvBatteryDischarge <0\|1> <0-100>`. |
+| `configPvBatteryDischargeEnabled` | App switch “Discharge until” from `pdte`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeEnabled <0\|1>`. `set <name> pvBatteryDischarge off` or `0` disables without changing the SoC; `on` or `1` requires a threshold from `0` through `100`. |
+| `configPvBatteryDischargeUntilSoC` | Associated app setting “State of charge SoC” from `pdt`, accepted as a percentage from `0` through `100`; writable through `set <name> pvBattery dischargeUntilSoC <0-100>`. The threshold is mandatory for `pvBatteryDischarge on\|1` and optional for `off\|0`. |
 | `configPvBatteryDischargeTimeLimitEnabled` | App switch “Limit discharging time” from `pdle`, exposed as `0` or `1`; writable through `set <name> pvBattery dischargeTimeLimitEnabled` with `0` or `1`. |
 | `configPvBatteryDischargeStartTime` | App start time from `pdls`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStartTime <HH:MM>`. |
 | `configPvBatteryDischargeStopTime` | App stop time from `pdlo`, converted from seconds after midnight to `HH:MM`; writable through `set <name> pvBattery dischargeStopTime` with `HH:MM` or `24:00`. |

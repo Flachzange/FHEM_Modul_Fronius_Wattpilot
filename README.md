@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.17**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.18**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -225,14 +225,15 @@ set wallbox pvBattery dischargeStartTime 07:00
 set wallbox pvBattery dischargeStopTime 20:00
 ```
 
-Für die beiden zusammengehörigen Entladeparameter gibt es zusätzlich einen kombinierten Befehl, der immer beide Werte verlangt:
+Für die beiden zusammengehörigen Entladeparameter gibt es zusätzlich einen kombinierten Befehl. Beim Aktivieren ist der SoC verpflichtend; beim Deaktivieren kann er entfallen:
 
 ```text
-set wallbox pvBatteryDischarge 1 20
-set wallbox pvBatteryDischarge 0 20
+set wallbox pvBatteryDischarge on 20
+set wallbox pvBatteryDischarge off
+set wallbox pvBatteryDischarge off 40
 ```
 
-FHEMWEB zeigt dafür zwei Bedienelemente: ein Dropdown mit ausschließlich `off` und `on` sowie ein kompaktes Freitextfeld mit dem Platzhalter `SoC%`. Beim Aktivieren wird zuerst `dischargeUntilSoC` (`pdt`) geschrieben und erst nach erfolgreicher Gerätebestätigung `dischargeEnabled` (`pdte`) aktiviert. Beim Deaktivieren erfolgt die sichere Reihenfolge umgekehrt. Schlägt der zweite Schritt fehl, bleibt der bestätigte erste Schritt bestehen und `lastCommandError` meldet ausdrücklich einen Teilfehler. Während einer solchen Sequenz sind weitere Schreibzugriffe auf `pdt` oder `pdte` gesperrt.
+`off` beziehungsweise `0` ohne SoC schreibt ausschließlich `dischargeEnabled` (`pdte=false`) und lässt den vorhandenen Grenzwert unverändert. Wird beim Deaktivieren ein SoC angegeben, bleibt die sichere Zweischritt-Reihenfolge erhalten: zuerst `pdte=false`, danach der neue `pdt`-Wert. Beim Aktivieren wird zuerst `dischargeUntilSoC` (`pdt`) geschrieben und erst nach erfolgreicher Gerätebestätigung `pdte=true` gesendet. FHEMWEB behält das Dropdown `off|on` und das kompakte Feld `SoC%`; ein leeres Feld ist nur bei `off` zulässig. Während eines zugehörigen Requests sind weitere Schreibzugriffe auf `pdt` oder `pdte` gesperrt.
 
 `chargeAboveSoC` und `dischargeUntilSoC` akzeptieren ganze Werte von `0` bis `100`. Die beiden Schalter akzeptieren `0` oder `1` und werden als JSON-Boolean gesendet. `dischargeStartTime` akzeptiert `00:00` bis `23:59`; `dischargeStopTime` zusätzlich `24:00`. Intern werden die Zeiten als Sekunden seit Mitternacht über `pdls` beziehungsweise `pdlo` übertragen. Es wird kein Reading optimistisch geändert; nur eine Geräteantwort oder ein späterer Status bestätigt den Wert. Alle sechs Setter wurden auf einem Wattpilot Flex Home 22 C6 mit Firmware 43.4 einzeln geändert, durch den geräteseitigen Status/Readback bestätigt und auf ihre Ausgangswerte zurückgesetzt. Bewusste Geräteablehnung, Persistenz über einen Neustart und weitere Firmware-/Modellstände sind nicht verifiziert.
 
@@ -428,8 +429,8 @@ Das Modul stellt exakt folgende 95 öffentlichen Readings bereit:
 | `diag_fbuf_ohmpilotState` | Optionaler Rohskalar aus `fbuf_ohmpilotState`; der aufbewahrte Mitschnitt enthält `null`, Typ und Semantik sind daher unbekannt. |
 | `diag_fbuf_ohmpilotTemperature` | Optionaler Rohskalar aus `fbuf_ohmpilotTemperature`; der aufbewahrte Mitschnitt enthält `null`, Typ, Einheit und Semantik sind daher unbekannt. |
 | `configPvBatteryChargeAboveSoC` | App-Einstellung „Charge above“ aus `fam`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery chargeAboveSoC <0-100>`. |
-| `configPvBatteryDischargeEnabled` | App-Schalter „Discharge until“ aus `pdte`, ausgegeben als `0` oder `1`; schreibbar über `set <name> pvBattery dischargeEnabled` mit `0` oder `1` sowie gemeinsam mit dem SoC-Grenzwert über `set <name> pvBatteryDischarge <0\|1> <0-100>`. |
-| `configPvBatteryDischargeUntilSoC` | Zugehörige App-Einstellung „State of charge SoC“ aus `pdt`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery dischargeUntilSoC <0-100>` sowie gemeinsam mit dem Schalter über `set <name> pvBatteryDischarge <0\|1> <0-100>`. |
+| `configPvBatteryDischargeEnabled` | App-Schalter „Discharge until“ aus `pdte`, ausgegeben als `0` oder `1`; schreibbar über `set <name> pvBattery dischargeEnabled <0\|1>`. `set <name> pvBatteryDischarge off` beziehungsweise `0` deaktiviert ohne SoC-Änderung; `on` beziehungsweise `1` benötigt einen SoC von `0` bis `100`. |
+| `configPvBatteryDischargeUntilSoC` | Zugehörige App-Einstellung „State of charge SoC“ aus `pdt`, als gültiger Prozentwert von `0` bis `100`; schreibbar über `set <name> pvBattery dischargeUntilSoC <0-100>`. Bei `pvBatteryDischarge on\|1` ist der SoC Pflicht, bei `off\|0` optional. |
 | `configPvBatteryDischargeTimeLimitEnabled` | App-Schalter „Limit discharging time“ aus `pdle`, ausgegeben als `0` oder `1`; schreibbar über `set <name> pvBattery dischargeTimeLimitEnabled` mit `0` oder `1`. |
 | `configPvBatteryDischargeStartTime` | App-Startzeit aus `pdls`, von Sekunden seit Mitternacht nach `HH:MM` umgerechnet; schreibbar über `set <name> pvBattery dischargeStartTime <HH:MM>`. |
 | `configPvBatteryDischargeStopTime` | App-Stoppzeit aus `pdlo`, von Sekunden seit Mitternacht nach `HH:MM` umgerechnet; schreibbar über `set <name> pvBattery dischargeStopTime` mit `HH:MM` oder `24:00`. |
