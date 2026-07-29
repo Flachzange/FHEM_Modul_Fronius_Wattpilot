@@ -74,6 +74,7 @@ FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `Und
 | `timeoutRetryUsed` | current authentication/initialization timeout episode |
 | `deviceType`, `protocol` | current connection/session |
 | `authPending`, `authHashMode`, `authenticated` | current authentication/session |
+| `pendingAuthChallenge`, `authSerialRecoveryUsed` | current authentication/session only; one retained challenge and one bounded serial-order recovery allowance, both cleared at every session boundary |
 | `pendingRequests` | current authenticated session; every invalidation cancels its timeout and either publishes one terminal newest-request result or suppresses output during undefine/shutdown. Connection loss before a response completes the newest pending request successfully only when its existing protocol key is `rst`; all unrelated requests retain the normal failure path. No transport-specific pending marker is added. |
 | `jsonBuffer` | current logical JSON continuation/session |
 | `car_state` | current device-hash runtime state |
@@ -92,7 +93,9 @@ FHEM `modify` and `defmod` call `DefFn` on the existing hash and do not run `Und
 
 Incoming message-envelope metadata and status fields remain separate. In
 particular, `fullStatus.partial` is an exact JSON boolean at message level; it
-is never injected into the status namespace. The first valid normalized
+is never injected into the status namespace. An `authRequired` message normally follows `hello`. If it arrives first while a password is configured and no valid runtime serial is available, the module retains only the validated token fields for one two-second typed-timer wait. A valid later `hello.serial` cancels that timer and resumes the ordinary hash-selection and authentication path. Duplicate challenges do not multiply the timer. Expiry aborts with `authConfigMissing`; a genuinely absent password aborts immediately with `passwordMissing`. An explicitly defined serial is never replaced by `hello`.
+
+The first valid normalized
 post-authentication `fullStatus` or `deltaStatus` completes initialization and
 cancels the lifecycle timeout, including `fullStatus` with `partial=true`.
 `partial` controls snapshot completeness only: supplied valid fields apply
@@ -206,6 +209,10 @@ and formats timeout, abort, rejection, and local send failures with the failed
 step and any already confirmed partial application. Authentication, request
 correlation, lifecycle changes, telemetry caches, and car transitions are not
 hidden behind a generic command engine.
+
+Enum parsers whose values originate from reverse Perl hashes explicitly apply `int(...)` before transport. Perl hash keys are string scalars, and semantic equality after JSON decoding does not prove the wire type; without coercion, `lmo`, `frm`, and `psm` become quoted numeric strings. Regression tests therefore inspect the raw inner JSON stored in `securedMsg.data` in addition to checking decoded values.
+
+Secured-request metadata stores `sentAt` from `gettimeofday()` only in explicit scalar context. `Time::HiRes::gettimeofday()` returns seconds and microseconds in list context, which would otherwise create an odd anonymous-hash element count and corrupt the pending-request record. The regression double preserves this scalar/list distinction instead of using a scalar-only clock stub.
 
 `chargingCurrent` has one deliberate device-dependent refinement. After the
 current device hash has received `ama`, a usable integer

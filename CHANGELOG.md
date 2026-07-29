@@ -1,5 +1,20 @@
 # Changelog
 
+## [v2.1.17] - 2026-07-29
+
+### Correct secured-command scalar wire and timestamp types
+
+- Encodes the established `chargingMode` (`lmo`), `pvControlPreference` (`frm`), and `phaseSwitch mode` (`psm`) enum values as JSON integers instead of numeric strings.
+- Corrects the payload that produced the real-device-confirmed `lastCommandError=device rejected lmo` response with module 2.1.16 on a Wattpilot Flex Home 22 C6 running firmware 43.4; the app and original FHEM Wattpilot implementation confirmed the unchanged `3=default`, `4=eco`, and `5=nextTrip` mapping.
+- Keeps public command names, enum labels, numeric mappings, secured request correlation, rejection handling, and device-confirmed configuration readings unchanged.
+- Extends schema regression coverage to inspect the raw signed inner JSON rather than relying on decoded-value equality, which cannot distinguish `4` from `"4"` in the previous tests. The static audit found no other current Set parser with the same reverse-hash numeric-string defect.
+- Updates bilingual command references, public version references, architecture/testing notes, and protocol provenance. The `chargingMode` correction was accepted on the maintainer Wattpilot Flex 43.4 device; `pvControlPreference` and `phaseSwitch mode` remain automated-test-only.
+- Forces `gettimeofday()` into scalar context when storing secured-request timestamps, preventing the Perl `Odd number of elements in anonymous hash` warning and corruption of `pendingRequests` metadata while retaining fractional-second precision.
+- Audits every other `gettimeofday()` call site; they already receive scalar context through assignment, arithmetic, comparison, or a scalar function prototype and require no runtime change.
+- Adds a regression double that reproduces the real `Time::HiRes::gettimeofday()` scalar/list behavior and proves the pre-fix warning plus malformed hash metadata cannot recur. Post-fix physical-device verification of issue #113 remains pending.
+- Defers an `authRequired` challenge for one bounded two-second wait when a password exists but the runtime serial has not yet arrived. A subsequent valid `hello.serial` resumes the unchanged authentication path immediately; duplicate challenges reuse the same wait, normal `hello`-before-`authRequired` order stays unchanged, and an explicit definition serial keeps precedence.
+- Reports `passwordMissing` immediately when the password is absent, while `authConfigMissing` is reserved for the case where no valid serial appears before the bounded wait expires. Session cleanup removes the retained challenge, recovery marker, and timer.
+
 ## [v2.1.16] - 2026-07-19
 
 ### Confirmed read-only load-balancing core

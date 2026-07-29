@@ -39,9 +39,10 @@ use Digest::SHA qw(sha256_hex);
 use Crypt::PBKDF2;
 use Crypt::URandom qw(urandom);
 
-my $WATTPILOT_VERSION = '2.1.16';
+my $WATTPILOT_VERSION = '2.1.17';
 my $WATTPILOT_REQUEST_TIMEOUT = 30;
 my $WATTPILOT_AUTH_TIMEOUT = 30;
+my $WATTPILOT_AUTH_SERIAL_WAIT = 2;
 my $WATTPILOT_INITIALIZATION_TIMEOUT = 30;
 my $WATTPILOT_TIMEOUT_RETRY_DELAY = 5;
 my $WATTPILOT_IDLE_REFRESH_TIMEOUT = 30;
@@ -1605,6 +1606,7 @@ sub Wattpilot_DispatchMessage($$) {
             && $json->{protocol} >= 0;
         readingsEndUpdate($hash, 1);
         Log3 $name, 4, "Wattpilot ($name) - Hello received";
+        Wattpilot_ResumeDeferredAuthentication($hash);
     } elsif ($type eq 'authRequired') {
         Log3 $name, 4, "Wattpilot ($name) - Auth Required";
         Wattpilot_ClearCommandState($hash, 'authentication aborted');
@@ -2270,6 +2272,77 @@ sub Wattpilot_UpdateReadings($$;$) {
     readingsEndUpdate($hash, 1);
 }
 
+sub Wattpilot_DeferAuthenticationForSerial($$) {
+    my ($hash, $json) = @_;
+    my $name = $hash->{NAME};
+
+    if (ref($hash->{helper}{pendingAuthChallenge}) eq 'HASH') {
+        Log3 $name, 4,
+            "Wattpilot ($name) - Authentication is already waiting for the device serial";
+        return 1;
+    }
+    if ($hash->{helper}{authSerialRecoveryUsed}) {
+        Log3 $name, 1,
+            "Wattpilot ($name) - Device serial is still unavailable after the bounded authentication recovery";
+        Wattpilot_AbortAuthentication(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{auth_config_missing});
+        return 0;
+    }
+
+    $hash->{helper}{authSerialRecoveryUsed} = 1;
+    $hash->{helper}{pendingAuthChallenge} = {
+        token1 => $json->{token1},
+        token2 => $json->{token2},
+        (exists($json->{hash}) ? (hash => $json->{hash}) : ()),
+    };
+    Log3 $name, 2,
+        "Wattpilot ($name) - Deferring authentication briefly until hello supplies the device serial";
+    my $timer = Wattpilot_ScheduleTimer(
+        $hash, 'auth_serial_wait', $WATTPILOT_AUTH_SERIAL_WAIT,
+        'Wattpilot_AuthSerialWaitTimeout');
+    if (!defined $timer) {
+        delete $hash->{helper}{pendingAuthChallenge};
+        Log3 $name, 1,
+            "Wattpilot ($name) - Cannot schedule the bounded authentication serial wait";
+        Wattpilot_AbortAuthentication(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{auth_config_missing});
+        return 0;
+    }
+    return 1;
+}
+
+sub Wattpilot_ResumeDeferredAuthentication($) {
+    my ($hash) = @_;
+    return 0 if ref($hash->{helper}{pendingAuthChallenge}) ne 'HASH';
+    return 0 if !defined($hash->{SERIAL}) || $hash->{SERIAL} !~ /^\d+$/;
+
+    my $challenge = delete $hash->{helper}{pendingAuthChallenge};
+    Wattpilot_CancelTimer($hash, 'auth_serial_wait');
+    Log3 $hash->{NAME}, 2,
+        "Wattpilot ($hash->{NAME}) - Resuming deferred authentication after receiving the device serial";
+    Wattpilot_SendAuth($hash, $challenge);
+    return 1;
+}
+
+sub Wattpilot_AuthSerialWaitTimeout($) {
+    my ($ctx) = @_;
+    my $hash = $ctx->{hash};
+    return if !Wattpilot_TimerContextValid($hash, $ctx);
+    Wattpilot_FinishTimer($hash, $ctx);
+    return if ref($hash->{helper}{pendingAuthChallenge}) ne 'HASH';
+
+    if (defined($hash->{SERIAL}) && $hash->{SERIAL} =~ /^\d+$/) {
+        Wattpilot_ResumeDeferredAuthentication($hash);
+        return;
+    }
+
+    delete $hash->{helper}{pendingAuthChallenge};
+    Log3 $hash->{NAME}, 1,
+        "Wattpilot ($hash->{NAME}) - Device serial was not received during the bounded authentication wait";
+    Wattpilot_AbortAuthentication(
+        $hash, $WATTPILOT_LIFECYCLE_STATE{auth_config_missing});
+}
+
 sub Wattpilot_SendAuth($$) {
     my ($hash, $json) = @_;
     my $name     = $hash->{NAME};
@@ -2282,9 +2355,10 @@ sub Wattpilot_SendAuth($$) {
         return;
     }
     my $password = $password_result->{status} eq "value" ? $password_result->{value} : undef;
-    if (!$password || !defined($serial) || $serial !~ /^\d+$/) {
-        Log3 $name, 1, "Wattpilot ($name) - Missing Password or Serial for authentication";
-        Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_config_missing});
+    if (!$password) {
+        Log3 $name, 1, "Wattpilot ($name) - Missing password for authentication";
+        Wattpilot_AbortAuthentication(
+            $hash, $WATTPILOT_LIFECYCLE_STATE{password_missing});
         return;
     }
 
@@ -2292,6 +2366,11 @@ sub Wattpilot_SendAuth($$) {
         || !Wattpilot_IsJsonString($json->{token2}) || $json->{token2} eq '') {
         Log3 $name, 1, "Wattpilot ($name) - Authentication challenge has invalid tokens";
         Wattpilot_AbortAuthentication($hash, $WATTPILOT_LIFECYCLE_STATE{auth_challenge_invalid});
+        return;
+    }
+
+    if (!defined($serial) || $serial !~ /^\d+$/) {
+        Wattpilot_DeferAuthenticationForSerial($hash, $json);
         return;
     }
 
@@ -2698,17 +2777,17 @@ sub Wattpilot_ParseSetCommandValue($$;$) {
             && $value <= $maximum;
         return undef;
     }
-    return $WATTPILOT_CHARGING_MODE_VALUE{$value}
+    return int($WATTPILOT_CHARGING_MODE_VALUE{$value})
         if $parser eq 'charging_mode'
         && exists $WATTPILOT_CHARGING_MODE_VALUE{$value};
     return Wattpilot_ParseFiniteNonNegativeNumber($value)
         if $parser eq 'nonnegative_number';
     return $value eq '1' ? JSON::true : JSON::false
         if $parser eq 'boolean' && $value =~ /^(?:0|1)$/;
-    return $WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$value}
+    return int($WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$value})
         if $parser eq 'pv_control'
         && exists $WATTPILOT_PV_CONTROL_PREFERENCE_VALUE{$value};
-    return $WATTPILOT_PHASE_SWITCH_MODE_VALUE{$value}
+    return int($WATTPILOT_PHASE_SWITCH_MODE_VALUE{$value})
         if $parser eq 'phase_switch'
         && exists $WATTPILOT_PHASE_SWITCH_MODE_VALUE{$value};
     return Wattpilot_ParseSecondsToMilliseconds($value)
@@ -2885,7 +2964,7 @@ sub Wattpilot_SendSecureInternal($$$$) {
     my $request = {
         key => $key,
         value => $val,
-        sentAt => gettimeofday(),
+        sentAt => scalar(gettimeofday()),
     };
     if (ref($context) eq 'HASH') {
         $request->{context} = $context;
@@ -2939,6 +3018,8 @@ sub Wattpilot_ClearConnectionState($;$) {
     Wattpilot_ClearCommandState($hash, $command_reason);
     delete $hash->{helper}{deviceType};
     delete $hash->{helper}{protocol};
+    delete $hash->{helper}{pendingAuthChallenge};
+    delete $hash->{helper}{authSerialRecoveryUsed};
     delete $hash->{helper}{jsonBuffer};
     delete $hash->{helper}{lastInboundJsonAt};
     delete $hash->{helper}{volatileTelemetryCache};
@@ -3498,6 +3579,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.14 refines only the FHEMWEB presentation of <code>pvBatteryDischarge</code>: the first widget offers <code>off</code>/<code>on</code>, and the SoC threshold is entered in a compact free-text field with an <code>SoC%</code> placeholder instead of a 101-entry selector. The documented command-line values <code>0</code>/<code>1</code> remain supported; FHEMWEB-generated <code>off</code>/<code>on</code> values are normalized to the same booleans before the unchanged validation and confirmed two-step write sequence.</p>
   <p>Version 2.1.15 adds the optional diagnostic reading <code>diag_pvopt_phaseWishMode</code> from integer status field <code>pwm</code>. It maps <code>0</code>, <code>1</code>, and <code>2</code> to <code>force3</code>, <code>wish1</code>, and <code>wish3</code>; other integers remain explicit as <code>unknown:&lt;value&gt;</code>. The reading reuses the existing diagnostic interval, idle gate, and cleanup. It is distinct from <code>configPhaseSwitchMode</code> and does not establish a timer or actual phase transition.</p>
   <p>Version 2.1.16 adds the read-only load-balancing core confirmed simultaneously in a Wattpilot Flex 43.4 status and the app: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>lot.amp</code>, <code>lot.sta</code>, <code>map</code>, and selected-source fields <code>cci.label</code>/<code>cci.connected</code>. Priority maps the real-device-confirmed codes <code>40</code>, <code>50</code>, and <code>60</code> to <code>high</code>, <code>medium</code>, and <code>low</code>; other non-negative integers remain visible as <code>unknown:&lt;value&gt;</code>. The fixed three-slot <code>map</code> accepts the three confirmed one-phase vectors and every permutation of <code>1,2,3</code>, preserving configured order; the observed <code>[2,3,1]</code> renders as <code>L2 L3 L1</code>, while unconfirmed or two-phase patterns preserve the previous reading. Independent app changes confirm <code>lot.amp</code> and <code>lot.sta</code> as the grid-connection and supply-line current limits; <code>lot.dyn</code> remains unexposed. Source identifiers and private endpoints are deliberately not exposed. Ambiguous <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot.dyn</code>, <code>lot.ts</code>, <code>loty</code>, and <code>lopr</code> fields and all writes remain out of scope until reproducible evidence exists.</p>
+  <p>Version 2.1.17 corrects the secured JSON wire type for enum-valued Set commands. <code>chargingMode</code>/<code>lmo</code>, <code>pvControlPreference</code>/<code>frm</code>, and <code>phaseSwitch mode</code>/<code>psm</code> now send JSON integers instead of numeric strings. This corrects the payload that produced the live-confirmed <code>device rejected lmo</code> response on a Wattpilot Flex Home 22 C6 running firmware 43.4. Public command names, enum labels, numeric mappings, response handling, and device-confirmed reading updates remain unchanged. Secured-request timestamps now also force scalar <code>gettimeofday()</code> context, preventing the Perl <code>Odd number of elements in anonymous hash</code> warning and malformed pending-request metadata while preserving fractional-second precision. When a configured password is available but <code>authRequired</code> arrives before a valid serial, one challenge may wait for two seconds for a subsequent <code>hello.serial</code>; success resumes normal authentication, expiry reports <code>authConfigMissing</code>, and an absent password remains <code>passwordMissing</code>.</p>
   <table class="block wide">
     <tr><th>Reading through 2.1.11</th><th>Reading from 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -3798,6 +3880,7 @@ sub Wattpilot_WriteJson($$) {
   <p>Version 2.1.14 verfeinert ausschließlich die FHEMWEB-Darstellung von <code>pvBatteryDischarge</code>: Das erste Widget bietet <code>off</code>/<code>on</code>, und der SoC-Grenzwert wird in einem kompakten Freitextfeld mit dem Platzhalter <code>SoC%</code> eingegeben statt über eine Auswahl mit 101 Einträgen. Die dokumentierten Kommandozeilenwerte <code>0</code>/<code>1</code> bleiben unterstützt; von FHEMWEB erzeugte Werte <code>off</code>/<code>on</code> werden vor der unveränderten Validierung und bestätigten Zweischritt-Sequenz auf dieselben Boolean-Werte abgebildet.</p>
   <p>Version 2.1.15 ergänzt das optionale Diagnosereading <code>diag_pvopt_phaseWishMode</code> aus dem ganzzahligen Statusfeld <code>pwm</code>. Die Werte <code>0</code>, <code>1</code> und <code>2</code> werden auf <code>force3</code>, <code>wish1</code> und <code>wish3</code> abgebildet; andere Ganzzahlen bleiben als <code>unknown:&lt;Wert&gt;</code> sichtbar. Das Reading verwendet den bestehenden Diagnose-Intervallpfad, die Idle-Sperre und die Attribut-Bereinigung. Es ist von <code>configPhaseSwitchMode</code> getrennt und belegt weder einen Timer noch einen tatsächlichen Phasenwechsel.</p>
   <p>Version 2.1.16 ergänzt den lesenden Load-Balancing-Kern, der auf einem Wattpilot Flex 43.4 zeitgleich in Status und App bestätigt wurde: <code>loe</code>, <code>lop</code>, <code>lof</code>, <code>map</code> sowie <code>cci.label</code>/<code>cci.connected</code> der ausgewählten Quelle. Die Priorität bildet die am Realgerät bestätigten Codes <code>40</code>, <code>50</code> und <code>60</code> auf <code>high</code>, <code>medium</code> und <code>low</code> ab; andere nicht negative Ganzzahlen bleiben als <code>unknown:&lt;Wert&gt;</code> sichtbar. Die festen dreistelligen <code>map</code>-Vektoren <code>[1,0,0]</code>, <code>[0,1,0]</code>, <code>[0,0,1]</code> und <code>[1,2,3]</code> werden als <code>L1</code>, <code>L2</code>, <code>L3</code> und <code>L1 L2 L3</code> dargestellt; nicht bestätigte oder zweiphasige Muster erhalten das vorherige Reading. Quell-IDs und private Endpunkte werden bewusst nicht veröffentlicht. Die mehrdeutigen Felder <code>loa</code>, <code>lom</code>, <code>los</code>, <code>lot</code>, <code>loty</code> und <code>lopr</code> sowie alle Schreibzugriffe bleiben bis zu reproduzierbarer Evidenz außerhalb des Umfangs.</p>
+  <p>Version 2.1.17 korrigiert den JSON-Datentyp gesicherter Enum-Set-Befehle. <code>chargingMode</code>/<code>lmo</code>, <code>pvControlPreference</code>/<code>frm</code> und <code>phaseSwitch mode</code>/<code>psm</code> senden nun JSON-Ganzzahlen statt numerischer Strings. Damit wird der Payload korrigiert, der am Wattpilot Flex Home 22 C6 mit Firmware 43.4 die bestätigte Antwort <code>device rejected lmo</code> auslöste. Öffentliche Befehlsnamen, Enum-Bezeichnungen, numerische Zuordnungen, Response-Verarbeitung und gerätebestätigte Reading-Updates bleiben unverändert. Zeitstempel gesicherter Requests erzwingen nun außerdem den skalaren Kontext von <code>gettimeofday()</code>. Dadurch werden die Perl-Warnung <code>Odd number of elements in anonymous hash</code> und fehlerhafte Metadaten wartender Requests verhindert, während die Nachkommagenauigkeit erhalten bleibt. Ist ein Passwort vorhanden, trifft <code>authRequired</code> aber vor einer gültigen Seriennummer ein, darf genau eine Challenge zwei Sekunden auf eine nachfolgende <code>hello.serial</code> warten; bei Erfolg läuft die normale Anmeldung weiter, bei Ablauf folgt <code>authConfigMissing</code>, und ein fehlendes Passwort bleibt davon getrennt als <code>passwordMissing</code> sichtbar.</p>
   <table class="block wide">
     <tr><th>Reading bis 2.1.11</th><th>Reading ab 2.1.12</th></tr>
     <tr><td><code>diag_temperatureSensor3</code></td><td><code>diag_temperatureGridConnector</code></td></tr>
@@ -4069,7 +4152,7 @@ sub Wattpilot_WriteJson($$) {
   "name": "FHEM-Wattpilot",
   "abstract": "Control a Fronius Wattpilot wallbox from FHEM",
   "description": "FHEM module for the local Wattpilot WebSocket API V2.",
-  "version": "v2.1.16",
+  "version": "v2.1.17",
   "release_status": "testing",
   "author": [
     "Dennis Gramespacher <>",

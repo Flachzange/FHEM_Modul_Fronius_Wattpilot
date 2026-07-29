@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Installation und Einrichtung des Fronius Wattpilot Moduls für FHEM. Das Modul ermöglicht die Steuerung der Wallbox über das lokale Netzwerk via WebSocket.
 
-Aktuelle Modulversion: **2.1.16**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Aktuelle Modulversion: **2.1.17**. Dennis Gramespacher bleibt ursprünglicher Autor. Die Neuentwicklung der Version 2.x stammt von Flachzange und entstand mit KI-Unterstützung durch OpenAI ChatGPT; technische Entscheidungen und Release-Verantwortung liegen bei Flachzange. Weitere Angaben stehen in [`AUTHORS.md`](AUTHORS.md). Die Änderungshistorie wird ausschließlich in [`CHANGELOG.md`](CHANGELOG.md) gepflegt. Protokollquellen und Belastbarkeitsgrenzen stehen in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Unterschiede zum ursprünglichen Modul
 
@@ -106,7 +106,7 @@ define <Name> Wattpilot <IP-Adresse> [Seriennummer]
 
 Die Seriennummer ist kein zusätzlicher FHEM-Gerätename, sondern ein kryptografischer Eingabewert: Sowohl PBKDF2 als auch bcrypt leiten den gerätespezifischen Passwort-Hash unter Einbeziehung der Seriennummer ab. Das gilt für Legacy-Wattpilot und Wattpilot Flex.
 
-Im Normalfall sendet der Wattpilot seine Seriennummer vor der Authentifizierung in der `hello`-Nachricht, sodass sie nicht in der Definition stehen muss. Eine explizite Angabe fixiert den verwendeten Wert und ist nur sinnvoll, wenn die automatische Übernahme nicht funktioniert. Eine falsche Seriennummer führt zu einer fehlerhaften Hash-Ableitung und damit zu einer fehlgeschlagenen Anmeldung. Fehlt sowohl in der Definition als auch in `hello` eine gültige numerische Seriennummer, endet die Anmeldung mit `authConfigMissing`.
+Im Normalfall sendet der Wattpilot seine Seriennummer vor der Authentifizierung in der `hello`-Nachricht, sodass sie nicht in der Definition stehen muss. Trifft ausnahmsweise `authRequired` zuerst ein, hält das Modul diese Challenge genau einmal für zwei Sekunden zurück und setzt die Anmeldung sofort fort, sobald eine gültige `hello.serial` empfangen wurde. Eine explizite Angabe fixiert den verwendeten Wert, hat Vorrang vor `hello` und ist nur sinnvoll, wenn die automatische Übernahme nicht funktioniert. Eine falsche Seriennummer führt zu einer fehlerhaften Hash-Ableitung und damit zu einer fehlgeschlagenen Anmeldung. Fehlt das Passwort, wird `passwordMissing` gemeldet. Ist das Passwort vorhanden, aber bis zum Ende der begrenzten Wartezeit weder in der Definition noch aus `hello` eine gültige numerische Seriennummer verfügbar, endet die Anmeldung mit `authConfigMissing`.
 
 Das Passwort wird separat mit `set <Name> password <secret>` gesetzt und nicht in der Definition gespeichert.
 

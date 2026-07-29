@@ -2,7 +2,7 @@
 
 This document describes the installation and configuration of the Fronius Wattpilot module for FHEM. The module allows control of the Wallbox over the local network via WebSocket.
 
-Current module version: **2.1.16**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
+Current module version: **2.1.17**. Dennis Gramespacher remains the original author. The version-2.x redesign and implementation are authored by Flachzange and were developed with AI assistance from OpenAI ChatGPT; technical decisions and release responsibility remain with Flachzange. See [`AUTHORS.md`](AUTHORS.md) for details. The change history is maintained exclusively in [`CHANGELOG.md`](CHANGELOG.md). Protocol sources and confidence boundaries are documented in [`docs/PROTOCOL-SOURCES.md`](docs/PROTOCOL-SOURCES.md).
 
 ## Differences from the original module
 
@@ -106,7 +106,7 @@ define <Name> Wattpilot <IP-Address> [Serial]
 
 The serial is not another FHEM device identifier. It is a cryptographic input: both PBKDF2 and bcrypt derive the device-specific password hash using the serial number. This applies to legacy Wattpilot devices and Wattpilot Flex.
 
-Normally the Wattpilot sends its serial in the `hello` message before authentication, so it does not need to be part of the definition. Supplying it explicitly pins the value and is useful only when automatic acquisition does not work. A wrong serial produces the wrong derived hash and causes authentication to fail. If neither the definition nor `hello` provides a valid numeric serial, authentication ends with `authConfigMissing`.
+Normally the Wattpilot sends its serial in the `hello` message before authentication, so it does not need to be part of the definition. If `authRequired` exceptionally arrives first, the module retains that challenge once for a bounded two-second wait and resumes authentication immediately when a valid `hello.serial` arrives. Supplying the serial explicitly pins the value, takes precedence over `hello`, and is useful only when automatic acquisition does not work. A wrong serial produces the wrong derived hash and causes authentication to fail. A missing password reports `passwordMissing`. When a password exists but neither the definition nor `hello` provides a valid numeric serial before the bounded wait expires, authentication ends with `authConfigMissing`.
 
 Set the password separately with `set <Name> password <secret>`; it is not stored in the definition.
 
